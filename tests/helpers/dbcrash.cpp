@@ -22,7 +22,7 @@ int main(int argc, char *argv[])
     };
     const app::Database::Result result =
         app::Database::open(QStringLiteral("crash"), QString::fromLocal8Bit(argv[1]),
-                            QString::fromLocal8Bit(argv[2]), QStringLiteral("AppName"),
+                            QString::fromLocal8Bit(argv[2]), QStringLiteral(TEST_APP_NAME),
                             parentChildMigrations(3), options);
     return result.ok() ? 0 : 1;
 }

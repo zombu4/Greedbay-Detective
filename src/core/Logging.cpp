@@ -19,7 +19,7 @@ struct LogState {
     QMutex mutex;
     QFile file;
     QString logsDir;
-    QString appName;
+    QString appIdentifier;
     QtMessageHandler previous = nullptr;
     bool installed = false;
     bool rotationBlocked = false;
@@ -55,16 +55,16 @@ const char *levelName(QtMsgType type)
     return "unknown";
 }
 
-QString logPath(const QString &logsDir, const QString &appName, int index)
+QString logPath(const QString &logsDir, const QString &appIdentifier, int index)
 {
     return logsDir + QLatin1Char('/')
-           + (index == 0 ? Logging::currentFileName(appName) : Logging::rotatedFileName(appName, index));
+           + (index == 0 ? Logging::currentFileName(appIdentifier) : Logging::rotatedFileName(appIdentifier, index));
 }
 
 // Caller holds the mutex.
 bool openCurrentFile(LogState &state, QString *error)
 {
-    const QString path = logPath(state.logsDir, state.appName, 0);
+    const QString path = logPath(state.logsDir, state.appIdentifier, 0);
     if (isLink(path) || (somethingAt(path) && !isPlainFile(path))) {
         if (error)
             *error = QStringLiteral("the log file is a link or not a regular file; it is not used");
@@ -109,7 +109,7 @@ void messageHandler(QtMsgType type, const QMessageLogContext &context, const QSt
                 // Rotate while the file is closed: Windows cannot rename an open file.
                 state.file.close();
                 QString ignored;
-                if (!Logging::rotate(state.logsDir, state.appName, &ignored))
+                if (!Logging::rotate(state.logsDir, state.appIdentifier, &ignored))
                     state.rotationBlocked = true;
                 openCurrentFile(state, &ignored);
             }
@@ -130,24 +130,24 @@ void messageHandler(QtMsgType type, const QMessageLogContext &context, const QSt
 
 } // namespace
 
-QString Logging::currentFileName(const QString &appName)
+QString Logging::currentFileName(const QString &appIdentifier)
 {
-    return appName + QStringLiteral(".log");
+    return appIdentifier + QStringLiteral(".log");
 }
 
-QString Logging::rotatedFileName(const QString &appName, int index)
+QString Logging::rotatedFileName(const QString &appIdentifier, int index)
 {
-    return appName + QLatin1Char('.') + QString::number(index) + QStringLiteral(".log");
+    return appIdentifier + QLatin1Char('.') + QString::number(index) + QStringLiteral(".log");
 }
 
-bool Logging::install(const QString &logsDir, const QString &appName, QString *error)
+bool Logging::install(const QString &logsDir, const QString &appIdentifier, QString *error)
 {
     uninstall();
     LogState &state = logState();
     {
         QMutexLocker lock(&state.mutex);
         state.logsDir = logsDir;
-        state.appName = appName;
+        state.appIdentifier = appIdentifier;
         state.rotationBlocked = false;
         if (!openCurrentFile(state, error))
             return false;
@@ -176,7 +176,7 @@ void Logging::uninstall()
         qInstallMessageHandler(previous);
 }
 
-bool Logging::rotate(const QString &logsDir, const QString &appName, QString *error)
+bool Logging::rotate(const QString &logsDir, const QString &appIdentifier, QString *error)
 {
     auto fail = [error](const QString &message) {
         if (error)
@@ -186,12 +186,12 @@ bool Logging::rotate(const QString &logsDir, const QString &appName, QString *er
 
     // Every file that exists must be a regular file before anything changes.
     for (int index = 0; index < kMaxFiles; ++index) {
-        const QString path = logPath(logsDir, appName, index);
+        const QString path = logPath(logsDir, appIdentifier, index);
         if (somethingAt(path) && !isPlainFile(path))
             return fail(QStringLiteral("%1 is not a regular file; nothing was rotated").arg(path));
     }
 
-    const QString oldest = logPath(logsDir, appName, kMaxFiles - 1);
+    const QString oldest = logPath(logsDir, appIdentifier, kMaxFiles - 1);
     const QString aside = oldest + QStringLiteral(".old");
     // Left over from an earlier rotation whose final delete failed.
     if (somethingAt(aside)) {
@@ -215,10 +215,10 @@ bool Logging::rotate(const QString &logsDir, const QString &appName, QString *er
     if (somethingAt(oldest) && !move(oldest, aside))
         return fail(QStringLiteral("cannot move %1 aside").arg(oldest));
     for (int index = kMaxFiles - 2; index >= 0; --index) {
-        const QString from = logPath(logsDir, appName, index);
+        const QString from = logPath(logsDir, appIdentifier, index);
         if (!somethingAt(from))
             continue;
-        if (!move(from, logPath(logsDir, appName, index + 1))) {
+        if (!move(from, logPath(logsDir, appIdentifier, index + 1))) {
             undo();
             return fail(QStringLiteral("cannot rename %1; the rotation was undone").arg(from));
         }

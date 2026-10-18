@@ -14,7 +14,7 @@ class TestWorkFolder : public QObject {
     Q_OBJECT
 
 private slots:
-    void defaultPathIsGenericDataPlusAppName();
+    void defaultPathIsGenericDataPlusAppIdentifier();
     void createsLayoutAndMarker();
     void reopenKeepsMarkerId();
     void refusesMalformedMarker();
@@ -30,21 +30,21 @@ private slots:
     void redirectsTempDirectory();
 };
 
-void TestWorkFolder::defaultPathIsGenericDataPlusAppName()
+void TestWorkFolder::defaultPathIsGenericDataPlusAppIdentifier()
 {
     const QString base = QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation);
     QVERIFY(!base.isEmpty());
-    const QString path = WorkFolder::defaultPath(QStringLiteral("AppName"));
-    QCOMPARE(path, QDir::cleanPath(base + QStringLiteral("/AppName")));
+    const QString path = WorkFolder::defaultPath(QStringLiteral(TEST_APP_NAME));
+    QCOMPARE(path, QDir::cleanPath(base + QStringLiteral("/" TEST_APP_NAME)));
 #if defined(Q_OS_MACOS)
-    QCOMPARE(path, QDir::homePath() + QStringLiteral("/Library/Application Support/AppName"));
+    QCOMPARE(path, QDir::homePath() + QStringLiteral("/Library/Application Support/" TEST_APP_NAME));
 #elif defined(Q_OS_WIN)
-    QCOMPARE(path, QDir::fromNativeSeparators(qEnvironmentVariable("LOCALAPPDATA")) + QStringLiteral("/AppName"));
+    QCOMPARE(path, QDir::fromNativeSeparators(qEnvironmentVariable("LOCALAPPDATA")) + QStringLiteral("/" TEST_APP_NAME));
 #else
     if (qEnvironmentVariableIsEmpty("XDG_DATA_HOME"))
-        QCOMPARE(path, QDir::homePath() + QStringLiteral("/.local/share/AppName"));
+        QCOMPARE(path, QDir::homePath() + QStringLiteral("/.local/share/" TEST_APP_NAME));
     else
-        QCOMPARE(path, QDir::cleanPath(qEnvironmentVariable("XDG_DATA_HOME")) + QStringLiteral("/AppName"));
+        QCOMPARE(path, QDir::cleanPath(qEnvironmentVariable("XDG_DATA_HOME")) + QStringLiteral("/" TEST_APP_NAME));
 #endif
     QVERIFY(WorkFolder::defaultPath(QString()).isEmpty());
 }
@@ -55,7 +55,7 @@ void TestWorkFolder::createsLayoutAndMarker()
     QVERIFY(tmp.isValid());
     const QString root = tmp.path() + QStringLiteral("/work");
     QString error;
-    const std::optional<WorkFolder> folder = WorkFolder::open(root, QStringLiteral("AppName"), &error);
+    const std::optional<WorkFolder> folder = WorkFolder::open(root, QStringLiteral(TEST_APP_NAME), &error);
     QVERIFY2(folder, qPrintable(error));
 
     const QStringList dirs = {folder->backupsDir(), folder->logsDir(), folder->webEngineStorageDir(),
@@ -69,7 +69,7 @@ void TestWorkFolder::createsLayoutAndMarker()
     QCOMPARE(QString::fromLatin1(marker.readAll()), folder->markerId() + QLatin1Char('\n'));
 
     QCOMPARE(folder->path(), root);
-    QCOMPARE(folder->databasePath(), root + QStringLiteral("/AppName.sqlite"));
+    QCOMPARE(folder->databasePath(), root + QStringLiteral("/" TEST_APP_NAME ".sqlite"));
     QCOMPARE(folder->settingsPath(), root + QStringLiteral("/settings.ini"));
     QCOMPARE(folder->lockPath(), root + QStringLiteral("/.lock"));
     QCOMPARE(folder->markerPath(), root + QStringLiteral("/.workfolder"));
@@ -81,9 +81,9 @@ void TestWorkFolder::reopenKeepsMarkerId()
     QVERIFY(tmp.isValid());
     const QString root = tmp.path() + QStringLiteral("/work");
     QString error;
-    const auto first = WorkFolder::open(root, QStringLiteral("AppName"), &error);
+    const auto first = WorkFolder::open(root, QStringLiteral(TEST_APP_NAME), &error);
     QVERIFY2(first, qPrintable(error));
-    const auto second = WorkFolder::open(root, QStringLiteral("AppName"), &error);
+    const auto second = WorkFolder::open(root, QStringLiteral(TEST_APP_NAME), &error);
     QVERIFY2(second, qPrintable(error));
     QCOMPARE(second->markerId(), first->markerId());
 }
@@ -94,7 +94,7 @@ void TestWorkFolder::refusesMalformedMarker()
     QVERIFY(tmp.isValid());
     const QString root = tmp.path() + QStringLiteral("/work");
     QString error;
-    const auto folder = WorkFolder::open(root, QStringLiteral("AppName"), &error);
+    const auto folder = WorkFolder::open(root, QStringLiteral(TEST_APP_NAME), &error);
     QVERIFY2(folder, qPrintable(error));
 
     QFile marker(folder->markerPath());
@@ -102,7 +102,7 @@ void TestWorkFolder::refusesMalformedMarker()
     marker.write("not-a-uuid\n");
     marker.close();
 
-    QVERIFY(!WorkFolder::open(root, QStringLiteral("AppName"), &error));
+    QVERIFY(!WorkFolder::open(root, QStringLiteral(TEST_APP_NAME), &error));
     QVERIFY2(error.contains(QStringLiteral("malformed")), qPrintable(error));
 
     QVERIFY(!WorkFolder::isValidMarkerId(QStringLiteral("{2f1e7a8c-0b7e-4b7e-9c3a-6f0d2a1b5c4d}")));
@@ -122,7 +122,7 @@ void TestWorkFolder::refusesForeignNonEmptyFolder()
     other.close();
 
     QString error;
-    QVERIFY(!WorkFolder::open(root, QStringLiteral("AppName"), &error));
+    QVERIFY(!WorkFolder::open(root, QStringLiteral(TEST_APP_NAME), &error));
     QVERIFY2(error.contains(QStringLiteral("not empty")), qPrintable(error));
     QVERIFY(!QFileInfo::exists(root + QStringLiteral("/.workfolder")));
     QCOMPARE(QDir(root).entryList(QDir::AllEntries | QDir::Hidden | QDir::NoDotAndDotDot).size(), 1);
@@ -135,7 +135,7 @@ void TestWorkFolder::adoptsEmptyFolder()
     const QString root = tmp.path() + QStringLiteral("/work");
     QVERIFY(QDir().mkpath(root));
     QString error;
-    const auto folder = WorkFolder::open(root, QStringLiteral("AppName"), &error);
+    const auto folder = WorkFolder::open(root, QStringLiteral(TEST_APP_NAME), &error);
     QVERIFY2(folder, qPrintable(error));
     QVERIFY(QFileInfo::exists(folder->markerPath()));
 }
@@ -143,9 +143,9 @@ void TestWorkFolder::adoptsEmptyFolder()
 void TestWorkFolder::refusesRelativePath()
 {
     QString error;
-    QVERIFY(!WorkFolder::open(QStringLiteral("relative/work"), QStringLiteral("AppName"), &error));
+    QVERIFY(!WorkFolder::open(QStringLiteral("relative/work"), QStringLiteral(TEST_APP_NAME), &error));
     QVERIFY2(error.contains(QStringLiteral("not absolute")), qPrintable(error));
-    QVERIFY(!WorkFolder::open(QString(), QStringLiteral("AppName"), &error));
+    QVERIFY(!WorkFolder::open(QString(), QStringLiteral(TEST_APP_NAME), &error));
 }
 
 void TestWorkFolder::refusesLinkedFolder()
@@ -157,7 +157,7 @@ void TestWorkFolder::refusesLinkedFolder()
     QVERIFY(QDir().mkpath(real));
     QVERIFY(makeDirectoryLink(real, link));
     QString error;
-    QVERIFY(!WorkFolder::open(link, QStringLiteral("AppName"), &error));
+    QVERIFY(!WorkFolder::open(link, QStringLiteral(TEST_APP_NAME), &error));
     QVERIFY2(error.contains(QStringLiteral("link")), qPrintable(error));
     QVERIFY(QDir(real).isEmpty(QDir::AllEntries | QDir::Hidden | QDir::NoDotAndDotDot));
 }
@@ -168,24 +168,24 @@ void TestWorkFolder::refusesLinkedOrMisplacedSubfolder()
     QVERIFY(tmp.isValid());
     const QString root = tmp.path() + QStringLiteral("/work");
     QString error;
-    QVERIFY2(WorkFolder::open(root, QStringLiteral("AppName"), &error), qPrintable(error));
+    QVERIFY2(WorkFolder::open(root, QStringLiteral(TEST_APP_NAME), &error), qPrintable(error));
 
     // A subfolder replaced by a link to a folder elsewhere.
     const QString outside = tmp.path() + QStringLiteral("/outside");
     QVERIFY(QDir().mkpath(outside));
     QVERIFY(QDir(root + QStringLiteral("/logs")).removeRecursively());
     QVERIFY(makeDirectoryLink(outside, root + QStringLiteral("/logs")));
-    QVERIFY(!WorkFolder::open(root, QStringLiteral("AppName"), &error));
+    QVERIFY(!WorkFolder::open(root, QStringLiteral(TEST_APP_NAME), &error));
     QVERIFY2(error.contains(QStringLiteral("logs is a link")), qPrintable(error));
 
     // A subfolder replaced by a plain file.
     QTemporaryDir tmp2;
     QVERIFY(tmp2.isValid());
     const QString root2 = tmp2.path() + QStringLiteral("/work");
-    QVERIFY2(WorkFolder::open(root2, QStringLiteral("AppName"), &error), qPrintable(error));
+    QVERIFY2(WorkFolder::open(root2, QStringLiteral(TEST_APP_NAME), &error), qPrintable(error));
     QVERIFY(QDir(root2 + QStringLiteral("/tmp")).removeRecursively());
     QVERIFY(writeTestFile(root2 + QStringLiteral("/tmp"), "synthetic"));
-    QVERIFY(!WorkFolder::open(root2, QStringLiteral("AppName"), &error));
+    QVERIFY(!WorkFolder::open(root2, QStringLiteral(TEST_APP_NAME), &error));
     QVERIFY2(error.contains(QStringLiteral("is not a folder")), qPrintable(error));
 }
 
@@ -197,10 +197,10 @@ void TestWorkFolder::refusesBadMarkers()
         QTemporaryDir tmp;
         QVERIFY(tmp.isValid());
         const QString root = tmp.path() + QStringLiteral("/work");
-        const auto folder = WorkFolder::open(root, QStringLiteral("AppName"), &error);
+        const auto folder = WorkFolder::open(root, QStringLiteral(TEST_APP_NAME), &error);
         QVERIFY2(folder, qPrintable(error));
         QVERIFY(writeTestFile(folder->markerPath(), folder->markerId().toLatin1() + QByteArray(100, 'x')));
-        QVERIFY(!WorkFolder::open(root, QStringLiteral("AppName"), &error));
+        QVERIFY(!WorkFolder::open(root, QStringLiteral(TEST_APP_NAME), &error));
         QVERIFY2(error.contains(QStringLiteral("malformed")), qPrintable(error));
     }
     {
@@ -209,7 +209,7 @@ void TestWorkFolder::refusesBadMarkers()
         QVERIFY(tmp.isValid());
         const QString root = tmp.path() + QStringLiteral("/work");
         QVERIFY(QDir().mkpath(root + QStringLiteral("/.workfolder")));
-        QVERIFY(!WorkFolder::open(root, QStringLiteral("AppName"), &error));
+        QVERIFY(!WorkFolder::open(root, QStringLiteral(TEST_APP_NAME), &error));
     }
     if (kCanLinkFiles) {
         // The marker is a link to a valid-looking marker elsewhere.
@@ -220,7 +220,7 @@ void TestWorkFolder::refusesBadMarkers()
         const QString elsewhere = tmp.path() + QStringLiteral("/marker");
         QVERIFY(writeTestFile(elsewhere, "2f1e7a8c-0b7e-4b7e-9c3a-6f0d2a1b5c4d\n"));
         QVERIFY(QFile::link(elsewhere, root + QStringLiteral("/.workfolder")));
-        QVERIFY(!WorkFolder::open(root, QStringLiteral("AppName"), &error));
+        QVERIFY(!WorkFolder::open(root, QStringLiteral(TEST_APP_NAME), &error));
         QVERIFY2(error.contains(QStringLiteral("link")), qPrintable(error));
     }
 }
@@ -232,7 +232,7 @@ void TestWorkFolder::refusesRootThatIsAFile()
     const QString root = tmp.path() + QStringLiteral("/work");
     QVERIFY(writeTestFile(root, "synthetic"));
     QString error;
-    QVERIFY(!WorkFolder::open(root, QStringLiteral("AppName"), &error));
+    QVERIFY(!WorkFolder::open(root, QStringLiteral(TEST_APP_NAME), &error));
     QVERIFY2(error.contains(QStringLiteral("not a folder")), qPrintable(error));
     QCOMPARE(readTestFile(root), QByteArray("synthetic"));
 }
@@ -245,11 +245,11 @@ void TestWorkFolder::refusesLinkedSettingsFile()
     QVERIFY(tmp.isValid());
     const QString root = tmp.path() + QStringLiteral("/work");
     QString error;
-    QVERIFY2(WorkFolder::open(root, QStringLiteral("AppName"), &error), qPrintable(error));
+    QVERIFY2(WorkFolder::open(root, QStringLiteral(TEST_APP_NAME), &error), qPrintable(error));
     const QString outside = tmp.path() + QStringLiteral("/outside.ini");
     QVERIFY(writeTestFile(outside, "[lookup]\n"));
     QVERIFY(QFile::link(outside, root + QStringLiteral("/settings.ini")));
-    QVERIFY(!WorkFolder::open(root, QStringLiteral("AppName"), &error));
+    QVERIFY(!WorkFolder::open(root, QStringLiteral(TEST_APP_NAME), &error));
     QVERIFY2(error.contains(QStringLiteral("settings.ini is a link")), qPrintable(error));
 }
 
@@ -262,7 +262,7 @@ void TestWorkFolder::restrictsFolderToOwner()
     QVERIFY(tmp.isValid());
     const QString root = tmp.path() + QStringLiteral("/work");
     QString error;
-    QVERIFY2(WorkFolder::open(root, QStringLiteral("AppName"), &error), qPrintable(error));
+    QVERIFY2(WorkFolder::open(root, QStringLiteral(TEST_APP_NAME), &error), qPrintable(error));
     const QFileDevice::Permissions perms = QFileInfo(root).permissions();
     const QFileDevice::Permissions others = QFileDevice::ReadGroup | QFileDevice::WriteGroup | QFileDevice::ExeGroup
                                             | QFileDevice::ReadOther | QFileDevice::WriteOther
@@ -280,7 +280,7 @@ void TestWorkFolder::redirectsTempDirectory()
     QVERIFY(tmp.isValid());
     const QString root = tmp.path() + QStringLiteral("/work");
     QString error;
-    const auto folder = WorkFolder::open(root, QStringLiteral("AppName"), &error);
+    const auto folder = WorkFolder::open(root, QStringLiteral(TEST_APP_NAME), &error);
     QVERIFY2(folder, qPrintable(error));
 
 #ifdef Q_OS_WIN

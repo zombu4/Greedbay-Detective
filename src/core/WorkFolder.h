@@ -12,7 +12,7 @@ namespace app {
 // Layout (all paths relative to path()):
 //   .workfolder            marker holding a random ID; proves the app created the folder
 //   .lock                  single-instance lock while the app runs
-//   <appName>.sqlite       database
+//   <appIdentifier>.sqlite       database
 //   backups/               database copies made before each schema upgrade
 //   logs/                  rotating log files
 //   settings.ini           settings in INI format
@@ -22,15 +22,15 @@ namespace app {
 //   tmp/                   temporary files of this process
 class WorkFolder {
 public:
-    // The default location: <GenericDataLocation>/<appName>, which is
-    //   macOS    ~/Library/Application Support/<appName>
-    //   Windows  %LOCALAPPDATA%\<appName>
-    //   Linux    ~/.local/share/<appName>
+    // The default location: <GenericDataLocation>/<appIdentifier>, which is
+    //   macOS    ~/Library/Application Support/<appIdentifier>
+    //   Windows  %LOCALAPPDATA%\<appIdentifier>
+    //   Linux    ~/.local/share/<appIdentifier>
     // It is built from GenericDataLocation rather than AppLocalDataLocation so
     // that an organization name set on the application object can never become
     // part of the path. Returns an empty string when the platform reports no
     // writable data location. Safe to call before QCoreApplication exists.
-    static QString defaultPath(const QString &appName);
+    static QString defaultPath(const QString &appIdentifier);
 
     // Opens the work folder at `path`, creating it with its subfolders and the
     // marker on first use.
@@ -44,7 +44,7 @@ public:
     //   - a folder or the marker cannot be created.
     // On Unix the folder is restricted to its owner (mode 0700), because it
     // holds the browser's cookies.
-    static std::optional<WorkFolder> open(const QString &path, const QString &appName,
+    static std::optional<WorkFolder> open(const QString &path, const QString &appIdentifier,
                                           QString *error);
 
     // True when `id` is a UUID in the exact form the marker uses.
@@ -56,7 +56,7 @@ public:
     bool redirectTempDirectory(QString *error) const;
 
     QString path() const { return m_path; }
-    QString appName() const { return m_appName; }
+    QString appIdentifier() const { return m_appIdentifier; }
     QString markerId() const { return m_markerId; }
 
     QString markerPath() const;
@@ -74,10 +74,10 @@ public:
     static constexpr const char *kLockFileName = ".lock";
 
 private:
-    WorkFolder(QString path, QString appName, QString markerId);
+    WorkFolder(QString path, QString appIdentifier, QString markerId);
 
     QString m_path;
-    QString m_appName;
+    QString m_appIdentifier;
     QString m_markerId;
 };
 

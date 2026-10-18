@@ -16,7 +16,7 @@ namespace app {
 //   - equal to the latest version: opened unchanged;
 //   - higher (made by a newer app): refused, file untouched;
 //   - lower: an existing file is first copied with VACUUM INTO to
-//     backups/<appName>-v<old>-<UTC time>.sqlite (when at least twice its
+//     backups/<appIdentifier>-v<old>-<UTC time>.sqlite (when at least twice its
 //     size is free), then each pending migration runs in its
 //     own transaction with foreign keys off, sets user_version inside that
 //     transaction, and must pass PRAGMA foreign_key_check before COMMIT.
@@ -73,20 +73,20 @@ public:
     // (QSqlDatabase::database(connectionName)); otherwise it is closed and
     // removed.
     static Result open(const QString &connectionName, const QString &databasePath,
-                       const QString &backupsDir, const QString &appName,
+                       const QString &backupsDir, const QString &appIdentifier,
                        const QList<Migration> &migrations, const Options &options = Options());
 
     // Closes and removes the connection.
     static void close(const QString &connectionName);
 
-    // <appName>-v<fromVersion>-<yyyyMMdd>T<HHmmsszzz>Z.sqlite
-    static QString backupFileName(const QString &appName, int fromVersion, const QDateTime &utc);
+    // <appIdentifier>-v<fromVersion>-<yyyyMMdd>T<HHmmsszzz>Z.sqlite
+    static QString backupFileName(const QString &appIdentifier, int fromVersion, const QDateTime &utc);
 
-    // Deletes all but the newest `keep` (at least 1) backups of `appName` in
+    // Deletes all but the newest `keep` (at least 1) backups of `appIdentifier` in
     // `backupsDir`, never the file named `protectedName`. Only regular files
     // whose names match backupFileName() are considered; anything else, and
     // any link, is left alone. A backups folder that is a link is refused.
-    static bool rotateBackups(const QString &backupsDir, const QString &appName, int keep,
+    static bool rotateBackups(const QString &backupsDir, const QString &appIdentifier, int keep,
                               const QString &protectedName, QString *error);
 };
 

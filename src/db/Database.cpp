@@ -92,17 +92,17 @@ QString sqlStringLiteral(const QString &text)
     return QLatin1Char('\'') + escaped + QLatin1Char('\'');
 }
 
-QRegularExpression backupNamePattern(const QString &appName)
+QRegularExpression backupNamePattern(const QString &appIdentifier)
 {
     return QRegularExpression(QStringLiteral("^%1-v\\d+-(\\d{8}T\\d{9}Z)\\.sqlite$")
-                                  .arg(QRegularExpression::escape(appName)));
+                                  .arg(QRegularExpression::escape(appIdentifier)));
 }
 
-bool hasBackups(const QString &backupsDir, const QString &appName)
+bool hasBackups(const QString &backupsDir, const QString &appIdentifier)
 {
     if (isLink(backupsDir) || !QFileInfo(backupsDir).isDir())
         return false;
-    const QRegularExpression pattern = backupNamePattern(appName);
+    const QRegularExpression pattern = backupNamePattern(appIdentifier);
     const QDir dir(backupsDir);
     const QStringList names = dir.entryList(QDir::Files | QDir::Hidden | QDir::NoSymLinks);
     return std::any_of(names.begin(), names.end(), [&](const QString &name) {
@@ -210,7 +210,7 @@ struct Attempt {
 };
 
 Attempt migrateOpenDatabase(QSqlDatabase &db, const QString &databasePath, const QString &backupsDir,
-                            const QString &appName, const QList<Migration> &migrations,
+                            const QString &appIdentifier, const QList<Migration> &migrations,
                             const Database::Options &options, bool existed)
 {
     Attempt attempt;
@@ -296,7 +296,7 @@ Attempt migrateOpenDatabase(QSqlDatabase &db, const QString &databasePath, const
             return fail(Cleanup::None);
         }
         const QString backup = QDir(backupsDir).filePath(
-            Database::backupFileName(appName, current, QDateTime::currentDateTimeUtc()));
+            Database::backupFileName(appIdentifier, current, QDateTime::currentDateTimeUtc()));
         if (somethingAt(backup)) {
             result.error = QStringLiteral("backup %1 already exists").arg(backup);
             return fail(Cleanup::None);
@@ -371,15 +371,15 @@ Attempt migrateOpenDatabase(QSqlDatabase &db, const QString &databasePath, const
 
 } // namespace
 
-QString Database::backupFileName(const QString &appName, int fromVersion, const QDateTime &utc)
+QString Database::backupFileName(const QString &appIdentifier, int fromVersion, const QDateTime &utc)
 {
     return QStringLiteral("%1-v%2-%3.sqlite")
-        .arg(appName)
+        .arg(appIdentifier)
         .arg(fromVersion)
         .arg(utc.toUTC().toString(QStringLiteral("yyyyMMdd'T'HHmmsszzz'Z'")));
 }
 
-bool Database::rotateBackups(const QString &backupsDir, const QString &appName, int keep,
+bool Database::rotateBackups(const QString &backupsDir, const QString &appIdentifier, int keep,
                              const QString &protectedName, QString *error)
 {
     if (isLink(backupsDir)) {
@@ -387,7 +387,7 @@ bool Database::rotateBackups(const QString &backupsDir, const QString &appName, 
             *error = QStringLiteral("the backups folder is a link; nothing was deleted");
         return false;
     }
-    const QRegularExpression pattern = backupNamePattern(appName);
+    const QRegularExpression pattern = backupNamePattern(appIdentifier);
     const QDir dir(backupsDir);
     std::vector<std::pair<QString, QString>> backups; // (timestamp, file name)
     const QStringList names = dir.entryList(QDir::Files | QDir::Hidden | QDir::NoSymLinks, QDir::NoSort);
@@ -413,7 +413,7 @@ bool Database::rotateBackups(const QString &backupsDir, const QString &appName, 
 }
 
 Database::Result Database::open(const QString &connectionName, const QString &databasePath,
-                                const QString &backupsDir, const QString &appName,
+                                const QString &backupsDir, const QString &appIdentifier,
                                 const QList<Migration> &migrations, const Options &options)
 {
     Result result;
@@ -434,7 +434,7 @@ Database::Result Database::open(const QString &connectionName, const QString &da
         result.error = QStringLiteral("the database path is not a regular file");
         return result;
     }
-    if (!existed && hasBackups(backupsDir, appName)) {
+    if (!existed && hasBackups(backupsDir, appIdentifier)) {
         result.outcome = Outcome::MissingWithBackups;
         result.error = QStringLiteral("the database is missing but backups of it exist in %1; "
                                       "nothing was created")
@@ -450,7 +450,7 @@ Database::Result Database::open(const QString &connectionName, const QString &da
             attempt.result.error = QStringLiteral("cannot open the database: %1").arg(db.lastError().text());
             attempt.cleanup = existed ? Cleanup::None : Cleanup::DeleteCreated;
         } else {
-            attempt = migrateOpenDatabase(db, databasePath, backupsDir, appName, migrations, options, existed);
+            attempt = migrateOpenDatabase(db, databasePath, backupsDir, appIdentifier, migrations, options, existed);
         }
     }
     result = attempt.result;
@@ -478,7 +478,7 @@ Database::Result Database::open(const QString &connectionName, const QString &da
     // failed one; the backup this call made is never deleted.
     if (!madeBackup.isEmpty()) {
         QString rotateError;
-        if (!rotateBackups(backupsDir, appName, options.keepBackups, madeBackup, &rotateError))
+        if (!rotateBackups(backupsDir, appIdentifier, options.keepBackups, madeBackup, &rotateError))
             result.warning = rotateError;
     }
     return result;

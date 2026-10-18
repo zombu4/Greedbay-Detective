@@ -83,19 +83,19 @@ bool writeMarker(const QString &fileName, QString *id, QString *error)
 
 } // namespace
 
-WorkFolder::WorkFolder(QString path, QString appName, QString markerId)
-    : m_path(std::move(path)), m_appName(std::move(appName)), m_markerId(std::move(markerId))
+WorkFolder::WorkFolder(QString path, QString appIdentifier, QString markerId)
+    : m_path(std::move(path)), m_appIdentifier(std::move(appIdentifier)), m_markerId(std::move(markerId))
 {
 }
 
-QString WorkFolder::defaultPath(const QString &appName)
+QString WorkFolder::defaultPath(const QString &appIdentifier)
 {
-    if (appName.isEmpty())
+    if (appIdentifier.isEmpty())
         return {};
     const QString base = QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation);
     if (base.isEmpty())
         return {};
-    return QDir::cleanPath(base + QLatin1Char('/') + appName);
+    return QDir::cleanPath(base + QLatin1Char('/') + appIdentifier);
 }
 
 bool WorkFolder::isValidMarkerId(const QString &id)
@@ -104,10 +104,10 @@ bool WorkFolder::isValidMarkerId(const QString &id)
     return !uuid.isNull() && uuid.toString(QUuid::WithoutBraces) == id;
 }
 
-std::optional<WorkFolder> WorkFolder::open(const QString &path, const QString &appName,
+std::optional<WorkFolder> WorkFolder::open(const QString &path, const QString &appIdentifier,
                                            QString *error)
 {
-    if (path.isEmpty() || appName.isEmpty())
+    if (path.isEmpty() || appIdentifier.isEmpty())
         return failWith(error, QStringLiteral("the work folder path or app name is empty"));
     if (!QDir::isAbsolutePath(path))
         return failWith(error, QStringLiteral("the work folder path is not absolute"));
@@ -166,7 +166,7 @@ std::optional<WorkFolder> WorkFolder::open(const QString &path, const QString &a
 
     // Files other code opens later must not be links either.
     const QString files[] = {root + QStringLiteral("/settings.ini"),
-                             root + QLatin1Char('/') + appName + QStringLiteral(".sqlite"),
+                             root + QLatin1Char('/') + appIdentifier + QStringLiteral(".sqlite"),
                              root + QLatin1Char('/') + QLatin1String(kLockFileName)};
     for (const QString &file : files) {
         if (isLink(file))
@@ -174,7 +174,7 @@ std::optional<WorkFolder> WorkFolder::open(const QString &path, const QString &a
                                        .arg(QFileInfo(file).fileName()));
     }
 
-    return WorkFolder(root, appName, id);
+    return WorkFolder(root, appIdentifier, id);
 }
 
 bool WorkFolder::redirectTempDirectory(QString *error) const
@@ -202,7 +202,7 @@ bool WorkFolder::redirectTempDirectory(QString *error) const
 
 QString WorkFolder::markerPath() const { return m_path + QLatin1Char('/') + QLatin1String(kMarkerFileName); }
 QString WorkFolder::lockPath() const { return m_path + QLatin1Char('/') + QLatin1String(kLockFileName); }
-QString WorkFolder::databasePath() const { return m_path + QLatin1Char('/') + m_appName + QStringLiteral(".sqlite"); }
+QString WorkFolder::databasePath() const { return m_path + QLatin1Char('/') + m_appIdentifier + QStringLiteral(".sqlite"); }
 QString WorkFolder::backupsDir() const { return m_path + QStringLiteral("/backups"); }
 QString WorkFolder::logsDir() const { return m_path + QStringLiteral("/logs"); }
 QString WorkFolder::settingsPath() const { return m_path + QStringLiteral("/settings.ini"); }

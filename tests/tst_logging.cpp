@@ -38,12 +38,12 @@ void TestLogging::writesFormattedLines()
     QTemporaryDir tmp;
     QVERIFY(tmp.isValid());
     QString error;
-    QVERIFY2(Logging::install(tmp.path(), QStringLiteral("AppName"), &error), qPrintable(error));
+    QVERIFY2(Logging::install(tmp.path(), QStringLiteral(TEST_APP_NAME), &error), qPrintable(error));
     qWarning("synthetic warning %d", 42);
     qInfo("synthetic info");
     Logging::uninstall();
 
-    const QList<QByteArray> lines = readTestFile(tmp.path() + QStringLiteral("/AppName.log")).trimmed().split('\n');
+    const QList<QByteArray> lines = readTestFile(tmp.path() + QStringLiteral("/" TEST_APP_NAME ".log")).trimmed().split('\n');
     QCOMPARE(lines.size(), 2);
     const QRegularExpression pattern(
         QStringLiteral("^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z (\\w+) \\[default\\] (.*)$"));
@@ -57,7 +57,7 @@ void TestLogging::writesFormattedLines()
 
     // After uninstall nothing more is written.
     qInfo("not logged");
-    QCOMPARE(readTestFile(tmp.path() + QStringLiteral("/AppName.log")).trimmed().split('\n').size(), 2);
+    QCOMPARE(readTestFile(tmp.path() + QStringLiteral("/" TEST_APP_NAME ".log")).trimmed().split('\n').size(), 2);
 }
 
 void TestLogging::linesEndInNewlineOnly()
@@ -65,11 +65,11 @@ void TestLogging::linesEndInNewlineOnly()
     QTemporaryDir tmp;
     QVERIFY(tmp.isValid());
     QString error;
-    QVERIFY2(Logging::install(tmp.path(), QStringLiteral("AppName"), &error), qPrintable(error));
+    QVERIFY2(Logging::install(tmp.path(), QStringLiteral(TEST_APP_NAME), &error), qPrintable(error));
     qInfo("one");
     qInfo("two");
     Logging::uninstall();
-    const QByteArray content = readTestFile(tmp.path() + QStringLiteral("/AppName.log"));
+    const QByteArray content = readTestFile(tmp.path() + QStringLiteral("/" TEST_APP_NAME ".log"));
     QVERIFY(!content.contains('\r'));
     QCOMPARE(content.count('\n'), 2);
 }
@@ -79,27 +79,27 @@ void TestLogging::installingTwiceLogsEachMessageOnce()
     QTemporaryDir tmp;
     QVERIFY(tmp.isValid());
     QString error;
-    QVERIFY2(Logging::install(tmp.path(), QStringLiteral("AppName"), &error), qPrintable(error));
-    QVERIFY2(Logging::install(tmp.path(), QStringLiteral("AppName"), &error), qPrintable(error));
+    QVERIFY2(Logging::install(tmp.path(), QStringLiteral(TEST_APP_NAME), &error), qPrintable(error));
+    QVERIFY2(Logging::install(tmp.path(), QStringLiteral(TEST_APP_NAME), &error), qPrintable(error));
     qInfo("exactly once");
     Logging::uninstall();
-    QCOMPARE(readTestFile(tmp.path() + QStringLiteral("/AppName.log")).count("exactly once"), 1);
+    QCOMPARE(readTestFile(tmp.path() + QStringLiteral("/" TEST_APP_NAME ".log")).count("exactly once"), 1);
 }
 
 void TestLogging::rotatesWhenTheNextLineWouldExceedTheLimit()
 {
     QTemporaryDir tmp;
     QVERIFY(tmp.isValid());
-    const QString current = tmp.path() + QStringLiteral("/AppName.log");
+    const QString current = tmp.path() + QStringLiteral("/" TEST_APP_NAME ".log");
     const QByteArray filler(Logging::kMaxFileBytes - 10, 'x');
     QVERIFY(writeTestFile(current, filler));
 
     QString error;
-    QVERIFY2(Logging::install(tmp.path(), QStringLiteral("AppName"), &error), qPrintable(error));
+    QVERIFY2(Logging::install(tmp.path(), QStringLiteral(TEST_APP_NAME), &error), qPrintable(error));
     qWarning("this line does not fit into the remaining 10 bytes");
     Logging::uninstall();
 
-    QCOMPARE(readTestFile(tmp.path() + QStringLiteral("/AppName.1.log")), filler);
+    QCOMPARE(readTestFile(tmp.path() + QStringLiteral("/" TEST_APP_NAME ".1.log")), filler);
     const QByteArray now = readTestFile(current);
     QVERIFY(now.contains("this line does not fit"));
     QVERIFY(now.size() < 200);
@@ -110,10 +110,10 @@ void TestLogging::cutsMessagesLongerThanTheLineLimit()
     QTemporaryDir tmp;
     QVERIFY(tmp.isValid());
     QString error;
-    QVERIFY2(Logging::install(tmp.path(), QStringLiteral("AppName"), &error), qPrintable(error));
+    QVERIFY2(Logging::install(tmp.path(), QStringLiteral(TEST_APP_NAME), &error), qPrintable(error));
     qInfo("%s", QByteArray(Logging::kMaxFileBytes * 2, 'y').constData());
     Logging::uninstall();
-    const QByteArray content = readTestFile(tmp.path() + QStringLiteral("/AppName.log"));
+    const QByteArray content = readTestFile(tmp.path() + QStringLiteral("/" TEST_APP_NAME ".log"));
     QVERIFY(content.size() <= Logging::kMaxLineBytes);
     QVERIFY(content.endsWith(" [cut]\n"));
 }
@@ -123,21 +123,21 @@ void TestLogging::rotateShiftsFilesAndDeletesOnlyTheOldest()
     QTemporaryDir tmp;
     QVERIFY(tmp.isValid());
     const QString dir = tmp.path();
-    QVERIFY(writeTestFile(dir + QStringLiteral("/AppName.log"), "0"));
+    QVERIFY(writeTestFile(dir + QStringLiteral("/" TEST_APP_NAME ".log"), "0"));
     for (int i = 1; i <= 4; ++i)
-        QVERIFY(writeTestFile(dir + QStringLiteral("/AppName.%1.log").arg(i), QByteArray::number(i)));
-    QVERIFY(writeTestFile(dir + QStringLiteral("/AppName.5.log"), "not ours"));
+        QVERIFY(writeTestFile(dir + QStringLiteral("/" TEST_APP_NAME ".%1.log").arg(i), QByteArray::number(i)));
+    QVERIFY(writeTestFile(dir + QStringLiteral("/" TEST_APP_NAME ".5.log"), "not ours"));
     QVERIFY(writeTestFile(dir + QStringLiteral("/other.txt"), "unrelated"));
 
     QString error;
-    QVERIFY2(Logging::rotate(dir, QStringLiteral("AppName"), &error), qPrintable(error));
+    QVERIFY2(Logging::rotate(dir, QStringLiteral(TEST_APP_NAME), &error), qPrintable(error));
 
-    QVERIFY(!QFileInfo::exists(dir + QStringLiteral("/AppName.log")));
-    QCOMPARE(readTestFile(dir + QStringLiteral("/AppName.1.log")), QByteArray("0"));
-    QCOMPARE(readTestFile(dir + QStringLiteral("/AppName.2.log")), QByteArray("1"));
-    QCOMPARE(readTestFile(dir + QStringLiteral("/AppName.3.log")), QByteArray("2"));
-    QCOMPARE(readTestFile(dir + QStringLiteral("/AppName.4.log")), QByteArray("3"));
-    QCOMPARE(readTestFile(dir + QStringLiteral("/AppName.5.log")), QByteArray("not ours"));
+    QVERIFY(!QFileInfo::exists(dir + QStringLiteral("/" TEST_APP_NAME ".log")));
+    QCOMPARE(readTestFile(dir + QStringLiteral("/" TEST_APP_NAME ".1.log")), QByteArray("0"));
+    QCOMPARE(readTestFile(dir + QStringLiteral("/" TEST_APP_NAME ".2.log")), QByteArray("1"));
+    QCOMPARE(readTestFile(dir + QStringLiteral("/" TEST_APP_NAME ".3.log")), QByteArray("2"));
+    QCOMPARE(readTestFile(dir + QStringLiteral("/" TEST_APP_NAME ".4.log")), QByteArray("3"));
+    QCOMPARE(readTestFile(dir + QStringLiteral("/" TEST_APP_NAME ".5.log")), QByteArray("not ours"));
     QCOMPARE(readTestFile(dir + QStringLiteral("/other.txt")), QByteArray("unrelated"));
     QCOMPARE(QDir(dir).entryList(QDir::Files | QDir::Hidden).size(), 6);
 }
@@ -154,12 +154,12 @@ void TestLogging::failedRotationLosesNothingAndIsNotRepeated()
     const QString dir = tmp.path() + QStringLiteral("/logs");
     QVERIFY(QDir().mkpath(dir));
     const QByteArray filler(Logging::kMaxFileBytes - 10, 'x');
-    QVERIFY(writeTestFile(dir + QStringLiteral("/AppName.log"), filler));
+    QVERIFY(writeTestFile(dir + QStringLiteral("/" TEST_APP_NAME ".log"), filler));
     for (int i = 1; i <= 4; ++i)
-        QVERIFY(writeTestFile(dir + QStringLiteral("/AppName.%1.log").arg(i), QByteArray::number(i)));
+        QVERIFY(writeTestFile(dir + QStringLiteral("/" TEST_APP_NAME ".%1.log").arg(i), QByteArray::number(i)));
 
     QString error;
-    QVERIFY2(Logging::install(dir, QStringLiteral("AppName"), &error), qPrintable(error));
+    QVERIFY2(Logging::install(dir, QStringLiteral(TEST_APP_NAME), &error), qPrintable(error));
     QVERIFY(QFile::setPermissions(dir, QFileDevice::ReadOwner | QFileDevice::ExeOwner));
     if (permissionsIgnored(dir)) {
         QFile::setPermissions(dir, QFileDevice::ReadOwner | QFileDevice::WriteOwner | QFileDevice::ExeOwner);
@@ -171,8 +171,8 @@ void TestLogging::failedRotationLosesNothingAndIsNotRepeated()
     QVERIFY(QFile::setPermissions(dir, QFileDevice::ReadOwner | QFileDevice::WriteOwner | QFileDevice::ExeOwner));
 
     for (int i = 1; i <= 4; ++i)
-        QCOMPARE(readTestFile(dir + QStringLiteral("/AppName.%1.log").arg(i)), QByteArray::number(i));
-    const QByteArray current = readTestFile(dir + QStringLiteral("/AppName.log"));
+        QCOMPARE(readTestFile(dir + QStringLiteral("/" TEST_APP_NAME ".%1.log").arg(i)), QByteArray::number(i));
+    const QByteArray current = readTestFile(dir + QStringLiteral("/" TEST_APP_NAME ".log"));
     QVERIFY(current.startsWith(filler));
     QCOMPARE(current.count("after the folder became read-only"), 5);
 #endif
@@ -187,14 +187,14 @@ void TestLogging::rotateRefusesLinks()
     const QString target = tmp.path() + QStringLiteral("/outside.txt");
     QVERIFY(writeTestFile(target, "must survive"));
     QVERIFY(QDir().mkpath(tmp.path() + QStringLiteral("/logs")));
-    QVERIFY(writeTestFile(tmp.path() + QStringLiteral("/logs/AppName.log"), "current"));
-    QVERIFY(QFile::link(target, tmp.path() + QStringLiteral("/logs/AppName.4.log")));
+    QVERIFY(writeTestFile(tmp.path() + QStringLiteral("/logs/" TEST_APP_NAME ".log"), "current"));
+    QVERIFY(QFile::link(target, tmp.path() + QStringLiteral("/logs/" TEST_APP_NAME ".4.log")));
 
     QString error;
-    QVERIFY(!Logging::rotate(tmp.path() + QStringLiteral("/logs"), QStringLiteral("AppName"), &error));
+    QVERIFY(!Logging::rotate(tmp.path() + QStringLiteral("/logs"), QStringLiteral(TEST_APP_NAME), &error));
     QVERIFY2(error.contains(QStringLiteral("not a regular file")), qPrintable(error));
     QCOMPARE(readTestFile(target), QByteArray("must survive"));
-    QCOMPARE(readTestFile(tmp.path() + QStringLiteral("/logs/AppName.log")), QByteArray("current"));
+    QCOMPARE(readTestFile(tmp.path() + QStringLiteral("/logs/" TEST_APP_NAME ".log")), QByteArray("current"));
 }
 
 void TestLogging::refusesALinkedLogFile()
@@ -205,17 +205,17 @@ void TestLogging::refusesALinkedLogFile()
     QVERIFY(tmp.isValid());
     const QString target = tmp.path() + QStringLiteral("/outside.txt");
     QVERIFY(writeTestFile(target, "outside"));
-    QVERIFY(QFile::link(target, tmp.path() + QStringLiteral("/AppName.log")));
+    QVERIFY(QFile::link(target, tmp.path() + QStringLiteral("/" TEST_APP_NAME ".log")));
     QString error;
-    QVERIFY(!Logging::install(tmp.path(), QStringLiteral("AppName"), &error));
+    QVERIFY(!Logging::install(tmp.path(), QStringLiteral(TEST_APP_NAME), &error));
     QVERIFY2(error.contains(QStringLiteral("link")), qPrintable(error));
     QCOMPARE(readTestFile(target), QByteArray("outside"));
 }
 
 void TestLogging::fileNames()
 {
-    QCOMPARE(Logging::currentFileName(QStringLiteral("AppName")), QStringLiteral("AppName.log"));
-    QCOMPARE(Logging::rotatedFileName(QStringLiteral("AppName"), 3), QStringLiteral("AppName.3.log"));
+    QCOMPARE(Logging::currentFileName(QStringLiteral(TEST_APP_NAME)), QStringLiteral(TEST_APP_NAME ".log"));
+    QCOMPARE(Logging::rotatedFileName(QStringLiteral(TEST_APP_NAME), 3), QStringLiteral(TEST_APP_NAME ".3.log"));
     QCOMPARE(Logging::kMaxFiles, 5);
     QCOMPARE(Logging::kMaxFileBytes, qint64(1024 * 1024));
 }

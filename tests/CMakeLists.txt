@@ -4,15 +4,19 @@ function(app_add_unit_test name)
     add_executable(${name} ${ARGN})
     target_link_libraries(${name} PRIVATE appcore Qt6::Test)
     target_include_directories(${name} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+    target_compile_definitions(${name} PRIVATE TEST_APP_NAME="${APP_NAME}")
     app_enable_warnings(${name})
     add_test(NAME ${name} COMMAND ${name})
 endfunction()
 
 # Helper programs started by tests; built like tests but not run by ctest.
+# Tests and helpers get the product identifier as TEST_APP_NAME (a string
+# literal), so names and paths in tests follow APP_NAME.
 function(app_add_test_helper name)
     add_executable(${name} ${ARGN})
     target_link_libraries(${name} PRIVATE appcore)
     target_include_directories(${name} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+    target_compile_definitions(${name} PRIVATE TEST_APP_NAME="${APP_NAME}")
     app_enable_warnings(${name})
 endfunction()
 
@@ -36,5 +40,7 @@ target_compile_definitions(tst_database PRIVATE DBCRASH_PATH="$<TARGET_FILE:dbcr
 add_dependencies(tst_database dbcrash)
 
 target_compile_definitions(tst_version PRIVATE
-    EXPECTED_APP_NAME="${APP_NAME}"
+    EXPECTED_DISPLAY_NAME="${APP_DISPLAY_NAME}"
+    EXPECTED_PACKAGE_NAME="${APP_PACKAGE_NAME}"
+    EXPECTED_BUNDLE_ID="${APP_BUNDLE_ID}"
     EXPECTED_VERSION="${PROJECT_VERSION}")
