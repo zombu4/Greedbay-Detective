@@ -181,7 +181,7 @@ jobs:
         run: |
           set -eu
           python -m aqt install-qt "${{ matrix.qt_os }}" desktop "$QT_VERSION" "${{ matrix.qt_arch }}" \
-            -m "$QT_WEBENGINE" qtpositioning qtwebchannel \
+            -m "$QT_WEBENGINE" qtpositioning qtwebchannel qttasktree \
             --base https://download.qt.io \
             --keep --archive-dest "$TOOLS_DIR/qt-archives" \
             -O "$TOOLS_DIR/Qt"
@@ -206,5 +206,7 @@ jobs:
       - name: Build (warnings are errors)
         run: cmake --build --preset "${{ matrix.preset }}-release"
 
+      # --verbose: the browser tests print what they observed (processes,
+      # files outside the work folder, the Linux sandbox) even when they pass.
       - name: Test
-        run: ctest --preset "${{ matrix.preset }}-release"
+        run: ctest --preset "${{ matrix.preset }}-release" --verbose
