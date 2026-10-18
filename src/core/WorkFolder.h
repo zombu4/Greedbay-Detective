@@ -10,16 +10,16 @@ namespace app {
 // its backups, logs, settings, the browser profile and temporary files.
 //
 // Layout (all paths relative to path()):
-//   .workfolder            marker holding a random ID; proves the app created the folder
-//   .lock                  single-instance lock while the app runs
-//   <appIdentifier>.sqlite       database
-//   backups/               database copies made before each schema upgrade
-//   logs/                  rotating log files
-//   settings.ini           settings in INI format
-//   webengine/storage/     browser profile storage (cookies, local storage)
-//   webengine/cache/       browser HTTP cache
-//   webengine/downloads/   browser download path
-//   tmp/                   temporary files of this process
+//   .workfolder              marker holding a random ID; proves the app created the folder
+//   .lock                    single-instance lock while the app runs
+//   <appIdentifier>.sqlite   database
+//   backups/                 database copies made before each schema upgrade
+//   logs/                    rotating log files
+//   settings.ini             settings in INI format
+//   webengine/storage/       browser profile storage (cookies, local storage)
+//   webengine/cache/         browser HTTP cache
+//   webengine/downloads/     browser download path
+//   tmp/                     temporary files of this process
 class WorkFolder {
 public:
     // The default location: <GenericDataLocation>/<appIdentifier>, which is

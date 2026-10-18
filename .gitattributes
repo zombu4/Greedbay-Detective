@@ -1,0 +1,3 @@
+# LF line endings in the working tree on every system, so shell scripts and
+# checksum lists stay valid on Windows checkouts too.
+* text=auto eol=lf

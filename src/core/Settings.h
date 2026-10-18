@@ -23,9 +23,9 @@ public:
     // key is absent, is not an integer, or is below 1.
     int soldHistoryDays() const;
 
-    // Returns false and stores nothing when days < 1. The upper bound is the
-    // longest period Product Research offers (DECISIONS Q20); it is not known
-    // until the page recon, so it is not enforced yet.
+    // Returns false and stores nothing when days < 1. No upper bound is
+    // enforced yet: the limit will be the longest period eBay's Product
+    // Research offers, which is still to be confirmed.
     bool setSoldHistoryDays(int days);
 
     // Writes pending changes to disk. True when QSettings reports no error.

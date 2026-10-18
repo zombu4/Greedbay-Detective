@@ -6,8 +6,8 @@
 namespace app {
 
 // Makes sure only one instance of the app uses a work folder at a time, through
-// a lock file (<work>/.lock). Uninstallers check the same lock and stop while
-// the app runs.
+// a lock file (<work>/.lock). Other programs can test the same lock to see
+// whether the app is running.
 class SingleInstance {
 public:
     explicit SingleInstance(const QString &lockPath);

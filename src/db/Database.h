@@ -9,8 +9,7 @@
 
 namespace app {
 
-// Opens the SQLite database and brings its schema to the latest version
-// (PLAN section 4.2).
+// Opens the SQLite database and brings its schema to the latest version.
 //
 // The schema version is PRAGMA user_version. Opening:
 //   - equal to the latest version: opened unchanged;

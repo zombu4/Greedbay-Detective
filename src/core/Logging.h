@@ -5,7 +5,7 @@
 
 namespace app {
 
-// Rotating text log in <work>/logs (PLAN section 3).
+// Rotating text log in the work folder's logs/ folder.
 //
 // The current file is <appIdentifier>.log; older ones are <appIdentifier>.1.log (newest)
 // to <appIdentifier>.4.log (oldest). Each line is
