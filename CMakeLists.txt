@@ -28,10 +28,11 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 include(cmake/warnings.cmake)
 
-find_package(Qt6 6.12 REQUIRED COMPONENTS Core Sql Test)
+find_package(Qt6 6.12 REQUIRED COMPONENTS Core Network Sql Test Widgets WebEngineCore WebEngineWidgets)
 qt_standard_project_setup()
 
 enable_testing()
 
 add_subdirectory(src)
+add_subdirectory(tools/devwindow)
 add_subdirectory(tests)
