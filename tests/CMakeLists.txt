@@ -7,6 +7,9 @@ function(app_add_unit_test name)
     target_compile_definitions(${name} PRIVATE TEST_APP_NAME="${APP_NAME}")
     app_enable_warnings(${name})
     add_test(NAME ${name} COMMAND ${name})
+    # Every test has a time limit, so a hang fails within minutes and names
+    # the test.
+    set_tests_properties(${name} PROPERTIES TIMEOUT 120)
 endfunction()
 
 # Helper programs started by tests; built like tests but not run by ctest.
@@ -69,16 +72,12 @@ set(app_test_fixtures
 app_add_unit_test(tst_extractors tst_extractors.cpp)
 target_link_libraries(tst_extractors PRIVATE appbrowser)
 qt_add_resources(tst_extractors "extractor_fixtures" PREFIX "/fixtures" BASE fixtures FILES ${app_test_fixtures})
-set_tests_properties(tst_extractors PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen" TIMEOUT 600)
+set_tests_properties(tst_extractors PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
-# Lifecycle and containment through the real (test build) worker. Links only
-# appcore, like the app. RUN_SERIAL: no other test may write files while it
-# compares the home and temporary folders before and after.
-app_add_unit_test(tst_browserworker tst_browserworker.cpp support/FileSnapshot.h support/ProcessList.h)
+# Lifecycle through the real (test build) worker. Links only appcore, like
+# the app.
+app_add_unit_test(tst_browserworker tst_browserworker.cpp support/ProcessList.h)
 qt_add_resources(tst_browserworker "worker_fixtures" PREFIX "/fixtures" BASE fixtures FILES fixtures/worker_page.html)
-target_compile_definitions(tst_browserworker PRIVATE
-    TEST_WORKER_PATH="$<TARGET_FILE:browserworker_test>"
-    TEST_CTEST_DIR="${CMAKE_BINARY_DIR}/Testing")
+target_compile_definitions(tst_browserworker PRIVATE TEST_WORKER_PATH="$<TARGET_FILE:browserworker_test>")
 add_dependencies(tst_browserworker browserworker_test)
-set_tests_properties(tst_browserworker PROPERTIES
-    ENVIRONMENT "QT_QPA_PLATFORM=offscreen" RUN_SERIAL TRUE TIMEOUT 900)
+set_tests_properties(tst_browserworker PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

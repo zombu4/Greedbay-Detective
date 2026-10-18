@@ -129,11 +129,15 @@ int main(int argc, char *argv[])
     // outside the work folder (seen on macOS in the per-user cache folder,
     // com.apple.metal/), and reading pages or showing the sign-in page does
     // not need it. Added to any flags already set in the environment.
+    // The GPU shader disk cache is switched off too (Chromium switch
+    // --disable-gpu-shader-disk-cache, "Disables the GPU shader on disk
+    // cache"), so no shader cache is written even if a GPU path runs.
     QByteArray chromiumFlags = qgetenv("QTWEBENGINE_CHROMIUM_FLAGS");
-    if (!chromiumFlags.split(' ').contains("--disable-gpu")) {
-        chromiumFlags += chromiumFlags.isEmpty() ? "--disable-gpu" : " --disable-gpu";
-        qputenv("QTWEBENGINE_CHROMIUM_FLAGS", chromiumFlags);
+    for (const QByteArray &flag : {QByteArray("--disable-gpu"), QByteArray("--disable-gpu-shader-disk-cache")}) {
+        if (!chromiumFlags.split(' ').contains(flag))
+            chromiumFlags += chromiumFlags.isEmpty() ? flag : ' ' + flag;
     }
+    qputenv("QTWEBENGINE_CHROMIUM_FLAGS", chromiumFlags);
 
     // Required by Qt WebEngine before the application object exists.
     QCoreApplication::setAttribute(Qt::AA_ShareOpenGLContexts);

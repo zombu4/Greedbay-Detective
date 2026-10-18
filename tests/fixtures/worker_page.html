@@ -1,11 +1,11 @@
 <!DOCTYPE html>
 <!-- Synthetic search page served by tst_browserworker's local server. It also
-     writes local storage and a cookie, so that the containment test sees the
-     browser store data. Invented values only. -->
+     writes local storage and a cookie, as real pages do. Invented values
+     only. -->
 <html lang="en">
 <head><meta charset="utf-8"><title>test meter for sale | eBay</title>
 <script>
-localStorage.setItem('containment-test', 'stored');
+localStorage.setItem('test-key', 'stored');
 document.cookie = 'script-cookie=1; max-age=3600; path=/';
 </script>
 </head>

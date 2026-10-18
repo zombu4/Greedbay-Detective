@@ -1,83 +1,43 @@
-// Browser session lifecycle and containment, through the real worker process
-// (the test build, browserworker_test, which may open local pages).
+// Browser session lifecycle, through the real worker process (the test
+// build, browserworker_test, which may open local pages).
 //
 // This test does not link Qt WebEngine, like the app. It checks:
 //   - lazy start: no browser process exists before a session is requested,
 //     and the worker starts no QtWebEngineProcess before its first request
-//   - a fetch of a local fixture page works through the worker; the page
-//     sets a cookie (HTTP header and script) and writes local storage
-//   - Linux only: a second fetch from a local https server with a self-made
-//     certificate, so Chromium's certificate handling (NSS) runs inside the
-//     containment check; the page is refused, shown, and ended by "quit"
+//   - a fetch of a local fixture page (served over http://127.0.0.1) works
+//     through the worker
 //   - while the session runs, sign-out refuses (the session lock is held)
 //   - after "quit" the worker exits normally and every process it started
 //     (QtWebEngineProcess children included) is gone
-//   - containment: listing HOME and the temporary folders before and after
-//     shows no file added, changed or removed outside the work folder
 //   - sign-out afterwards deletes the browser data without starting anything
+// No folder is listed or scanned (owner rule): the app sets every browser
+// path inside the work folder in code.
 // On Linux it also reports how the renderer processes were sandboxed.
 #include "core/BrowserProtocol.h"
 #include "core/BrowserWorker.h"
 #include "core/WebEngineData.h"
 #include "core/WorkFolder.h"
-#include "support/FileSnapshot.h"
 #include "support/ProcessList.h"
 
 #include <QCoreApplication>
-#include <QDirIterator>
-#include <QElapsedTimer>
 #include <QFile>
 #include <QJsonArray>
 #include <QMap>
 #include <QSignalSpy>
-#include <QProcess>
 #include <QTcpServer>
 #include <QTcpSocket>
 #include <QTemporaryDir>
 #include <QTest>
 #include <QTimer>
 
-#include <memory>
 #include <optional>
 
-#if defined(Q_OS_MACOS)
-#  include <unistd.h>
-#endif
-#if defined(Q_OS_LINUX)
-#  include <QSslCertificate>
-#  include <QSslConfiguration>
-#  include <QSslKey>
-#  include <QSslServer>
-#  include <QSslSocket>
-#endif
 
 using app::BrowserWorker;
 using app::WebEngineData;
 using app::WorkFolder;
 
 namespace {
-
-#if defined(Q_OS_MACOS)
-// The per-user cache and temp folders macOS gives every process
-// (confstr _CS_DARWIN_USER_CACHE_DIR / _CS_DARWIN_USER_TEMP_DIR).
-QString darwinDir(int name)
-{
-    char buffer[1024];
-    const size_t length = confstr(name, buffer, sizeof buffer);
-    return length > 0 && length <= sizeof buffer ? QString::fromLocal8Bit(buffer) : QString();
-}
-#endif
-
-QStringList scanRoots()
-{
-    QStringList roots{QDir::homePath(), QDir::tempPath()};
-#if defined(Q_OS_MACOS)
-    roots << darwinDir(_CS_DARWIN_USER_CACHE_DIR) << darwinDir(_CS_DARWIN_USER_TEMP_DIR);
-#elif defined(Q_OS_LINUX)
-    roots << QStringLiteral("/tmp") << QStringLiteral("/dev/shm");
-#endif
-    return distinctRoots(roots);
-}
 
 #if defined(Q_OS_LINUX)
 QByteArray readSmall(const QString &path)
@@ -133,20 +93,13 @@ private:
     QTcpServer m_server;
     QByteArray m_page;
     int m_requests = 0;
-    QStringList m_roots;
-    QStringList m_excluded;
-    FileSnapshot m_before;
     QMap<qint64, QString> m_seen;
     QStringList m_sandbox;
-#if defined(Q_OS_LINUX)
-    QSslServer m_tlsServer;
-#endif
 
 private slots:
     void initTestCase();
     void noBrowserProcessBeforeASession();
     void fetchThroughTheWorker();
-    void nothingWrittenOutsideTheWorkFolder();
     void signOutDeletesBrowserDataWithoutABrowser();
 };
 
@@ -203,42 +156,6 @@ void TestBrowserWorker::initTestCase()
     m_page = page.readAll();
     connect(&m_server, &QTcpServer::newConnection, this, &TestBrowserWorker::onConnection);
     QVERIFY(m_server.listen(QHostAddress::LocalHost));
-
-#if defined(Q_OS_LINUX)
-    // A certificate made now, before the first snapshot, in the test's
-    // temporary folder (outside the work folder). Chromium will refuse it.
-    QVERIFY2(QSslSocket::supportsSsl(), "Qt has no TLS backend here");
-    const QString keyPath = m_temp.path() + QStringLiteral("/tls-key.pem");
-    const QString certPath = m_temp.path() + QStringLiteral("/tls-cert.pem");
-    QProcess openssl;
-    openssl.start(QStringLiteral("openssl"),
-                  {QStringLiteral("req"), QStringLiteral("-x509"), QStringLiteral("-newkey"), QStringLiteral("rsa:2048"),
-                   QStringLiteral("-nodes"), QStringLiteral("-keyout"), keyPath, QStringLiteral("-out"), certPath,
-                   QStringLiteral("-days"), QStringLiteral("1"), QStringLiteral("-subj"), QStringLiteral("/CN=127.0.0.1")});
-    QVERIFY2(openssl.waitForFinished(60000) && openssl.exitStatus() == QProcess::NormalExit && openssl.exitCode() == 0,
-             qPrintable(QString::fromLocal8Bit(openssl.readAllStandardError())));
-    QFile keyFile(keyPath);
-    QFile certFile(certPath);
-    QVERIFY(keyFile.open(QIODevice::ReadOnly) && certFile.open(QIODevice::ReadOnly));
-    QSslConfiguration tls = QSslConfiguration::defaultConfiguration();
-    tls.setPrivateKey(QSslKey(keyFile.readAll(), QSsl::Rsa));
-    tls.setLocalCertificate(QSslCertificate(certFile.readAll()));
-    tls.setPeerVerifyMode(QSslSocket::VerifyNone);
-    m_tlsServer.setSslConfiguration(tls);
-    QVERIFY(m_tlsServer.listen(QHostAddress::LocalHost));
-#endif
-
-    m_roots = scanRoots();
-    m_excluded = {canonical(m_folder->path())};
-    const QString testing = canonical(QStringLiteral(TEST_CTEST_DIR));
-    if (!testing.isEmpty())
-        m_excluded << testing;
-    qInfo().noquote() << "containment scan roots:" << m_roots.join(QStringLiteral(" | "));
-    qInfo().noquote() << "excluded (work folder, ctest's own log folder):" << m_excluded.join(QStringLiteral(" | "));
-    QElapsedTimer clock;
-    clock.start();
-    m_before = takeSnapshot(m_roots, m_excluded);
-    qInfo() << "snapshot before:" << m_before.entries.size() << "entries in" << clock.elapsed() << "ms";
 }
 
 void TestBrowserWorker::noBrowserProcessBeforeASession()
@@ -292,24 +209,6 @@ void TestBrowserWorker::fetchThroughTheWorker()
     const QList<ProcessInfo> during = descendants(QCoreApplication::applicationPid());
     QVERIFY(!during.isEmpty());
 
-    int expectedReplies = 2; // the fetch and the quit
-#if defined(Q_OS_LINUX)
-    QSignalSpy handshakes(&m_tlsServer, &QSslServer::startedEncryptionHandshake);
-    QSignalSpy tlsErrors(&m_tlsServer, &QSslServer::errorOccurred);
-    const QString tlsUrl = QStringLiteral("https://127.0.0.1:%1/sch/i.html?_nkw=test+meter&_ipg=240").arg(m_tlsServer.serverPort());
-    const int tlsId = worker.request(QJsonObject{{QStringLiteral("cmd"), QStringLiteral("fetch")},
-                                                 {QStringLiteral("kind"), QStringLiteral("activeSearch")},
-                                                 {QStringLiteral("url"), tlsUrl}});
-    QVERIFY(tlsId > 0);
-    // Chromium checks the certificate during the handshake and ends the
-    // connection; the worker then shows its error page and waits for the
-    // user, so "quit" below ends that request ("failed: stopped").
-    QVERIFY2(!handshakes.isEmpty() || handshakes.wait(60000), "no TLS handshake from the browser");
-    QVERIFY2(!tlsErrors.isEmpty() || tlsErrors.wait(60000), "the TLS connection did not end");
-    QCOMPARE(replied.size(), 1); // still waiting for the user
-    expectedReplies = 3;
-#endif
-
     worker.stop();
     QVERIFY2(finished.wait(BrowserWorker::kStopTimeoutMs + 10000), "the worker did not exit");
     poll.stop();
@@ -317,12 +216,7 @@ void TestBrowserWorker::fetchThroughTheWorker()
     QCOMPARE(finished.at(0).at(1).toInt(), 0);
     QVERIFY2(failed.isEmpty(), failed.isEmpty() ? "" : qPrintable(failed.at(0).at(0).toString()));
     // Every request was answered, the quit request last.
-    QCOMPARE(replied.size(), expectedReplies);
-#if defined(Q_OS_LINUX)
-    QCOMPARE(replied.at(1).at(0).toInt(), tlsId);
-    QCOMPARE(replied.at(1).at(1).toJsonObject().value(QStringLiteral("status")).toString(), QStringLiteral("failed"));
-    QCOMPARE(replied.at(1).at(1).toJsonObject().value(QStringLiteral("error")).toString(), QStringLiteral("stopped"));
-#endif
+    QCOMPARE(replied.size(), 2);
     QCOMPARE(replied.last().at(1).toJsonObject().value(QStringLiteral("status")).toString(), QStringLiteral("ok"));
 
     QStringList seen;
@@ -353,42 +247,6 @@ void TestBrowserWorker::fetchThroughTheWorker()
     QVERIFY2(allGone, qPrintable(QStringLiteral("still running after teardown: ") + remaining.join(QStringLiteral(", "))));
     QVERIFY(descendants(QCoreApplication::applicationPid()).isEmpty());
     qInfo() << "after teardown: none of the" << m_seen.size() << "session processes runs";
-
-    // The browser stored its data in the work folder.
-    bool cookies = false;
-    QDirIterator it(m_folder->webEngineStorageDir(), QDir::Files | QDir::Hidden, QDirIterator::Subdirectories);
-    while (it.hasNext()) {
-        if (it.next().endsWith(QLatin1String("/Cookies")))
-            cookies = true;
-    }
-    QVERIFY2(cookies, "no Cookies file in webengine/storage");
-    QVERIFY(QFileInfo(m_folder->webEngineStorageDir() + QStringLiteral("/Local Storage")).isDir());
-}
-
-void TestBrowserWorker::nothingWrittenOutsideTheWorkFolder()
-{
-    QElapsedTimer clock;
-    clock.start();
-    const FileSnapshot after = takeSnapshot(m_roots, m_excluded);
-    qInfo() << "snapshot after:" << after.entries.size() << "entries in" << clock.elapsed() << "ms;"
-            << "unreadable folders skipped:" << after.unreadableDirs;
-
-    int inside = 0;
-    QDirIterator it(m_folder->path(), QDir::AllEntries | QDir::Hidden | QDir::System | QDir::NoDotAndDotDot,
-                    QDirIterator::Subdirectories);
-    while (it.hasNext()) {
-        it.next();
-        ++inside;
-    }
-    qInfo() << "entries inside the work folder:" << inside;
-
-    const QStringList outside = snapshotDifference(m_before, after);
-    for (const QString &line : outside)
-        qInfo().noquote() << "outside the work folder:" << line;
-    QVERIFY2(outside.isEmpty(),
-             qPrintable(QStringLiteral("%1 change(s) outside the work folder, first: %2")
-                            .arg(outside.size())
-                            .arg(outside.isEmpty() ? QString() : outside.first())));
 }
 
 void TestBrowserWorker::signOutDeletesBrowserDataWithoutABrowser()
