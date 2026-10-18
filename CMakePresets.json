@@ -48,11 +48,15 @@
     },
     {
       "name": "windows",
-      "displayName": "Windows x64, Visual Studio 2022",
+      "displayName": "Windows x64, Visual Studio 2026 with the MSVC v143 (VS 2022) toolset",
       "inherits": "base",
-      "generator": "Visual Studio 17 2022",
+      "generator": "Visual Studio 18 2026",
       "architecture": {
         "value": "x64",
+        "strategy": "set"
+      },
+      "toolset": {
+        "value": "v143",
         "strategy": "set"
       },
       "condition": {

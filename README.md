@@ -38,7 +38,9 @@ You need:
   with Qt WebEngine 6.140.0, Qt Positioning and Qt WebChannel; the exact pinned
   install is in [.github/workflows/ci.yml](.github/workflows/ci.yml).
 - macOS and Linux: Ninja (CI uses 1.13.2) and a C++20 compiler (macOS: Xcode)
-- Windows: Visual Studio 2022 with the C++ workload
+- Windows: Visual Studio 2026 with the C++ workload and the MSVC v143 (VS 2022)
+  build tools; Qt 6.12.0 for Windows is built with MSVC 2022, and the `windows`
+  preset compiles with that toolset
 
 Point `QT_ROOT_DIR` at the Qt folder for your system (it contains `bin` and `lib`),
 then configure, build and test with the presets. On macOS (the first line assumes
