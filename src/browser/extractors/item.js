@@ -97,44 +97,62 @@ function shippingOptions(offer) {
     return options;
 }
 
-// Element texts that match `pattern` as a whole, e.g. "12 watchers": the
-// first captured group of the first matching element, or null.
-function wholeTextMatch(pattern) {
-    for (const element of document.querySelectorAll('span, div, p, li, a, strong, b')) {
-        const match = pattern.exec(norm(element.textContent));
-        if (match)
-            return match[1];
+// The number in the one element whose whole text matches `pattern` (for
+// example "12 watchers"). The search starts at text nodes that contain
+// `keyword` and climbs at most three parent elements to the first one whose
+// whole text matches (the number and the word can be in separate elements).
+// When no element or more than one element matches (other listings on the
+// page can show such counters), the value is null.
+function uniqueWholeTextMatch(pattern, keyword) {
+    const matches = new Set();
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+        if (node.data.indexOf(keyword) < 0)
+            continue;
+        let element = node.parentElement;
+        for (let depth = 0; element && depth < 3; ++depth, element = element.parentElement) {
+            if (pattern.test(norm(element.textContent))) {
+                matches.add(element);
+                break;
+            }
+        }
     }
-    return null;
+    if (matches.size !== 1)
+        return null;
+    return pattern.exec(norm(matches.values().next().value.textContent))[1];
 }
 
 // Shipping cost and seller location from the shipping block, without
-// returning its text (it contains the viewer's ZIP code).
+// returning its text (it contains the viewer's ZIP code). Only the block's
+// rendered lines are used (innerText); when it has none, both are null.
+//   cost: the one line that starts with "US $<amount>" or "Free"; with no
+//         such line or more than one, null
+//   location: the text after "Located in:" on the same line, or the next
+//         line when the label stands alone; null when it contains any digit
+//         (a ZIP code or street number never passes) or is over 100 characters
 function shippingFromBlock() {
     const block = document.querySelector('.ux-labels-values--shipping');
     if (!block)
         return {costCents: null, location: null};
-    const lines = (block.innerText || block.textContent || '').split('\n').map(norm).filter(function (line) {
+    const lines = (block.innerText || '').split('\n').map(norm).filter(function (line) {
         return line.length > 0;
     });
-    let costCents = null;
+    const costs = [];
     let location = null;
     for (let i = 0; i < lines.length; ++i) {
         const line = lines[i];
-        if (costCents === null) {
-            const money = /US \$(\d{1,3}(?:,\d{3})+|\d+)\.(\d{2})/.exec(line);
-            if (money)
-                costCents = parseInt(money[1].replace(/,/g, ''), 10) * 100 + parseInt(money[2], 10);
-            else if (/^Free\b/.test(line))
-                costCents = 0;
-        }
-        if (location === null) {
-            const match = /^Located in:\s*(.*)$/.exec(line);
-            if (match)
-                location = match[1].length > 0 ? match[1] : (i + 1 < lines.length ? lines[i + 1] : null);
+        const money = /^US \$(\d{1,3}(?:,\d{3})+|\d+)\.(\d{2})(?: |$)/.exec(line);
+        if (money)
+            costs.push(parseInt(money[1].replace(/,/g, ''), 10) * 100 + parseInt(money[2], 10));
+        else if (/^Free(?: |$)/.test(line))
+            costs.push(0);
+        const label = /^Located in:\s*(.*)$/.exec(line);
+        if (label && location === null) {
+            const value = label[1].length > 0 ? label[1] : (i + 1 < lines.length ? lines[i + 1] : '');
+            location = value.length > 0 && value.length <= 100 && !/\d/.test(value) ? value : null;
         }
     }
-    return {costCents: costCents, location: location};
+    return {costCents: costs.length === 1 ? costs[0] : null, location: location};
 }
 
 function sellerFromCard() {
@@ -200,8 +218,8 @@ function extract(input) {
         returnsText: textOf(document.querySelector('.ux-labels-values--returns')),
         seller: sellerFromCard(),
         specifics: itemSpecifics(),
-        watchers: intOf(wholeTextMatch(/^(\d{1,3}(?:,\d{3})+|\d+) watchers?$/)),
-        soldCount: intOf(wholeTextMatch(/^(\d{1,3}(?:,\d{3})+|\d+) sold$/)),
+        watchers: intOf(uniqueWholeTextMatch(/^(\d{1,3}(?:,\d{3})+|\d+) watchers?$/, 'watcher')),
+        soldCount: intOf(uniqueWholeTextMatch(/^(\d{1,3}(?:,\d{3})+|\d+) sold$/, 'sold')),
         offersInJsonLd: offers.length,
     };
 
@@ -236,9 +254,11 @@ function extract(input) {
         record.condition = jsonCondition;
         record.conditionSource = 'json-ld';
     } else {
-        // "Used" followed by eBay's long explanation: the first word.
-        const text = textOf(document.querySelector('.x-item-condition-text'));
-        const first = text ? text.split(' ')[0].replace(/:$/, '') : '';
+        // The condition ("Used", "New other (see details)") followed by
+        // eBay's explanation: the text of the first element inside, without
+        // a trailing colon. Without an element inside, null.
+        const box = document.querySelector('.x-item-condition-text');
+        const first = box && box.firstElementChild ? norm(box.firstElementChild.textContent).replace(/:$/, '') : '';
         if (first.length > 0) {
             record.condition = first;
             record.conditionSource = 'dom';

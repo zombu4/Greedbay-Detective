@@ -9,6 +9,8 @@
 //   totalIsLowerBound   true when the heading shows "<n>+ results"
 //   page, perPage       from the URL (_pgn, default 1; _ipg, null when absent)
 //   hasMorePages        page * perPage < totalResults; null when either is unknown.
+//                       perPage is the requested _ipg, so this assumes eBay
+//                       shows as many results per page as requested.
 //                       The extractor never fetches further pages itself.
 //   skippedDummyCards   cards skipped because they are eBay's "Shop on eBay"
 //                       placeholder (item number 123456)
@@ -35,16 +37,25 @@ function isDummyCard(card) {
     return link !== null && itemIdFromHref(link.getAttribute('href')) === DUMMY_ITEM_ID;
 }
 
-// Title without eBay's "New Listing" prefix and the screen-reader suffix
-// "Opens in a new window or tab".
-function cleanTitle(text) {
-    if (text === null)
+// The card title without eBay's "New Listing" marker and the screen-reader
+// text "Opens in a new window or tab". Both are removed only when they are
+// elements of their own inside the title; a title that merely starts with
+// such words (for example "New Listings Display Rack") keeps them.
+function cardTitle(card) {
+    const element = card.querySelector('.s-card__title');
+    if (!element)
         return null;
-    const cleaned = text.replace(/^new listing\s*/i, '').replace(/\s*Opens in a new window or tab$/i, '');
-    return cleaned.length > 0 ? cleaned : null;
+    const copy = element.cloneNode(true);
+    for (const child of Array.prototype.slice.call(copy.querySelectorAll('*'))) {
+        const text = norm(child.textContent);
+        if (/^new listing$/i.test(text) || /^opens in a new window or tab$/i.test(text))
+            child.remove();
+    }
+    const text = norm(copy.textContent);
+    return text.length > 0 ? text : null;
 }
 
-// "$300.00" -> {minCents: 30000, maxCents: 30000}; "$10.00 to $20.00" ->
+// "$274.00" -> {minCents: 27400, maxCents: 27400}; "$10.00 to $20.00" ->
 // {minCents: 1000, maxCents: 2000} (listings with variations); else null.
 function cardPrice(text) {
     if (text === null)
@@ -103,7 +114,7 @@ function readCard(card, sold, counters) {
     const priceText = textOf(card.querySelector('.s-card__price'));
     const record = {
         itemId: cardItemId(card),
-        title: cleanTitle(textOf(card.querySelector('.s-card__title'))),
+        title: cardTitle(card),
         condition: textOf(card.querySelector('.s-card__subtitle')),
         price: cardPrice(priceText),
         priceText: priceText,

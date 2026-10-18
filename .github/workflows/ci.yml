@@ -200,6 +200,18 @@ jobs:
             echo "$qt_root/bin" >> "$GITHUB_PATH"
           fi
 
+      # Qt's requirement for building graphical programs on Ubuntu: "sudo
+      # apt-get install build-essential libgl1-mesa-dev"
+      # (https://doc.qt.io/qt-6/linux.html). The package comes from the Ubuntu
+      # archive, checked by apt's signatures; its installed version is printed.
+      - name: Install the OpenGL development files (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          set -eu
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libgl1-mesa-dev
+          dpkg-query -W libgl1-mesa-dev
+
       - name: Configure
         run: cmake --preset "${{ matrix.preset }}"
 
@@ -208,5 +220,14 @@ jobs:
 
       # --verbose: the browser tests print what they observed (processes,
       # files outside the work folder, the Linux sandbox) even when they pass.
+      # QT_FORCE_STDERR_LOGGING: on Windows, Qt sends test results and log
+      # messages to the debugger (OutputDebugString) unless stderr has a
+      # console, which it has not under ctest (Qt 6.12.0 qplaintestlogger.cpp
+      # QPlainTestLogger::outputMessage, qlogging.cpp shouldLogToStderr).
+      # A step time limit, so that a test that hangs fails the step (and its
+      # log is kept) instead of holding the job until its own limit.
       - name: Test
+        timeout-minutes: 40
+        env:
+          QT_FORCE_STDERR_LOGGING: "1"
         run: ctest --preset "${{ matrix.preset }}-release" --verbose

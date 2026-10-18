@@ -20,8 +20,9 @@ namespace app {
 // session runs, no browser process and no browser memory exist.
 //
 // Usage: start(); wait for ready(); request() one command at a time, each
-// answered by replied(); stop() ends the session. finished() is emitted once
-// the worker process has exited, however it ended.
+// answered by exactly one replied() (a request still open when the worker
+// ends is answered with status "failed"); stop() ends the session. finished()
+// is emitted once the worker process has exited, however it ended.
 //
 // The worker connects back over a local socket whose name is random and, on
 // macOS and Linux, lives in the work folder's tmp/ folder (owner-only). The
@@ -47,6 +48,9 @@ public:
     static constexpr int kStopTimeoutMs = 30000;
     // How long start() waits for the worker to connect and report ready.
     static constexpr int kStartTimeoutMs = 60000;
+    // The longest socket file path on macOS and Linux: sockaddr_un holds 104
+    // bytes on macOS (108 on Linux), including the final zero byte.
+    static constexpr int kMaxSocketPathBytes = 103;
 
     // Starts the worker process. Returns false and sets *error when the
     // local socket cannot be opened or a worker is already running.
@@ -90,6 +94,7 @@ private:
     WorkFolder m_folder;
     QString m_program;
     QString m_token;
+    QString m_lastError;
     QProcess *m_process = nullptr;
     QLocalServer *m_server = nullptr;
     QLocalSocket *m_socket = nullptr;

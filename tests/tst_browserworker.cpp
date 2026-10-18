@@ -2,9 +2,13 @@
 // (the test build, browserworker_test, which may open local pages).
 //
 // This test does not link Qt WebEngine, like the app. It checks:
-//   - lazy start: no browser process exists before a session is requested
+//   - lazy start: no browser process exists before a session is requested,
+//     and the worker starts no QtWebEngineProcess before its first request
 //   - a fetch of a local fixture page works through the worker; the page
 //     sets a cookie (HTTP header and script) and writes local storage
+//   - Linux only: a second fetch from a local https server with a self-made
+//     certificate, so Chromium's certificate handling (NSS) runs inside the
+//     containment check; the page is refused, shown, and ended by "quit"
 //   - while the session runs, sign-out refuses (the session lock is held)
 //   - after "quit" the worker exits normally and every process it started
 //     (QtWebEngineProcess children included) is gone
@@ -26,6 +30,7 @@
 #include <QJsonArray>
 #include <QMap>
 #include <QSignalSpy>
+#include <QProcess>
 #include <QTcpServer>
 #include <QTcpSocket>
 #include <QTemporaryDir>
@@ -37,6 +42,13 @@
 
 #if defined(Q_OS_MACOS)
 #  include <unistd.h>
+#endif
+#if defined(Q_OS_LINUX)
+#  include <QSslCertificate>
+#  include <QSslConfiguration>
+#  include <QSslKey>
+#  include <QSslServer>
+#  include <QSslSocket>
 #endif
 
 using app::BrowserWorker;
@@ -126,6 +138,9 @@ private:
     FileSnapshot m_before;
     QMap<qint64, QString> m_seen;
     QStringList m_sandbox;
+#if defined(Q_OS_LINUX)
+    QSslServer m_tlsServer;
+#endif
 
 private slots:
     void initTestCase();
@@ -189,6 +204,30 @@ void TestBrowserWorker::initTestCase()
     connect(&m_server, &QTcpServer::newConnection, this, &TestBrowserWorker::onConnection);
     QVERIFY(m_server.listen(QHostAddress::LocalHost));
 
+#if defined(Q_OS_LINUX)
+    // A certificate made now, before the first snapshot, in the test's
+    // temporary folder (outside the work folder). Chromium will refuse it.
+    QVERIFY2(QSslSocket::supportsSsl(), "Qt has no TLS backend here");
+    const QString keyPath = m_temp.path() + QStringLiteral("/tls-key.pem");
+    const QString certPath = m_temp.path() + QStringLiteral("/tls-cert.pem");
+    QProcess openssl;
+    openssl.start(QStringLiteral("openssl"),
+                  {QStringLiteral("req"), QStringLiteral("-x509"), QStringLiteral("-newkey"), QStringLiteral("rsa:2048"),
+                   QStringLiteral("-nodes"), QStringLiteral("-keyout"), keyPath, QStringLiteral("-out"), certPath,
+                   QStringLiteral("-days"), QStringLiteral("1"), QStringLiteral("-subj"), QStringLiteral("/CN=127.0.0.1")});
+    QVERIFY2(openssl.waitForFinished(60000) && openssl.exitStatus() == QProcess::NormalExit && openssl.exitCode() == 0,
+             qPrintable(QString::fromLocal8Bit(openssl.readAllStandardError())));
+    QFile keyFile(keyPath);
+    QFile certFile(certPath);
+    QVERIFY(keyFile.open(QIODevice::ReadOnly) && certFile.open(QIODevice::ReadOnly));
+    QSslConfiguration tls = QSslConfiguration::defaultConfiguration();
+    tls.setPrivateKey(QSslKey(keyFile.readAll(), QSsl::Rsa));
+    tls.setLocalCertificate(QSslCertificate(certFile.readAll()));
+    tls.setPeerVerifyMode(QSslSocket::VerifyNone);
+    m_tlsServer.setSslConfiguration(tls);
+    QVERIFY(m_tlsServer.listen(QHostAddress::LocalHost));
+#endif
+
     m_roots = scanRoots();
     m_excluded = {canonical(m_folder->path())};
     const QString testing = canonical(QStringLiteral(TEST_CTEST_DIR));
@@ -221,6 +260,11 @@ void TestBrowserWorker::fetchThroughTheWorker()
     QString error;
     QVERIFY2(worker.start(&error), qPrintable(error));
     QVERIFY2(ready.wait(BrowserWorker::kStartTimeoutMs), "the worker did not report ready");
+    // The worker runs, but no browser profile exists before the first
+    // request: no QtWebEngineProcess yet.
+    for (const ProcessInfo &process : descendants(QCoreApplication::applicationPid()))
+        QVERIFY2(!process.name.startsWith(QLatin1String("QtWebEngineProc")),
+                 "a QtWebEngineProcess runs before the first request");
 
     const QString url = QStringLiteral("http://127.0.0.1:%1/sch/i.html?_nkw=test+meter&_ipg=240").arg(m_server.serverPort());
     const int id = worker.request(QJsonObject{{QStringLiteral("cmd"), QStringLiteral("fetch")},
@@ -248,15 +292,38 @@ void TestBrowserWorker::fetchThroughTheWorker()
     const QList<ProcessInfo> during = descendants(QCoreApplication::applicationPid());
     QVERIFY(!during.isEmpty());
 
+    int expectedReplies = 2; // the fetch and the quit
+#if defined(Q_OS_LINUX)
+    QSignalSpy handshakes(&m_tlsServer, &QSslServer::startedEncryptionHandshake);
+    QSignalSpy tlsErrors(&m_tlsServer, &QSslServer::errorOccurred);
+    const QString tlsUrl = QStringLiteral("https://127.0.0.1:%1/sch/i.html?_nkw=test+meter&_ipg=240").arg(m_tlsServer.serverPort());
+    const int tlsId = worker.request(QJsonObject{{QStringLiteral("cmd"), QStringLiteral("fetch")},
+                                                 {QStringLiteral("kind"), QStringLiteral("activeSearch")},
+                                                 {QStringLiteral("url"), tlsUrl}});
+    QVERIFY(tlsId > 0);
+    // Chromium checks the certificate during the handshake and ends the
+    // connection; the worker then shows its error page and waits for the
+    // user, so "quit" below ends that request ("failed: stopped").
+    QVERIFY2(!handshakes.isEmpty() || handshakes.wait(60000), "no TLS handshake from the browser");
+    QVERIFY2(!tlsErrors.isEmpty() || tlsErrors.wait(60000), "the TLS connection did not end");
+    QCOMPARE(replied.size(), 1); // still waiting for the user
+    expectedReplies = 3;
+#endif
+
     worker.stop();
     QVERIFY2(finished.wait(BrowserWorker::kStopTimeoutMs + 10000), "the worker did not exit");
     poll.stop();
     QCOMPARE(finished.at(0).at(0).toBool(), true);
     QCOMPARE(finished.at(0).at(1).toInt(), 0);
     QVERIFY2(failed.isEmpty(), failed.isEmpty() ? "" : qPrintable(failed.at(0).at(0).toString()));
-    // The quit request was answered.
-    QCOMPARE(replied.size(), 2);
-    QCOMPARE(replied.at(1).at(1).toJsonObject().value(QStringLiteral("status")).toString(), QStringLiteral("ok"));
+    // Every request was answered, the quit request last.
+    QCOMPARE(replied.size(), expectedReplies);
+#if defined(Q_OS_LINUX)
+    QCOMPARE(replied.at(1).at(0).toInt(), tlsId);
+    QCOMPARE(replied.at(1).at(1).toJsonObject().value(QStringLiteral("status")).toString(), QStringLiteral("failed"));
+    QCOMPARE(replied.at(1).at(1).toJsonObject().value(QStringLiteral("error")).toString(), QStringLiteral("stopped"));
+#endif
+    QCOMPARE(replied.last().at(1).toJsonObject().value(QStringLiteral("status")).toString(), QStringLiteral("ok"));
 
     QStringList seen;
     bool sawWebEngine = false;

@@ -57,21 +57,18 @@ bool WebEngineData::clear(const WorkFolder &folder, QString *error)
         return false;
     };
 
-    const QString dirs[] = {folder.webEngineStorageDir(), folder.webEngineCacheDir(),
-                            folder.webEngineDownloadsDir()};
-    for (const QString &dir : dirs) {
-        if (isLink(dir))
-            return fail(QStringLiteral("%1 is a link; nothing was deleted").arg(QDir::toNativeSeparators(dir)));
-        const QFileInfo info(dir);
-        if (info.exists() && !info.isDir())
-            return fail(QStringLiteral("%1 is not a folder; nothing was deleted").arg(QDir::toNativeSeparators(dir)));
-    }
+    const QString root = folder.path() + QStringLiteral("/webengine");
+    if (isLink(root))
+        return fail(QStringLiteral("%1 is a link; nothing was deleted").arg(QDir::toNativeSeparators(root)));
+    if (!QFileInfo(root).isDir())
+        return fail(QStringLiteral("%1 is not a folder; nothing was deleted").arg(QDir::toNativeSeparators(root)));
 
-    QLockFile lock(sessionLockPath(folder));
-    // Same settings as the worker's lock (see sessionLockPath users): no age
-    // limit, so a long session is never taken for stale; a lock left by a
-    // crashed worker is still taken over, because QLockFile treats a lock as
-    // stale when the process that took it no longer runs.
+    const QString lockPath = sessionLockPath(folder);
+    QLockFile lock(lockPath);
+    // Same settings as the worker's lock: no age limit, so a long session is
+    // never taken for stale; a lock left by a crashed worker is still taken
+    // over, because QLockFile treats a lock as stale when the process that
+    // took it no longer runs.
     lock.setStaleLockTime(0);
     if (!lock.tryLock(0)) {
         if (lock.error() == QLockFile::LockFailedError)
@@ -80,9 +77,28 @@ bool WebEngineData::clear(const WorkFolder &folder, QString *error)
     }
 
     QString firstError;
+    const QFileInfoList entries =
+        QDir(root).entryInfoList(QDir::AllEntries | QDir::Hidden | QDir::System | QDir::NoDotAndDotDot);
+    for (const QFileInfo &entry : entries) {
+        const QString path = entry.filePath();
+        if (QFileInfo(path).fileName() == QFileInfo(lockPath).fileName())
+            continue;
+        bool ok = true;
+        if (isLink(path)) {
+            ok = removeLink(path);
+        } else if (entry.isDir()) {
+            removeContents(path, &firstError);
+            ok = QDir().rmdir(path);
+        } else {
+            ok = QFile::remove(path);
+        }
+        if (!ok && firstError.isEmpty())
+            firstError = QStringLiteral("cannot delete %1").arg(QDir::toNativeSeparators(path));
+    }
+    const QString dirs[] = {folder.webEngineStorageDir(), folder.webEngineCacheDir(), folder.webEngineDownloadsDir()};
     for (const QString &dir : dirs) {
-        if (QFileInfo(dir).isDir())
-            removeContents(dir, &firstError);
+        if (!QFileInfo(dir).isDir() && !QDir().mkpath(dir) && firstError.isEmpty())
+            firstError = QStringLiteral("cannot create %1").arg(QDir::toNativeSeparators(dir));
     }
     lock.unlock();
     if (!firstError.isEmpty())

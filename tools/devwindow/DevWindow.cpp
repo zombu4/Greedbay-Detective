@@ -18,9 +18,8 @@
 
 namespace {
 
-// One active search for a common item (the recon sample query), 240 results
-// per page.
-const char kTestUrl[] = "https://www.ebay.com/sch/i.html?_nkw=fluke+87v&_ipg=240";
+// One active search for a common item, 240 results per page.
+const char kTestUrl[] = "https://www.ebay.com/sch/i.html?_nkw=usb+c+cable&_ipg=240";
 
 } // namespace
 

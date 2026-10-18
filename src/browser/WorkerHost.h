@@ -10,6 +10,7 @@
 #include <memory>
 
 class QLocalSocket;
+class QLockFile;
 
 namespace app::browser {
 
@@ -18,13 +19,19 @@ namespace app::browser {
 // first fetch or sign-in request, answers each request, and on "quit" tears
 // the session down, confirms, and ends the process. When the connection
 // closes for any other reason (the app ended or crashed), it tears the
-// session down too and ends the process with exit code kExitConnectionLost.
+// session down too and ends the process with exit code kExitConnectionLost;
+// that teardown runs from the event loop, never inside a call that is still
+// using the session.
+//
+// `sessionLock` (WebEngineData::sessionLockPath) belongs to the caller and
+// must stay held until the process has shut Qt WebEngine down; the session
+// takes it on first use.
 class WorkerHost : public QObject {
     Q_OBJECT
 public:
     static constexpr int kExitConnectionLost = 3;
 
-    WorkerHost(WorkFolder folder, SessionOptions options, QObject *parent = nullptr);
+    WorkerHost(WorkFolder folder, SessionOptions options, QLockFile *sessionLock, QObject *parent = nullptr);
     ~WorkerHost() override;
 
     // Connects to the app (waits up to 30 s) and sends the ready message
@@ -42,6 +49,7 @@ private:
 
     WorkFolder m_folder;
     SessionOptions m_options;
+    QLockFile *m_sessionLock;
     QLocalSocket *m_socket = nullptr;
     browserprotocol::LineReader m_reader;
     std::unique_ptr<BrowserSession> m_session;

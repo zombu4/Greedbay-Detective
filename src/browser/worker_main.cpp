@@ -10,10 +10,12 @@
 #include "browser/WorkerHost.h"
 #include "core/Logging.h"
 #include "core/Version.h"
+#include "core/WebEngineData.h"
 #include "core/WorkFolder.h"
 
 #include <QApplication>
 #include <QFileInfo>
+#include <QLockFile>
 #include <QStringList>
 
 #include <cstdio>
@@ -93,9 +95,11 @@ int main(int argc, char *argv[])
         return kExitStartFailed;
     }
 
-    // The worker never creates a work folder; the app has created it.
-    if (!QFileInfo(options->workFolder).isDir()) {
-        printError(QStringLiteral("the work folder does not exist"));
+    // The worker only uses a work folder the app has created: the folder and
+    // its marker must exist, so WorkFolder::open below creates nothing new.
+    if (!QFileInfo(options->workFolder).isDir()
+        || !QFileInfo::exists(options->workFolder + QLatin1Char('/') + QLatin1String(app::WorkFolder::kMarkerFileName))) {
+        printError(QStringLiteral("the work folder does not exist or was not created by the app"));
         return kExitStartFailed;
     }
     const QString identifier = QString::fromLatin1(app::version::kIdentifier);
@@ -111,6 +115,14 @@ int main(int argc, char *argv[])
         printError(error);
         return kExitStartFailed;
     }
+
+    // The browser session lock, taken by the session on first use and
+    // released when this object is destroyed: after QApplication (declared
+    // below) has shut Qt WebEngine down, so sign-out can never run while
+    // Chromium may still write the profile. No age limit (see
+    // WebEngineData::clear).
+    QLockFile sessionLock(app::WebEngineData::sessionLockPath(*folder));
+    sessionLock.setStaleLockTime(0);
 
     // No GPU acceleration (Chromium switch --disable-gpu, "Disables GPU
     // hardware acceleration"): Chromium's GPU path writes shader caches
@@ -142,7 +154,7 @@ int main(int argc, char *argv[])
     sessionOptions.allowLocalTestPages = true;
 #endif
 
-    app::browser::WorkerHost host(*folder, sessionOptions);
+    app::browser::WorkerHost host(*folder, sessionOptions, &sessionLock);
     if (!host.connectToApp(options->server, options->token, &error)) {
         printError(error);
         app::Logging::uninstall();

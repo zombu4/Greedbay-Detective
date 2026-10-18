@@ -57,6 +57,7 @@ set(app_test_fixtures
     fixtures/check_page.html
     fixtures/error_page.html
     fixtures/item_dom.html
+    fixtures/item_inline.html
     fixtures/item_jsonld.html
     fixtures/research.html
     fixtures/sold_search.html

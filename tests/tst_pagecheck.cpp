@@ -67,6 +67,8 @@ void TestPageCheck::allowedMainFrame_data()
     QTest::newRow("file, test build") << "file:///tmp/page.html" << true << true;
     QTest::newRow("loopback, production") << "http://127.0.0.1:8080/x" << false << false;
     QTest::newRow("loopback, test build") << "http://127.0.0.1:8080/x" << true << true;
+    QTest::newRow("tls loopback, test build") << "https://127.0.0.1:8443/x" << true << true;
+    QTest::newRow("tls loopback, production") << "https://127.0.0.1:8443/x" << false << false;
     QTest::newRow("other http, test build") << "http://192.0.2.1/x" << true << false;
     QTest::newRow("data") << "data:text/html,x" << true << false;
 }
@@ -104,6 +106,16 @@ void TestPageCheck::logUrlDropsQueryAndCredentials()
 {
     QCOMPARE(urlForLog(QUrl(QStringLiteral("https://user:pw@signin.ebay.com/ws/x?token=secret#frag"))),
              QStringLiteral("https://signin.ebay.com/ws/x"));
+    QCOMPARE(urlForLog(QUrl(QStringLiteral("https://www.ebay.com/sh/landing"))),
+             QStringLiteral("https://www.ebay.com/sh/landing"));
+    QCOMPARE(urlForLog(QUrl(QStringLiteral("https://www.ebay.com/itm/100000000001?hash=x"))),
+             QStringLiteral("https://www.ebay.com/itm/100000000001"));
+    // Paths of other pages may hold a name and are not logged.
+    QCOMPARE(urlForLog(QUrl(QStringLiteral("https://www.ebay.com/usr/someone"))),
+             QStringLiteral("https://www.ebay.com/..."));
+    QCOMPARE(urlForLog(QUrl(QStringLiteral("https://www.ebay.com/str/somestore?x=1"))),
+             QStringLiteral("https://www.ebay.com/..."));
+    QCOMPARE(urlForLog(QUrl(QStringLiteral("https://www.ebay.com/"))), QStringLiteral("https://www.ebay.com/"));
 }
 
 void TestPageCheck::pageKindNames()

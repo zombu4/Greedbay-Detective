@@ -16,8 +16,8 @@ Q_STATIC_LOGGING_CATEGORY(lcWorker, "browser.worker")
 
 namespace protocol = browserprotocol;
 
-WorkerHost::WorkerHost(WorkFolder folder, SessionOptions options, QObject *parent)
-    : QObject(parent), m_folder(std::move(folder)), m_options(options)
+WorkerHost::WorkerHost(WorkFolder folder, SessionOptions options, QLockFile *sessionLock, QObject *parent)
+    : QObject(parent), m_folder(std::move(folder)), m_options(options), m_sessionLock(sessionLock)
 {
 }
 
@@ -38,7 +38,9 @@ bool WorkerHost::connectToApp(const QString &serverName, const QString &token, Q
         return false;
     }
     connect(m_socket, &QLocalSocket::readyRead, this, &WorkerHost::onReadyRead);
-    connect(m_socket, &QLocalSocket::disconnected, this, &WorkerHost::onDisconnected);
+    // Queued: a write that finds the app gone can report the disconnection
+    // inside the write, while the session is still sending its reply.
+    connect(m_socket, &QLocalSocket::disconnected, this, &WorkerHost::onDisconnected, Qt::QueuedConnection);
     send(QJsonObject{{QStringLiteral("event"), QString::fromLatin1(protocol::kEventReady)},
                      {QStringLiteral("token"), token}});
     qCInfo(lcWorker) << "connected to the app";
@@ -111,7 +113,7 @@ bool WorkerHost::ensureSession(int id)
     if (m_session)
         return true;
     QString error;
-    m_session = BrowserSession::create(m_folder, m_options, &error);
+    m_session = BrowserSession::create(m_folder, m_options, m_sessionLock, &error);
     if (!m_session) {
         qCWarning(lcWorker).noquote() << "cannot start the browser session:" << error;
         reply(id, QJsonObject{{QStringLiteral("status"), QString::fromLatin1(protocol::kStatusFailed)},

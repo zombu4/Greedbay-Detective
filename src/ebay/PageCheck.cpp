@@ -2,6 +2,9 @@
 
 #include <QRegularExpression>
 
+#include <algorithm>
+#include <iterator>
+
 namespace app::ebay {
 
 namespace {
@@ -42,7 +45,8 @@ bool isAllowedMainFrameUrl(const QUrl &url, bool allowLocalTestPages)
     if (allowLocalTestPages) {
         if (url.isLocalFile())
             return true;
-        if (url.scheme() == QLatin1String("http") && url.host() == QLatin1String("127.0.0.1"))
+        if ((url.scheme() == QLatin1String("http") || url.scheme() == QLatin1String("https"))
+            && url.host() == QLatin1String("127.0.0.1"))
             return true;
     }
     return false;
@@ -59,7 +63,14 @@ QString itemIdFromUrl(const QUrl &url)
 
 QString urlForLog(const QUrl &url)
 {
-    return url.adjusted(QUrl::RemoveQuery | QUrl::RemoveFragment | QUrl::RemoveUserInfo).toString();
+    static const char *const kKnownPaths[] = {"/sch/", "/itm/", "/sh/", "/mye/", "/ws/"};
+    QUrl result = url.adjusted(QUrl::RemoveQuery | QUrl::RemoveFragment | QUrl::RemoveUserInfo);
+    const QString path = result.path();
+    const bool known = std::any_of(std::begin(kKnownPaths), std::end(kKnownPaths),
+                                   [&path](const char *prefix) { return path.startsWith(QLatin1String(prefix)); });
+    if (!known && !path.isEmpty() && path != QLatin1String("/"))
+        result.setPath(QStringLiteral("/..."));
+    return result.toString();
 }
 
 } // namespace app::ebay

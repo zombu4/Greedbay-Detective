@@ -4,15 +4,17 @@
 #include "browser/BrowserWindow.h"
 #include "browser/Extractor.h"
 #include "core/BrowserProtocol.h"
-#include "core/WebEngineData.h"
 #include "ebay/PageCheck.h"
 
 #include <QDir>
 #include <QJsonArray>
+#include <QJsonDocument>
+#include <QLockFile>
 #include <QLoggingCategory>
 #include <QMap>
 #include <QTimer>
 #include <QWebEngineDownloadRequest>
+#include <QWebEngineLoadingInfo>
 #include <QWebEngineNewWindowRequest>
 #include <QWebEnginePermission>
 #include <QWebEngineProfile>
@@ -33,6 +35,13 @@ const QString kSignInMessage = QStringLiteral(
     "Sign in to eBay in this window. The app never sees or stores your password; it only checks "
     "afterwards whether eBay shows your account page. Close this window to cancel.");
 
+// Run on the My eBay page during sign-in: is it eBay's error page, and does
+// it ask for a password (a sign-in or check form)?
+const QString kSignedInCheck = QStringLiteral(
+    "JSON.stringify({errorPage: document.title === 'Error Page | eBay'"
+    " || document.querySelector('.error-header #error-info') !== null,"
+    " passwordField: document.querySelector('input[type=password]') !== null})");
+
 QString messageFor(const QString &page, bool loadOk)
 {
     if (page == QLatin1String("error_page"))
@@ -47,8 +56,8 @@ QString messageFor(const QString &page, bool loadOk)
                               "account has no Product Research access. Prices from sold listings will be "
                               "marked unconfirmed. Close this window to continue.");
     if (!loadOk)
-        return QStringLiteral("The page could not be loaded, so nothing was read. Close this window to "
-                              "continue.");
+        return QStringLiteral("The page could not be loaded completely, so nothing was read. Close this "
+                              "window to continue.");
     return QStringLiteral("This is not the page the app expected (it may be a security check, or eBay "
                           "changed the page), so nothing was read. The app does not solve or skip checks; "
                           "you can complete it here yourself. Close this window to continue; the app does "
@@ -96,16 +105,21 @@ QString logSummary(const QJsonObject &data)
 } // namespace
 
 BrowserSession::BrowserSession(const WorkFolder &folder, SessionOptions options)
-    : m_folder(folder), m_options(options), m_lock(WebEngineData::sessionLockPath(folder))
+    : m_folder(folder), m_options(options)
 {
-    // See WebEngineData::clear(): no age limit; a crashed worker's lock is
-    // still recognized as stale because its process is gone.
-    m_lock.setStaleLockTime(0);
 }
 
 std::unique_ptr<BrowserSession> BrowserSession::create(const WorkFolder &folder, SessionOptions options,
-                                                       QString *error)
+                                                       QLockFile *sessionLock, QString *error)
 {
+    if (!sessionLock->isLocked() && !sessionLock->tryLock(0)) {
+        if (error) {
+            *error = sessionLock->error() == QLockFile::LockFailedError
+                         ? QStringLiteral("another browser session is using this work folder")
+                         : QStringLiteral("cannot create the browser session lock");
+        }
+        return nullptr;
+    }
     std::unique_ptr<BrowserSession> session(new BrowserSession(folder, options));
     if (!session->init(error))
         return nullptr;
@@ -119,12 +133,6 @@ bool BrowserSession::init(QString *error)
             *error = message;
         return false;
     };
-
-    if (!m_lock.tryLock(0)) {
-        if (m_lock.error() == QLockFile::LockFailedError)
-            return fail(QStringLiteral("another browser session is using this work folder"));
-        return fail(QStringLiteral("cannot create the browser session lock"));
-    }
 
     // Persistent cookies including session cookies (ForcePersistentCookies):
     // the user signs in once and stays signed in across sessions, which end
@@ -150,12 +158,12 @@ bool BrowserSession::init(QString *error)
     m_profile->setSpellCheckEnabled(false);
     m_profile->setPushServiceEnabled(false);
     connect(m_profile, &QWebEngineProfile::downloadRequested, this, [](QWebEngineDownloadRequest *download) {
-        qCInfo(lcSession) << "download refused:" << ebay::urlForLog(download->url());
+        qCInfo(lcSession).noquote() << "download refused:" << ebay::urlForLog(download->url());
         download->cancel();
     });
 
     m_page = new BrowserPage(m_profile, m_options.allowLocalTestPages);
-    connect(m_page, &QWebEnginePage::loadFinished, this, &BrowserSession::onLoadFinished);
+    connect(m_page, &QWebEnginePage::loadingChanged, this, &BrowserSession::onLoadingChanged);
     connect(m_page, &BrowserPage::navigationBlocked, this, &BrowserSession::onNavigationBlocked);
     connect(m_page, &QWebEnginePage::renderProcessTerminated, this,
             [this](QWebEnginePage::RenderProcessTerminationStatus status, int exitCode) {
@@ -180,12 +188,18 @@ bool BrowserSession::init(QString *error)
     m_window = new BrowserWindow(m_page);
     connect(m_window, &BrowserWindow::closed, this, &BrowserSession::onWindowClosed);
 
-    m_delayTimer = new QTimer(this);
-    m_delayTimer->setSingleShot(true);
-    connect(m_delayTimer, &QTimer::timeout, this, &BrowserSession::startLoad);
-    m_loadTimer = new QTimer(this);
-    m_loadTimer->setSingleShot(true);
-    connect(m_loadTimer, &QTimer::timeout, this, &BrowserSession::onLoadTimeout);
+    auto makeTimer = [this](void (BrowserSession::*slot)()) {
+        auto *timer = new QTimer(this);
+        timer->setSingleShot(true);
+        connect(timer, &QTimer::timeout, this, slot);
+        return timer;
+    };
+    m_delayTimer = makeTimer(&BrowserSession::startLoad);
+    m_loadTimer = makeTimer(&BrowserSession::onLoadTimeout);
+    m_scriptTimer = makeTimer(&BrowserSession::onScriptTimeout);
+    m_settleTimer = new QTimer(this);
+    m_settleTimer->setSingleShot(true);
+    connect(m_settleTimer, &QTimer::timeout, this, [this]() { runExtractor(m_lastLoadOk); });
 
     qCInfo(lcSession) << "browser session started";
     return true;
@@ -198,9 +212,7 @@ BrowserSession::~BrowserSession()
     m_op = Op::None;
     ++m_serial;
     if (m_delayTimer)
-        m_delayTimer->stop();
-    if (m_loadTimer)
-        m_loadTimer->stop();
+        stopTimers();
     // Order matters: the view and the page go first, the profile last, so the
     // profile outlives every page that uses it.
     if (m_page)
@@ -212,8 +224,6 @@ BrowserSession::~BrowserSession()
     }
     delete m_page;
     delete m_profile;
-    if (m_lock.isLocked())
-        m_lock.unlock();
     qCInfo(lcSession) << "browser session ended";
 }
 
@@ -247,12 +257,9 @@ void BrowserSession::cancel()
 {
     if (!isBusy())
         return;
-    m_delayTimer->stop();
-    m_loadTimer->stop();
-    if (m_loading)
-        m_page->triggerAction(QWebEnginePage::Stop);
-    m_loading = false;
-    m_window->hide();
+    stopTimers();
+    stopLoading();
+    hideWindow();
     finish(failedReply(QStringLiteral("stopped")));
 }
 
@@ -267,7 +274,7 @@ void BrowserSession::scheduleLoad(const QUrl &url)
 
 void BrowserSession::startLoad()
 {
-    m_loading = true;
+    m_load = Load::Requested;
     m_loadClock.start();
     m_loadTimer->start(kLoadTimeoutMs);
     if (m_op == Op::Fetch)
@@ -277,46 +284,73 @@ void BrowserSession::startLoad()
     m_page->load(m_url);
 }
 
-void BrowserSession::onLoadFinished(bool ok)
+void BrowserSession::onLoadingChanged(const QWebEngineLoadingInfo &info)
 {
-    if (!m_loading) {
-        // A page the user opened in the visible window (sign-in steps).
-        if (m_op == Op::SignIn)
-            checkSignedIn();
+    if (m_stopping) {
+        m_sinceLastLoad.start();
         return;
     }
-    m_loading = false;
-    m_loadTimer->stop();
+    if (info.status() == QWebEngineLoadingInfo::LoadStartedStatus) {
+        if (m_load == Load::Requested)
+            m_load = Load::Running;
+        return;
+    }
+    // The load ended (succeeded, failed or stopped).
+    const bool ok = info.status() == QWebEngineLoadingInfo::LoadSucceededStatus && !info.isErrorPage();
+    if (m_load == Load::Requested)
+        return; // the end of an earlier navigation, reported after load() was called
     m_sinceLastLoad.start();
-
+    if (m_load == Load::Idle) {
+        // A page the user opened in the visible window.
+        if (m_op == Op::SignIn)
+            checkSignedIn(ok);
+        return;
+    }
+    m_load = Load::Idle;
+    m_loadTimer->stop();
     if (m_op == Op::Fetch) {
-        const quint64 serial = m_serial;
-        Extractor::run(m_page, m_kind, [this, ok, serial](const QJsonObject &result) {
-            onExtracted(result, ok, serial);
-        });
+        m_settleClock.start();
+        runExtractor(ok);
     } else if (m_op == Op::SignIn) {
-        checkSignedIn();
+        checkSignedIn(ok);
     }
 }
 
 void BrowserSession::onLoadTimeout()
 {
-    if (!m_loading)
+    if (m_load == Load::Idle)
         return;
-    m_loading = false;
-    m_page->triggerAction(QWebEnginePage::Stop);
-    m_sinceLastLoad.start();
+    stopLoading();
     qCWarning(lcSession) << "page load timed out after" << kLoadTimeoutMs << "ms";
     finish(failedReply(QStringLiteral("the page did not finish loading within %1 s").arg(kLoadTimeoutMs / 1000)));
 }
 
-void BrowserSession::onExtracted(const QJsonObject &result, bool loadOk, quint64 serial)
+void BrowserSession::runExtractor(bool loadOk)
 {
-    if (serial != m_serial || m_op != Op::Fetch)
+    if (m_op != Op::Fetch)
         return;
+    m_lastLoadOk = loadOk;
+    const quint64 serial = ++m_serial;
+    m_scriptTimer->start(kScriptTimeoutMs);
+    Extractor::run(m_page, m_kind, [this, loadOk, serial](const QJsonObject &result) {
+        if (serial != m_serial || m_op != Op::Fetch)
+            return;
+        m_scriptTimer->stop();
+        onExtracted(result, loadOk);
+    });
+}
+
+void BrowserSession::onExtracted(const QJsonObject &result, bool loadOk)
+{
     const QString page = result.value(QStringLiteral("page")).toString();
+    // Content that is built after loading: look again until the key elements
+    // appear or kSettleMs has passed.
+    if (page == QLatin1String("unexpected") && loadOk && m_settleClock.elapsed() < kSettleMs) {
+        m_settleTimer->start(kSettleStepMs);
+        return;
+    }
     const qint64 ms = m_loadClock.elapsed();
-    if (page == QLatin1String("expected")) {
+    if (page == QLatin1String("expected") && loadOk) {
         const QJsonObject data = result.value(QStringLiteral("data")).toObject();
         qCInfo(lcSession).noquote() << "fetch" << ebay::pageKindName(m_kind) << "read in" << ms << "ms:"
                                     << logSummary(data);
@@ -331,60 +365,81 @@ void BrowserSession::onExtracted(const QJsonObject &result, bool loadOk, quint64
         finish(failedReply(reason));
         return;
     }
+    QString shown = page;
     QString reason = result.value(QStringLiteral("reason")).toString();
-    if (page == QLatin1String("unexpected") && !loadOk)
-        reason = QStringLiteral("the page could not be loaded");
-    qCInfo(lcSession).noquote() << "fetch" << ebay::pageKindName(m_kind) << "unexpected page:" << page << "-"
+    if (!loadOk && (page == QLatin1String("expected") || page == QLatin1String("unexpected"))) {
+        // A failed or stopped load never counts as the expected page, even
+        // when some of its elements are there.
+        shown = QStringLiteral("unexpected");
+        reason = QStringLiteral("the page did not load completely");
+    }
+    qCInfo(lcSession).noquote() << "fetch" << ebay::pageKindName(m_kind) << "unexpected page:" << shown << "-"
                                 << reason << "- at" << ebay::urlForLog(m_page->url());
     QJsonObject reply = statusReply(protocol::kStatusUnexpectedPage);
-    reply.insert(QStringLiteral("page"), page);
+    reply.insert(QStringLiteral("page"), shown);
     reply.insert(QStringLiteral("reason"), reason);
-    showUnexpected(reply, messageFor(page, loadOk));
+    showUnexpected(reply, messageFor(shown, loadOk));
 }
 
-void BrowserSession::checkSignedIn()
+void BrowserSession::checkSignedIn(bool loadOk)
 {
     const QUrl url = m_page->url();
-    if (ebay::classifyUrl(url) != ebay::UrlClass::AccountPage) {
+    if (!loadOk || ebay::classifyUrl(url) != ebay::UrlClass::AccountPage) {
         if (!m_signInShown) {
             m_signInShown = true;
-            qCInfo(lcSession).noquote() << "sign-in: eBay shows" << ebay::urlForLog(url) << "- window shown";
-            m_window->showWithMessage(kSignInMessage);
+            qCInfo(lcSession).noquote() << "sign-in: eBay shows" << ebay::urlForLog(url)
+                                        << (loadOk ? "- window shown" : "(load failed) - window shown");
+            showWindow(loadOk ? kSignInMessage
+                              : QStringLiteral("The eBay page could not be loaded. Close this window to cancel."));
         }
         return;
     }
-    // On the My eBay page: signed in unless it is eBay's error page.
-    const quint64 serial = m_serial;
-    const QString script = QStringLiteral(
-        "document.title === 'Error Page | eBay' || document.querySelector('.error-header #error-info') !== null");
-    m_page->runJavaScript(script, QWebEngineScript::ApplicationWorld, [this, serial](const QVariant &isError) {
+    const quint64 serial = ++m_serial;
+    m_scriptTimer->start(kScriptTimeoutMs);
+    m_page->runJavaScript(kSignedInCheck, QWebEngineScript::ApplicationWorld, [this, serial](const QVariant &value) {
         if (serial != m_serial || m_op != Op::SignIn)
             return;
-        if (isError.toBool()) {
-            m_signInShown = true;
-            m_window->showWithMessage(messageFor(QStringLiteral("error_page"), true));
+        m_scriptTimer->stop();
+        const QJsonObject check = QJsonDocument::fromJson(value.toString().toUtf8()).object();
+        if (check.isEmpty() || check.value(QStringLiteral("errorPage")).toBool()
+            || check.value(QStringLiteral("passwordField")).toBool()) {
+            if (!m_signInShown) {
+                m_signInShown = true;
+                showWindow(kSignInMessage);
+            }
             return;
         }
         qCInfo(lcSession) << "sign-in: signed in";
-        m_window->hide();
+        hideWindow();
         QJsonObject reply = statusReply(protocol::kStatusOk);
         reply.insert(QStringLiteral("signedIn"), true);
         finish(reply);
     });
 }
 
+void BrowserSession::onScriptTimeout()
+{
+    if (!isBusy())
+        return;
+    qCWarning(lcSession) << "the page did not answer a script within" << kScriptTimeoutMs << "ms";
+    stopTimers();
+    stopLoading();
+    hideWindow();
+    finish(failedReply(QStringLiteral("the page did not answer within %1 s").arg(kScriptTimeoutMs / 1000)));
+}
+
 void BrowserSession::onWindowClosed()
 {
+    m_page->setInteractive(false);
+    // Whatever the user had opened stops; the delay counts from here.
+    stopLoading();
+    m_sinceLastLoad.start();
     if (m_op == Op::Fetch && m_waitingForClose) {
         qCInfo(lcSession) << "window closed by the user";
         finish(m_replyAfterClose);
     } else if (m_op == Op::SignIn) {
         qCInfo(lcSession) << "sign-in: window closed by the user before signing in";
-        m_delayTimer->stop();
-        m_loadTimer->stop();
-        if (m_loading)
-            m_page->triggerAction(QWebEnginePage::Stop);
-        m_loading = false;
+        stopTimers();
         QJsonObject reply = statusReply(protocol::kStatusWindowClosed);
         reply.insert(QStringLiteral("signedIn"), false);
         finish(reply);
@@ -402,20 +457,50 @@ void BrowserSession::onNavigationBlocked(const QUrl &url)
 void BrowserSession::onRendererTerminated(int status, int exitCode)
 {
     qCWarning(lcSession) << "page renderer ended: status" << status << "exit code" << exitCode;
+    m_load = Load::Idle;
+    m_sinceLastLoad.start();
     if (!isBusy())
         return;
+    stopTimers();
+    hideWindow();
+    finish(failedReply(QStringLiteral("the page renderer ended (status %1, exit code %2)").arg(status).arg(exitCode)));
+}
+
+void BrowserSession::stopLoading()
+{
+    m_load = Load::Idle;
+    m_loadTimer->stop();
+    m_stopping = true;
+    m_page->triggerAction(QWebEnginePage::Stop);
+    m_stopping = false;
+    m_sinceLastLoad.start();
+}
+
+void BrowserSession::stopTimers()
+{
     m_delayTimer->stop();
     m_loadTimer->stop();
-    m_loading = false;
+    m_settleTimer->stop();
+    m_scriptTimer->stop();
+}
+
+void BrowserSession::showWindow(const QString &message)
+{
+    m_page->setInteractive(true);
+    m_window->showWithMessage(message);
+}
+
+void BrowserSession::hideWindow()
+{
+    m_page->setInteractive(false);
     m_window->hide();
-    finish(failedReply(QStringLiteral("the page renderer ended (status %1, exit code %2)").arg(status).arg(exitCode)));
 }
 
 void BrowserSession::showUnexpected(const QJsonObject &reply, const QString &message)
 {
     m_replyAfterClose = reply;
     m_waitingForClose = true;
-    m_window->showWithMessage(message);
+    showWindow(message);
 }
 
 void BrowserSession::finish(const QJsonObject &reply)
@@ -423,6 +508,8 @@ void BrowserSession::finish(const QJsonObject &reply)
     m_op = Op::None;
     m_waitingForClose = false;
     m_replyAfterClose = {};
+    m_settleTimer->stop();
+    m_scriptTimer->stop();
     ++m_serial;
     emit done(reply);
 }

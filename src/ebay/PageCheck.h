@@ -27,16 +27,19 @@ QUrl signInStartUrl();
 
 // True when the browser may show `url` as the main page: https on ebay.com or
 // one of its subdomains. With allowLocalTestPages (test builds only), also
-// file: URLs and http://127.0.0.1 (the containment test's local server).
+// file: URLs and http:// or https://127.0.0.1 (the tests' local servers).
 bool isAllowedMainFrameUrl(const QUrl &url, bool allowLocalTestPages);
 
 // The item number in https://www.ebay.com/itm/<digits>[/...], or an empty
 // string when the URL is not an eBay item URL.
 QString itemIdFromUrl(const QUrl &url);
 
-// The URL as it may appear in a log: scheme, host and path, without query or
-// fragment. Used for pages the user navigates to (sign-in pages can carry
-// tokens in the query). URLs the app builds itself are logged in full.
+// The URL as it may appear in a log, for pages eBay or the user navigated to:
+// scheme and host, plus the path only for the page types the app knows
+// (/sch/, /itm/, /sh/, /mye/, /ws/); any other path becomes "/..." because it
+// may hold a name (for example /usr/<user> or /str/<store>). Query, fragment
+// and user info are always dropped (sign-in pages can carry tokens in the
+// query). URLs the app builds itself are logged in full.
 QString urlForLog(const QUrl &url);
 
 } // namespace app::ebay

@@ -26,8 +26,9 @@ const char kActiveUrl[] = "https://www.ebay.com/sch/i.html?_nkw=test+meter&_ipg=
 const char kSoldUrl[] = "https://www.ebay.com/sch/i.html?_nkw=test+meter&LH_Sold=1&LH_Complete=1&_ipg=240&_pgn=3";
 const char kItemUrl[] = "https://www.ebay.com/itm/100000000010";
 const char kItemDomUrl[] = "https://www.ebay.com/itm/100000000030?hash=x";
+const char kItemInlineUrl[] = "https://www.ebay.com/itm/100000000031";
 const char kResearchUrl[] = "https://www.ebay.com/sh/research?marketplace=EBAY-US&keywords=test+meter"
-                            "&dayRange=1095&tabName=SOLD&limit=50&offset=0&tz=America%2FNew_York";
+                            "&dayRange=1095&tabName=SOLD&limit=50&offset=0";
 const char kLandingUrl[] = "https://www.ebay.com/sh/landing";
 const char kSignInUrl[] = "https://signin.ebay.com/ws/eBayISAPI.dll?SignIn&ru=https%3A%2F%2Fwww.ebay.com%2F";
 
@@ -68,6 +69,7 @@ private slots:
     void soldSearch();
     void itemFromJsonLd();
     void itemFromDom();
+    void itemShippingBlockOnOneLine();
     void research();
     void errorPage_data();
     void errorPage();
@@ -147,11 +149,11 @@ void TestExtractors::activeSearch()
     QCOMPARE(a.value("itemId").toString(), QStringLiteral("100000000001"));
     QCOMPARE(a.value("title").toString(), QStringLiteral("Acme Model 7 Digital Multimeter"));
     QCOMPARE(a.value("condition").toString(), QStringLiteral("Pre-Owned"));
-    QCOMPARE(a.value("price").toObject().value("minCents").toInt(), 30000);
-    QCOMPARE(a.value("price").toObject().value("maxCents").toInt(), 30000);
+    QCOMPARE(a.value("price").toObject().value("minCents").toInt(), 27400);
+    QCOMPARE(a.value("price").toObject().value("maxCents").toInt(), 27400);
     QCOMPARE(a.value("price").toObject().value("currency").toString(), QStringLiteral("USD"));
-    QCOMPARE(a.value("priceText").toString(), QStringLiteral("$300.00"));
-    QCOMPARE(a.value("shippingCents").toInt(), 1299);
+    QCOMPARE(a.value("priceText").toString(), QStringLiteral("$274.00"));
+    QCOMPARE(a.value("shippingCents").toInt(), 1125);
     QCOMPARE(a.value("format").toString(), QStringLiteral("fixed_price"));
     QVERIFY(a.value("bids").isNull());
     QCOMPARE(a.value("buyItNow").toBool(), false);
@@ -159,10 +161,10 @@ void TestExtractors::activeSearch()
     QCOMPARE(a.value("bestOfferAccepted").toBool(), false);
     QCOMPARE(a.value("freeReturns").toBool(), true);
     QCOMPARE(a.value("location").toString(), QStringLiteral("United States"));
-    QCOMPARE(a.value("listedAt").toString(), QStringLiteral("Oct-18 11:32"));
+    QCOMPARE(a.value("listedAt").toString(), QStringLiteral("Mar-02 09:15"));
     QCOMPARE(a.value("seller").toObject().value("name").toString(), QStringLiteral("examplesellerone"));
-    QCOMPARE(a.value("seller").toObject().value("positivePercent").toDouble(), 99.8);
-    QCOMPARE(a.value("seller").toObject().value("feedbackCount").toInt(), 983);
+    QCOMPARE(a.value("seller").toObject().value("positivePercent").toDouble(), 97.4);
+    QCOMPARE(a.value("seller").toObject().value("feedbackCount").toInt(), 215);
     QCOMPARE(names(a.value("missing")), set({"bids"}));
     QVERIFY(!a.contains("soldDate"));
     QVERIFY(!a.contains("priceStatus"));
@@ -180,8 +182,11 @@ void TestExtractors::activeSearch()
     QCOMPARE(b.value("seller").toObject().value("feedbackCount").toInt(), 1204);
     QCOMPARE(names(b.value("missing")), set({"listedAt"}));
 
+    // A title that only starts with the words "New Listing" (no marker
+    // element) is kept as it is.
     const QJsonObject c = items.at(2).toObject();
     QCOMPARE(c.value("itemId").toString(), QStringLiteral("100000000003"));
+    QCOMPARE(c.value("title").toString(), QStringLiteral("New Listings Display Rack"));
     QCOMPARE(c.value("price").toObject().value("minCents").toInt(), 2000);
     QCOMPARE(c.value("price").toObject().value("maxCents").toInt(), 3500);
     QCOMPARE(c.value("buyItNow").toBool(), true);
@@ -207,7 +212,7 @@ void TestExtractors::soldSearch()
     QCOMPARE(result->value("page").toString(), QStringLiteral("expected"));
     const QJsonObject data = result->value("data").toObject();
     QCOMPARE(data.value("kind").toString(), QStringLiteral("soldSearch"));
-    QCOMPARE(data.value("totalResults").toInt(), 535);
+    QCOMPARE(data.value("totalResults").toInt(), 487);
     QCOMPARE(data.value("page").toInt(), 3);
     QCOMPARE(data.value("hasMorePages").toBool(), false);
     QCOMPARE(data.value("skippedDummyCards").toInt(), 1);
@@ -217,18 +222,18 @@ void TestExtractors::soldSearch()
 
     // Best offer accepted: the shown price is the asking price -> unconfirmed.
     const QJsonObject a = items.at(0).toObject();
-    QCOMPARE(a.value("soldDate").toString(), QStringLiteral("2026-10-18"));
+    QCOMPARE(a.value("soldDate").toString(), QStringLiteral("2026-03-14"));
     QCOMPARE(a.value("price").toObject().value("minCents").toInt(), 9500);
     QCOMPARE(a.value("bestOfferAccepted").toBool(), true);
     QCOMPARE(a.value("priceStatus").toString(), QStringLiteral("unconfirmed"));
     QCOMPARE(a.value("format").toString(), QStringLiteral("fixed_price"));
-    QCOMPARE(a.value("shippingCents").toInt(), 913);
+    QCOMPARE(a.value("shippingCents").toInt(), 845);
     QCOMPARE(a.value("seller").toObject().value("positivePercent").toDouble(), 99.0);
     QCOMPARE(names(a.value("missing")), set({"bids", "listedAt"}));
 
     const QJsonObject b = items.at(1).toObject();
-    QCOMPARE(b.value("soldDate").toString(), QStringLiteral("2026-10-12"));
-    QCOMPARE(b.value("bids").toInt(), 40);
+    QCOMPARE(b.value("soldDate").toString(), QStringLiteral("2026-03-09"));
+    QCOMPARE(b.value("bids").toInt(), 23);
     QCOMPARE(b.value("format").toString(), QStringLiteral("auction"));
     QCOMPARE(b.value("priceStatus").toString(), QStringLiteral("shown"));
     QCOMPARE(b.value("price").toObject().value("minCents").toInt(), 12150);
@@ -253,7 +258,7 @@ void TestExtractors::itemFromJsonLd()
     QCOMPARE(data.value("itemId").toString(), QStringLiteral("100000000010"));
     QCOMPARE(data.value("title").toString(), QStringLiteral("Acme Model 7 Digital Multimeter (JSON-LD title)"));
     QCOMPARE(data.value("titleSource").toString(), QStringLiteral("json-ld"));
-    QCOMPARE(data.value("priceCents").toInt(), 26999);
+    QCOMPARE(data.value("priceCents").toInt(), 24995);
     QCOMPARE(data.value("currency").toString(), QStringLiteral("USD"));
     QCOMPARE(data.value("priceSource").toString(), QStringLiteral("json-ld"));
     QCOMPARE(data.value("condition").toString(), QStringLiteral("UsedCondition"));
@@ -316,6 +321,37 @@ void TestExtractors::itemFromDom()
              set({"availability", "listingStartedAt", "returnsText", "seller", "watchers", "soldCount"}));
 }
 
+void TestExtractors::itemShippingBlockOnOneLine()
+{
+    QString error;
+    const std::optional<QJsonObject> result = extract("item_inline.html", kItemInlineUrl, PageKind::Item, &error);
+    QVERIFY2(result, qPrintable(error));
+    QCOMPARE(result->value("page").toString(), QStringLiteral("expected"));
+    const QJsonObject data = result->value("data").toObject();
+    QCOMPARE(data.value("priceCents").toInt(), 6400);
+    // One rendered line: no line starts with the cost, and the text after
+    // "Located in:" holds digits, so neither value is taken.
+    QVERIFY(data.value("shippingCents").isNull());
+    QVERIFY(data.value("location").isNull());
+    // The whole first element of the condition box, not its first word.
+    QCOMPARE(data.value("condition").toString(), QStringLiteral("New other (see details)"));
+    QCOMPARE(data.value("conditionSource").toString(), QStringLiteral("dom"));
+    // One "watchers" counter on the page; two "sold" counters of other
+    // listings, so the item's own count is unknown.
+    QCOMPARE(data.value("watchers").toInt(), 9);
+    QVERIFY(data.value("soldCount").isNull());
+    QVERIFY(names(data.value("missing")).contains(QStringLiteral("shippingCents")));
+    QVERIFY(names(data.value("missing")).contains(QStringLiteral("location")));
+    QVERIFY(names(data.value("missing")).contains(QStringLiteral("soldCount")));
+
+    const QString json = QString::fromUtf8(QJsonDocument(*result).toJson(QJsonDocument::Compact));
+    // (The item number contains "00000" too, so the ZIP is searched with
+    // the word before it.)
+    QVERIFY(!json.contains(QStringLiteral("to 00000")));
+    QVERIFY(!json.contains(QStringLiteral("Delivery")));
+    QVERIFY(!json.contains(QStringLiteral("Springfield")));
+}
+
 void TestExtractors::research()
 {
     QString error;
@@ -332,10 +368,10 @@ void TestExtractors::research()
     // The table header repeats "Avg sold price" and a row cell holds a span
     // "Free shipping"; both are inside the table and must not be used.
     const QJsonObject summary = data.value("summary").toObject();
-    QCOMPARE(summary.value("avgSoldPriceCents").toInt(), 3816);
+    QCOMPARE(summary.value("avgSoldPriceCents").toInt(), 4170);
     QCOMPARE(summary.value("soldPriceRange").toObject().value("minCents").toInt(), 1200);
     QCOMPARE(summary.value("soldPriceRange").toObject().value("maxCents").toInt(), 8050);
-    QCOMPARE(summary.value("avgShippingCents").toInt(), 663);
+    QCOMPARE(summary.value("avgShippingCents").toInt(), 585);
     QCOMPARE(summary.value("freeShippingPercent").toDouble(), 45.0);
     QVERIFY(summary.value("sellThroughPercent").isNull());
     QCOMPARE(summary.value("totalSellers").toInt(), 1021);
@@ -346,21 +382,21 @@ void TestExtractors::research()
     const QJsonObject r1 = rows.at(0).toObject();
     QCOMPARE(r1.value("itemId").toString(), QStringLiteral("100000000020"));
     QCOMPARE(r1.value("title").toString(), QStringLiteral("Acme Model 7 Multimeter"));
-    QCOMPARE(r1.value("avgSoldPriceCents").toInt(), 3816);
+    QCOMPARE(r1.value("avgSoldPriceCents").toInt(), 4170);
     QCOMPARE(r1.value("formatText").toString(), QStringLiteral("Fixed price"));
-    QCOMPARE(r1.value("avgShippingCents").toInt(), 663);
+    QCOMPARE(r1.value("avgShippingCents").toInt(), 585);
     QCOMPARE(r1.value("freeShippingPercent").toDouble(), 0.0);
     QCOMPARE(r1.value("totalSold").toInt(), 4);
-    QCOMPARE(r1.value("totalSalesCents").toInt(), 15264);
+    QCOMPARE(r1.value("totalSalesCents").toInt(), 16680);
     QCOMPARE(r1.value("bids").toInt(), 0);
-    QCOMPARE(r1.value("lastSoldDate").toString(), QStringLiteral("2026-10-12"));
+    QCOMPARE(r1.value("lastSoldDate").toString(), QStringLiteral("2026-03-03"));
     QCOMPARE(names(r1.value("missing")), QSet<QString>());
 
     // A row with only the item number in place of a title.
     const QJsonObject r2 = rows.at(1).toObject();
     QCOMPARE(r2.value("itemId").toString(), QStringLiteral("100000000021"));
     QVERIFY(r2.value("title").isNull());
-    QCOMPARE(r2.value("avgSoldPriceCents").toInt(), 2888);
+    QCOMPARE(r2.value("avgSoldPriceCents").toInt(), 3320);
     QCOMPARE(r2.value("formatText").toString(), QStringLiteral("Auction"));
     QCOMPARE(r2.value("avgShippingCents").toInt(), 0);
     QCOMPARE(r2.value("freeShippingPercent").toDouble(), 100.0);
@@ -463,6 +499,8 @@ void TestExtractors::parseResultRejectsInvalidResults()
 
 int main(int argc, char *argv[])
 {
+    // As in the browser worker (src/browser/worker_main.cpp): no GPU.
+    qputenv("QTWEBENGINE_CHROMIUM_FLAGS", "--disable-gpu");
     // Required by Qt WebEngine before the application object exists.
     QCoreApplication::setAttribute(Qt::AA_ShareOpenGLContexts);
     QApplication application(argc, argv);

@@ -38,4 +38,25 @@ void BrowserPage::javaScriptConsoleMessage(JavaScriptConsoleMessageLevel level, 
     Q_UNUSED(sourceID);
 }
 
+void BrowserPage::javaScriptAlert(const QUrl &securityOrigin, const QString &message)
+{
+    if (m_interactive)
+        QWebEnginePage::javaScriptAlert(securityOrigin, message);
+}
+
+bool BrowserPage::javaScriptConfirm(const QUrl &securityOrigin, const QString &message)
+{
+    if (m_interactive)
+        return QWebEnginePage::javaScriptConfirm(securityOrigin, message);
+    return true;
+}
+
+bool BrowserPage::javaScriptPrompt(const QUrl &securityOrigin, const QString &message, const QString &defaultValue,
+                                   QString *result)
+{
+    if (m_interactive)
+        return QWebEnginePage::javaScriptPrompt(securityOrigin, message, defaultValue, result);
+    return false;
+}
+
 } // namespace app::browser

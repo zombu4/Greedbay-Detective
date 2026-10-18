@@ -3,8 +3,10 @@
 // input: {url, kind: "research"}
 // The redirect to /sh/landing (no Product Research access) is recognized
 // from the URL before this script runs.
-// Key elements: result rows (tr with td.research-table-row__product-info) or
-// at least one summary label. With neither, the page is not a result page.
+// Key elements: result rows (tr with td.research-table-row__product-info).
+// Without rows the page is not (yet) a result page, even when summary labels
+// are there: the rows may still be loading, and a search without sold
+// listings is shown to the user instead of being read as "no sales".
 //
 // One row is one LISTING, aggregated over all its sales (multi-quantity
 // listings sum several sales); avgSoldPrice is the price actually paid,
@@ -19,14 +21,16 @@
 //                             may exist; null when limit is unknown. The
 //                             extractor never fetches further pages itself.
 
-// Summary labels, as listed in recon section 4, and the pattern of each value.
+// Summary labels, as listed in recon section 4, and the pattern of each
+// value. Recon writes "Free shipping %" and "Sell-through %"; whether the "%"
+// is part of the label was not recorded, so both forms are accepted.
 const SUMMARY_FIELDS = [
-    {label: 'Avg sold price', key: 'avgSoldPriceCents', parse: function (t) { return moneyCents(t, false); }},
-    {label: 'Sold price range', key: 'soldPriceRange', parse: priceRange},
-    {label: 'Avg shipping', key: 'avgShippingCents', parse: function (t) { return moneyCents(t, false); }},
-    {label: 'Free shipping', key: 'freeShippingPercent', parse: percentOf},
-    {label: 'Sell-through', key: 'sellThroughPercent', parse: percentOf},
-    {label: 'Total sellers', key: 'totalSellers', parse: intOf},
+    {labels: ['Avg sold price'], key: 'avgSoldPriceCents', parse: function (t) { return moneyCents(t, false); }},
+    {labels: ['Sold price range'], key: 'soldPriceRange', parse: priceRange},
+    {labels: ['Avg shipping'], key: 'avgShippingCents', parse: function (t) { return moneyCents(t, false); }},
+    {labels: ['Free shipping', 'Free shipping %'], key: 'freeShippingPercent', parse: percentOf},
+    {labels: ['Sell-through', 'Sell-through %'], key: 'sellThroughPercent', parse: percentOf},
+    {labels: ['Total sellers'], key: 'totalSellers', parse: intOf},
 ];
 
 // "$12.00 - $80.50" -> {minCents: 1200, maxCents: 8050}; else null.
@@ -40,14 +44,16 @@ function priceRange(text) {
 }
 
 // Elements outside the results table whose whole text is a summary label.
+// Only elements without child elements are looked at, so the text of large
+// containers is never built.
 function labelElements() {
-    const labels = SUMMARY_FIELDS.map(function (field) { return field.label; });
+    const labels = [].concat.apply([], SUMMARY_FIELDS.map(function (field) { return field.labels; }));
     const found = [];
     for (const element of document.querySelectorAll('body *')) {
-        if (element.closest('table'))
+        if (element.firstElementChild !== null || element.closest('table'))
             continue;
         const text = norm(element.textContent);
-        if (labels.indexOf(text) >= 0 && element.querySelector('*') === null)
+        if (labels.indexOf(text) >= 0)
             found.push({element: element, label: text});
     }
     return found;
@@ -64,7 +70,7 @@ function readSummary(found) {
     for (const field of SUMMARY_FIELDS) {
         const values = [];
         for (const entry of found) {
-            if (entry.label !== field.label)
+            if (field.labels.indexOf(entry.label) < 0)
                 continue;
             let tile = entry.element.parentElement;
             for (let depth = 0; tile && depth < 4; ++depth, tile = tile.parentElement) {
@@ -74,8 +80,8 @@ function readSummary(found) {
                 if (others.length > 0)
                     break;
                 const tileText = norm(tile.textContent);
-                const at = tileText.indexOf(field.label);
-                const rest = norm(tileText.slice(0, at) + ' ' + tileText.slice(at + field.label.length));
+                const at = tileText.indexOf(entry.label);
+                const rest = norm(tileText.slice(0, at) + ' ' + tileText.slice(at + entry.label.length));
                 if (rest.length === 0)
                     continue;
                 const value = field.parse(rest);
@@ -150,9 +156,9 @@ function extract(input) {
     const rows = Array.prototype.filter.call(document.querySelectorAll('tr'), function (row) {
         return cell(row, 'product-info') !== null;
     });
+    if (rows.length === 0)
+        return notExpected('unexpected', 'no research result rows');
     const found = labelElements();
-    if (rows.length === 0 && found.length === 0)
-        return notExpected('unexpected', 'no research rows and no summary labels');
 
     const offsetText = url.searchParams.get('offset');
     const limit = intParam(url, 'limit');

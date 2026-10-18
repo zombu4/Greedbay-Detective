@@ -5,6 +5,7 @@
 #include <QCoreApplication>
 #include <QDir>
 #include <QEventLoop>
+#include <QFile>
 #include <QJsonValue>
 #include <QLocalServer>
 #include <QLocalSocket>
@@ -78,9 +79,14 @@ bool BrowserWorker::start(QString *error)
     // A named pipe; UserAccessOption restricts it to the current user.
     const QString name = QString::fromLatin1(version::kIdentifier) + QStringLiteral("-browser-") + randomHex();
 #else
-    // A socket file in the owner-only work folder. Unix socket paths are
-    // limited to about 100 bytes; listen() reports a longer one as an error.
+    // A socket file in the owner-only work folder. A Unix socket path must
+    // fit in sockaddr_un (104 bytes on macOS, 108 on Linux, with the final
+    // zero byte); a longer work folder path cannot be used for the socket.
     const QString name = m_folder.tmpDir() + QStringLiteral("/bw-") + randomHex().left(8);
+    if (QFile::encodeName(name).size() > kMaxSocketPathBytes)
+        return failStart(QStringLiteral("the work folder path is too long for the browser worker socket "
+                                        "(at most %1 bytes for <work folder>/tmp/bw-xxxxxxxx)")
+                             .arg(kMaxSocketPathBytes));
 #endif
     m_server = new QLocalServer(this);
     m_server->setSocketOptions(QLocalServer::UserAccessOption);
@@ -124,6 +130,13 @@ bool BrowserWorker::start(QString *error)
     m_timer->start(kStartTimeoutMs);
 
     m_process->start();
+    // On some systems a program that cannot be started is reported inside
+    // start(); the session has then already ended.
+    if (!m_process) {
+        if (error)
+            *error = m_lastError;
+        return false;
+    }
     qCInfo(lcClient) << "browser worker starting:" << QDir::toNativeSeparators(m_program);
     return true;
 }
@@ -246,10 +259,23 @@ void BrowserWorker::onProcessFinished(int exitCode, QProcess::ExitStatus status)
 {
     if (!m_process)
         return;
+    // Replies the worker wrote just before exiting may still be unread: the
+    // exit can be reported before the socket's last data.
+    if (m_socket && !m_failed) {
+        m_socket->waitForReadyRead(0);
+        onReadyRead();
+    }
     const bool normal = status == QProcess::NormalExit && exitCode == 0 && m_stopping && !m_failed;
     if (!m_stopping && !m_failed)
         fail(QStringLiteral("the browser worker exited unexpectedly (exit code %1)").arg(exitCode));
     qCInfo(lcClient) << "browser worker exited, code" << exitCode << (normal ? "(normal)" : "(abnormal)");
+
+    // A request still open gets its one reply.
+    const int pendingId = m_pendingId;
+    m_pendingId = -1;
+    if (pendingId >= 0)
+        emit replied(pendingId, QJsonObject{{QStringLiteral("status"), QString::fromLatin1(browserprotocol::kStatusFailed)},
+                                            {QStringLiteral("error"), QStringLiteral("the browser worker ended")}});
 
     closeServer();
     if (m_socket) {
@@ -277,6 +303,7 @@ void BrowserWorker::fail(const QString &error)
     if (m_failed)
         return;
     m_failed = true;
+    m_lastError = error;
     qCWarning(lcClient) << "browser worker:" << error;
     emit failed(error);
     if (m_process && m_process->state() != QProcess::NotRunning) {
