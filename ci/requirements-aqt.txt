@@ -1,0 +1,4 @@
+# aqtinstall pinned to a git commit (pip cannot hash a git requirement; the full
+# commit SHA is the pin). Install with --no-deps --no-build-isolation after
+# requirements-build.txt and requirements-aqt-deps.txt.
+aqtinstall @ git+https://github.com/miurahr/aqtinstall@6f0f842da47c744cdc814cd94da9828d934d7bf0
