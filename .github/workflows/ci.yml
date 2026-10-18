@@ -1,0 +1,210 @@
+# Build and test on every push and pull request.
+#
+# Every tool is pinned and checked before use:
+#   - CMake 4.4.4, Ninja 1.13.2 (macOS, Linux) and NSIS 3.13 (Windows) against
+#     ci/tools.sha256
+#   - aqtinstall: its build and runtime dependencies are installed with
+#     --require-hashes (ci/requirements-build.txt, ci/requirements-aqt-deps.txt);
+#     aqtinstall itself is pinned to a full git commit SHA
+#     (ci/requirements-aqt.txt), the one requirement pip cannot hash
+#   - Qt: aqtinstall checks each archive against the hash download.qt.io
+#     publishes for it; then every kept archive must match the committed
+#     ci/qt-6.12.0.sha256, and nothing is built unless all of them do
+# Third-party actions are pinned to full commit SHAs.
+name: ci
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  QT_VERSION: "6.12.0"
+  QT_WEBENGINE: "qtwebengine@6.140.0"
+  CMAKE_VERSION: "4.4.4"
+  NINJA_VERSION: "1.13.2"
+  NSIS_VERSION: "3.13"
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macos-arm64
+            runner: macos-26
+            qt_os: mac
+            qt_arch: clang_64
+            qt_dir: macos
+            preset: macos
+            cmake_archive: cmake-4.4.4-macos-universal.tar.gz
+            cmake_bin: cmake-4.4.4-macos-universal/CMake.app/Contents/bin
+            ninja_archive: ninja-mac.zip
+          - name: macos-x86_64
+            runner: macos-26-intel
+            qt_os: mac
+            qt_arch: clang_64
+            qt_dir: macos
+            preset: macos
+            cmake_archive: cmake-4.4.4-macos-universal.tar.gz
+            cmake_bin: cmake-4.4.4-macos-universal/CMake.app/Contents/bin
+            ninja_archive: ninja-mac.zip
+          - name: windows-x64
+            runner: windows-2025
+            qt_os: windows
+            qt_arch: win64_msvc2022_64
+            qt_dir: msvc2022_64
+            preset: windows
+            cmake_archive: cmake-4.4.4-windows-x86_64.zip
+            cmake_bin: cmake-4.4.4-windows-x86_64/bin
+            ninja_archive: ""
+          - name: linux-x64
+            runner: ubuntu-24.04
+            qt_os: linux
+            qt_arch: linux_gcc_64
+            qt_dir: gcc_64
+            preset: linux
+            cmake_archive: cmake-4.4.4-linux-x86_64.tar.gz
+            cmake_bin: cmake-4.4.4-linux-x86_64/bin
+            ninja_archive: ninja-linux.zip
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.14"
+
+      # TOOLS_DIR uses forward slashes on every system (cygpath -m on Windows
+      # gives D:/a/_temp), which both the shell scripts and Windows programs
+      # accept. PATH entries are written in the system's native form.
+      - name: Prepare the tools folder
+        run: |
+          set -eu
+          if command -v cygpath >/dev/null 2>&1; then
+            echo "TOOLS_DIR=$(cygpath -m "$RUNNER_TEMP")" >> "$GITHUB_ENV"
+          else
+            echo "TOOLS_DIR=$RUNNER_TEMP" >> "$GITHUB_ENV"
+          fi
+
+      - name: Download CMake ${{ env.CMAKE_VERSION }} and check its SHA-256
+        run: |
+          set -eu
+          curl -fsSL -o "$TOOLS_DIR/${{ matrix.cmake_archive }}" \
+            "https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/${{ matrix.cmake_archive }}"
+          sh ci/check-tool.sh ci/tools.sha256 "$TOOLS_DIR/${{ matrix.cmake_archive }}"
+
+      - name: Unpack CMake (macOS, Linux)
+        if: runner.os != 'Windows'
+        run: |
+          set -eu
+          tar -xzf "$TOOLS_DIR/${{ matrix.cmake_archive }}" -C "$TOOLS_DIR"
+          echo "$TOOLS_DIR/${{ matrix.cmake_bin }}" >> "$GITHUB_PATH"
+
+      - name: Unpack CMake (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Expand-Archive -Path (Join-Path $env:RUNNER_TEMP '${{ matrix.cmake_archive }}') -DestinationPath $env:RUNNER_TEMP
+          (Join-Path $env:RUNNER_TEMP '${{ matrix.cmake_bin }}') | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+
+      - name: Confirm the CMake version
+        run: |
+          set -eu
+          cmake --version | head -n 1 | tr -d '\r' | grep -Fx "cmake version ${CMAKE_VERSION}"
+
+      - name: Download Ninja ${{ env.NINJA_VERSION }}, check its SHA-256 and unpack (macOS, Linux)
+        if: runner.os != 'Windows'
+        run: |
+          set -eu
+          curl -fsSL -o "$TOOLS_DIR/${{ matrix.ninja_archive }}" \
+            "https://github.com/ninja-build/ninja/releases/download/v${NINJA_VERSION}/${{ matrix.ninja_archive }}"
+          sh ci/check-tool.sh ci/tools.sha256 "$TOOLS_DIR/${{ matrix.ninja_archive }}"
+          mkdir -p "$TOOLS_DIR/ninja"
+          unzip -q -o "$TOOLS_DIR/${{ matrix.ninja_archive }}" -d "$TOOLS_DIR/ninja"
+          echo "$TOOLS_DIR/ninja" >> "$GITHUB_PATH"
+
+      - name: Confirm the Ninja version (macOS, Linux)
+        if: runner.os != 'Windows'
+        run: |
+          set -eu
+          command -v ninja
+          ninja --version | grep -Fx "${NINJA_VERSION}"
+
+      - name: Download NSIS ${{ env.NSIS_VERSION }} and check its SHA-256 (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          set -eu
+          curl -fsSL -o "$TOOLS_DIR/nsis-${NSIS_VERSION}-setup.exe" \
+            "https://downloads.sourceforge.net/project/nsis/NSIS%203/${NSIS_VERSION}/nsis-${NSIS_VERSION}-setup.exe"
+          sh ci/check-tool.sh ci/tools.sha256 "$TOOLS_DIR/nsis-${NSIS_VERSION}-setup.exe"
+
+      - name: Install NSIS (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $setup = Join-Path $env:RUNNER_TEMP "nsis-$env:NSIS_VERSION-setup.exe"
+          $dest = Join-Path $env:RUNNER_TEMP 'nsis'
+          # /D= must be the last argument and must not be quoted (NSIS rule).
+          $process = Start-Process -FilePath $setup -ArgumentList '/S', "/D=$dest" -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw "NSIS setup exited with $($process.ExitCode)" }
+          $version = (& (Join-Path $dest 'makensis.exe') /VERSION | Out-String).Trim()
+          Write-Output "makensis /VERSION: $version"
+          if ($version -ne "v$env:NSIS_VERSION") { throw "unexpected NSIS version $version" }
+          $dest | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+
+      - name: Install aqtinstall (hash-pinned dependencies, commit-pinned aqtinstall)
+        run: |
+          set -eu
+          python -m pip install --disable-pip-version-check --require-hashes --no-deps -r ci/requirements-build.txt
+          python -m pip install --disable-pip-version-check --require-hashes --no-deps -r ci/requirements-aqt-deps.txt
+          python -m pip install --disable-pip-version-check --no-deps --no-build-isolation -r ci/requirements-aqt.txt
+          python -m pip check
+          python -m aqt version
+
+      - name: Install Qt ${{ env.QT_VERSION }} with Qt WebEngine 6.140.0
+        run: |
+          set -eu
+          python -m aqt install-qt "${{ matrix.qt_os }}" desktop "$QT_VERSION" "${{ matrix.qt_arch }}" \
+            -m "$QT_WEBENGINE" qtpositioning qtwebchannel \
+            --base https://download.qt.io \
+            --keep --archive-dest "$TOOLS_DIR/qt-archives" \
+            -O "$TOOLS_DIR/Qt"
+
+      - name: Check every Qt archive against ci/qt-6.12.0.sha256
+        run: sh ci/verify-qt-archives.sh ci/qt-6.12.0.sha256 "${{ matrix.qt_os }}" "$TOOLS_DIR/qt-archives"
+
+      - name: Point the build at Qt
+        run: |
+          set -eu
+          qt_root="$TOOLS_DIR/Qt/$QT_VERSION/${{ matrix.qt_dir }}"
+          echo "QT_ROOT_DIR=$qt_root" >> "$GITHUB_ENV"
+          if command -v cygpath >/dev/null 2>&1; then
+            cygpath -w "$qt_root/bin" >> "$GITHUB_PATH"
+          else
+            echo "$qt_root/bin" >> "$GITHUB_PATH"
+          fi
+
+      - name: Configure
+        run: cmake --preset "${{ matrix.preset }}"
+
+      - name: Build (warnings are errors)
+        run: cmake --build --preset "${{ matrix.preset }}-release"
+
+      - name: Test
+        run: ctest --preset "${{ matrix.preset }}-release"
