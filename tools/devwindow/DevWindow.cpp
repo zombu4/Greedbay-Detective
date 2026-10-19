@@ -406,6 +406,12 @@ void DevWindow::fetchComps()
 {
     if (!m_runner || !m_runner->isWaitingForQueries())
         return;
+    const app::lookup::Identity &identity = m_runner->result().identity;
+    if (m_brand->text().simplified() != identity.brandName || m_model->text().simplified() != identity.model
+        || m_productName->text().simplified() != identity.productName) {
+        append(QStringLiteral("the identity fields were changed: press Save identity first (nothing was fetched)"));
+        return;
+    }
     const QStringList queries = m_queries->toPlainText().split(QLatin1Char('\n'));
     const app::lookup::Depths depths{m_soldDepth->value(), m_activeDepth->value(), m_researchDepth->value()};
     const app::Settings settings(m_folder.settingsPath());
@@ -447,7 +453,8 @@ void DevWindow::showRows()
     const app::lookup::Bucket order[] = {app::lookup::Bucket::SameItem, app::lookup::Bucket::Documentation,
                                          app::lookup::Bucket::PartFits, app::lookup::Bucket::Companion,
                                          app::lookup::Bucket::Accessory, app::lookup::Bucket::Lot,
-                                         app::lookup::Bucket::UnknownItem, app::lookup::Bucket::NoMatch};
+                                         app::lookup::Bucket::UnknownItem, app::lookup::Bucket::ToCheck,
+                                         app::lookup::Bucket::NoMatch};
     for (const app::lookup::Bucket bucket : order) {
         QTreeWidgetItem *group = nullptr;
         for (qsizetype i = 0; i < m_rows.size(); ++i) {

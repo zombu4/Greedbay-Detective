@@ -52,7 +52,10 @@ struct ShippingCheck {
     int compsWithShipping = 0;
     std::optional<qint64> compMedianCents;
     std::optional<qint64> ebayAverageCents;
-    // listing > ratio x comp median AND more than the minimum above it.
+    // Against each reference (rule 16): listing > ratio x reference AND more
+    // than the minimum above it. flagged: against either.
+    bool flaggedVsComps = false;
+    bool flaggedVsEbay = false;
     bool flagged = false;
 };
 

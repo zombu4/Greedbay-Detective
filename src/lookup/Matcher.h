@@ -18,13 +18,18 @@ namespace app::lookup {
 // AA100 = AA 100). A code inside a longer word ("15208-AA100",
 // "SP-PR570-BML", "VG91-5040") or a longer model with the same start
 // (PR570 for PR57) is not the model. Brand found: one of the brand's names
-// as whole words.
+// as whole words, also inside a slash-joined word ("HP/Agilent").
 //
 // Bucket, first that applies:
 //   UnknownItem    no title (rule 19)
-//   NoMatch        the model or the brand is not in the title
+//   NoMatch        the model is not in the title
+//   ToCheck        the model is there but no brand name (owner case 7 had a
+//                  real sale titled without its brand), or a digits-only model
+//                  that does not directly follow the brand name (a year?);
+//                  never counted unless the user ticks it
 //   Lot            a lot word
-//   Documentation  a documentation word
+//   Documentation  a documentation word not following a with-item word
+//                  ("with manual" belongs to the item)
 //   Companion      "<other model> ... for <model>" (rule 13)
 //   Accessory      "<accessory word> ... for <model>"
 //   PartFits       any other "... for <model>"; a part-fits word; a part
@@ -35,7 +40,7 @@ namespace app::lookup {
 //   SameItem       otherwise
 // "for <model>" means a companion word directly followed, within three
 // words (a brand name may stand between), by the model.
-enum class Bucket { SameItem, Documentation, PartFits, Companion, Accessory, Lot, UnknownItem, NoMatch };
+enum class Bucket { SameItem, Documentation, PartFits, Companion, Accessory, Lot, UnknownItem, ToCheck, NoMatch };
 
 // Condition scale (rule 18), from title words first - the strongest found
 // counts: NonWorking > Untested > New > Working; a longer phrase wins over a

@@ -370,6 +370,13 @@ void BrowserController::onEvent(const QString &method, const QJsonObject &params
         if (info.value(QStringLiteral("type")).toString() == QLatin1String("page") && id != m_targetId
             && !m_startTabs.contains(id)) {
             m_startTabs.insert(id);
+            // Before the session is ready, a tab no page opened is one more
+            // tab of the browser's own start (restored late): closed too.
+            if (!m_ready && info.value(QStringLiteral("openerId")).toString().isEmpty()) {
+                qCInfo(lcBrowser) << "closed a tab that appeared while the browser started";
+                command(QStringLiteral("Target.closeTarget"), {{QStringLiteral("targetId"), id}}, nullptr, false);
+                return;
+            }
             const bool userActs = m_waitingForUser || m_op == Op::SignInWaiting;
             qCInfo(lcBrowser) << "a page opened another tab;" << (userActs ? "left to the user" : "the app's tab stays in front");
             if (!userActs)

@@ -68,12 +68,14 @@ ShippingCheck checkShipping(std::optional<qint64> listingCents, const QList<Comp
     }
     check.compsWithShipping = static_cast<int>(shipping.size());
     check.compMedianCents = percentile(shipping, 50);
-    if (listingCents && check.compMedianCents) {
-        const double listing = static_cast<double>(*listingCents);
-        const double median = static_cast<double>(*check.compMedianCents);
-        check.flagged = listing > settings.shippingFlagRatio * median
-                        && *listingCents - *check.compMedianCents > settings.shippingFlagMinAboveCents;
-    }
+    auto tooHigh = [&](std::optional<qint64> reference) {
+        return listingCents && reference
+               && static_cast<double>(*listingCents) > settings.shippingFlagRatio * static_cast<double>(*reference)
+               && *listingCents - *reference > settings.shippingFlagMinAboveCents;
+    };
+    check.flaggedVsComps = tooHigh(check.compMedianCents);
+    check.flaggedVsEbay = tooHigh(ebayAverageCents);
+    check.flagged = check.flaggedVsComps || check.flaggedVsEbay;
     return check;
 }
 

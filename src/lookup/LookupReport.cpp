@@ -146,14 +146,26 @@ QString reportText(const LookupResult &result, const QList<Row> &rows, const Val
 
     const ShippingCheck &shipping = valuation.shipping;
     if (shipping.flagged) {
-        const double times = static_cast<double>(*shipping.listingCents) / static_cast<double>(*shipping.compMedianCents);
         QString share;
         if (const std::optional<qint64> total = item.totalCents(); total && *total > 0)
-            share = QStringLiteral(", %1% of the total")
+            share = QStringLiteral(" (%1% of the total)")
                         .arg(QString::number(100.0 * static_cast<double>(*shipping.listingCents) / static_cast<double>(*total), 'f', 0));
-        out.append(QStringLiteral("SHIPPING FLAG: %1 is %2 x the matched sales' median shipping %3 (+%4)%5")
-                       .arg(money(*shipping.listingCents), QString::number(times, 'f', 1), money(*shipping.compMedianCents),
-                            money(*shipping.listingCents - *shipping.compMedianCents), share));
+        // "N x" only against a reference above $0.
+        auto against = [&shipping](const char *what, qint64 reference) {
+            const QString times = reference > 0
+                                      ? QStringLiteral("%1 x ").arg(QString::number(static_cast<double>(*shipping.listingCents)
+                                                                                        / static_cast<double>(reference), 'f', 1))
+                                      : QString();
+            return QStringLiteral("%1%2 %3 (+%4)").arg(times, QString::fromLatin1(what), money(reference),
+                                                       money(*shipping.listingCents - reference));
+        };
+        QStringList parts;
+        if (shipping.flaggedVsComps)
+            parts.append(against("the matched sales' median shipping", *shipping.compMedianCents));
+        if (shipping.flaggedVsEbay)
+            parts.append(against("eBay's Product Research average shipping", *shipping.ebayAverageCents));
+        out.append(QStringLiteral("SHIPPING FLAG: %1%2 is %3").arg(money(*shipping.listingCents), share,
+                                                                   parts.join(QStringLiteral(" and "))));
         out.append(QString());
     }
 
@@ -174,7 +186,7 @@ QString reportText(const LookupResult &result, const QList<Row> &rows, const Val
     out.append(QString());
 
     const Bucket order[] = {Bucket::SameItem, Bucket::Documentation, Bucket::PartFits, Bucket::Companion,
-                            Bucket::Accessory, Bucket::Lot, Bucket::UnknownItem, Bucket::NoMatch};
+                            Bucket::Accessory, Bucket::Lot, Bucket::UnknownItem, Bucket::ToCheck, Bucket::NoMatch};
     const struct {
         Row::Source source;
         const char *name;

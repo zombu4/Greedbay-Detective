@@ -172,7 +172,8 @@ function extract(input) {
     });
     // eBay's empty result (recon "2026-10-19 phase 4"): a normal outcome with
     // no rows, owner rule 6.
-    const empty = Array.prototype.some.call(document.querySelectorAll('.research__generic-error .page-notice__title'),
+    // Only the sold tab's notice: the active tab has its own (recon).
+    const empty = Array.prototype.some.call(document.querySelectorAll('.sold-tab-content .research__generic-error .page-notice__title'),
         function (element) { return /^Your search didn't return any results\./.test(textOf(element)); });
     if (rows.length === 0 && !empty)
         return notExpected('unexpected', 'no research result rows');

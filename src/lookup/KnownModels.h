@@ -53,8 +53,11 @@ public:
     // The built-in data. std::nullopt (and *error) when it cannot be read.
     static std::optional<KnownModels> builtIn(QString *error);
     // Data in the file format; `requireSources`: every fact must name a
-    // source (the built-in data); "listings" are read when present.
-    static std::optional<KnownModels> fromJson(const QByteArray &json, bool requireSources, QString *error);
+    // source (the built-in data); "listings" are read when present. A model
+    // may name a brand of the file or one of `otherBrandIds` (the user's file
+    // adds models to built-in brands).
+    static std::optional<KnownModels> fromJson(const QByteArray &json, bool requireSources, QString *error,
+                                               const QStringList &otherBrandIds = {});
 
     // Adds the user's file at `path`. A missing file adds nothing and is no
     // error. A link, an unreadable or damaged file is refused (and *error):
@@ -83,6 +86,7 @@ public:
 
 private:
     void add(const KnownModels &other);
+    QStringList brandIds() const;
 
     QList<Brand> m_brands;
     QList<KnownModel> m_models;

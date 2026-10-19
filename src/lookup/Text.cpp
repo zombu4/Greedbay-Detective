@@ -17,10 +17,16 @@ QStringList titleWords(const QString &text)
 {
     static const QRegularExpression separators(
         QStringLiteral("[\\s,;()\\[\\]!?\"'#*|:\\x{2018}\\x{2019}\\x{201C}\\x{201D}]+"));
-    static const QRegularExpression keepsSlash(QStringLiteral("^[A-Za-z]+/[A-Za-z]*$"));
+    static const QRegularExpression withSlash(QStringLiteral("^(w/)(.*)$"), QRegularExpression::CaseInsensitiveOption);
     QStringList words;
     for (QString word : text.split(separators, Qt::SkipEmptyParts)) {
-        if (!keepsSlash.match(word).hasMatch()) {
+        // "w/" stays a word of its own, also when glued to the next one ("w/Leads").
+        const QRegularExpressionMatch with = withSlash.match(word);
+        if (with.hasMatch()) {
+            words.append(with.captured(1));
+            word = with.captured(2);
+        }
+        if (word.compare(QLatin1String("p/n"), Qt::CaseInsensitive) != 0) {
             while (!word.isEmpty() && QStringLiteral("-./").contains(word.front()))
                 word.remove(0, 1);
             while (!word.isEmpty() && QStringLiteral("-./").contains(word.back()))

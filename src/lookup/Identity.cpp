@@ -23,6 +23,13 @@ QString unitAlternatives(const QStringList &units)
     return escaped.join(QLatin1Char('|'));
 }
 
+bool matchesAny(const QString &word, const QStringList &patterns)
+{
+    return std::any_of(patterns.cbegin(), patterns.cend(), [&word](const QString &pattern) {
+        return QRegularExpression(pattern, QRegularExpression::CaseInsensitiveOption).match(word).hasMatch();
+    });
+}
+
 bool isUnitWord(const QString &word, const QStringList &units)
 {
     return std::any_of(units.cbegin(), units.cend(),
@@ -99,13 +106,19 @@ bool isSpecification(const QStringList &words, qsizetype index, const MatchWords
         && (withUnit.match(sides.at(0)).hasMatch() || withUnit.match(sides.at(1)).hasMatch()))
         return true;
     for (const QString &prefix : matchWords.specPrefixes) {
-        const QRegularExpression prefixed(QStringLiteral("^%1-%2$").arg(QRegularExpression::escape(prefix), kNumber),
+        const QRegularExpression prefixed(QStringLiteral("^%1-%2(?:%3)?$").arg(QRegularExpression::escape(prefix), kNumber, units),
                                           QRegularExpression::CaseInsensitiveOption);
         if (prefixed.match(word).hasMatch())
             return true;
     }
     return !word.isEmpty() && word.back().isDigit() && index + 1 < words.size()
            && isUnitWord(words.at(index + 1), matchWords.specUnits);
+}
+
+bool isModelLike(const QStringList &words, qsizetype index, const MatchWords &matchWords)
+{
+    const QString &word = words.at(index);
+    return hasLetterAndDigit(word) && !isSpecification(words, index, matchWords) && !matchesAny(word, matchWords.notModels);
 }
 
 QStringList modelCandidates(const QString &text, const QStringList &brandNames, const MatchWords &matchWords)
@@ -115,7 +128,7 @@ QStringList modelCandidates(const QString &text, const QStringList &brandNames, 
     QStringList seen;
     for (qsizetype i = 0; i < words.size(); ++i) {
         const QString &word = words.at(i);
-        if (!hasLetterAndDigit(word) || isSpecification(words, i, matchWords))
+        if (!isModelLike(words, i, matchWords))
             continue;
         if (std::any_of(brandNames.cbegin(), brandNames.cend(),
                         [&word](const QString &name) { return word.compare(name, Qt::CaseInsensitive) == 0; }))
@@ -157,7 +170,10 @@ Identity identify(const ItemRecord &item, const KnownModels &known, const MatchW
         return identityFromUser(*saved, known, QStringLiteral("saved"));
 
     Identity identity;
-    const QString brandSpecific = item.specific(QStringLiteral("Brand")).simplified();
+    QString brandSpecific = item.specific(QStringLiteral("Brand")).simplified();
+    // "Unbranded", "Does not apply", ...: no brand is named there.
+    if (words.notBrands.contains(brandSpecific, Qt::CaseInsensitive))
+        brandSpecific.clear();
     QString found;
     const Brand *brand = nullptr;
     if (!brandSpecific.isEmpty()) {
@@ -184,14 +200,20 @@ Identity identify(const ItemRecord &item, const KnownModels &known, const MatchW
         {item.title, "title", "title"},
     };
 
-    // A known model of the brand, anywhere.
+    // A known model of the brand, anywhere: one word or 2-3 neighbouring
+    // words written together ("IM 13").
     if (brand) {
         for (const auto &source : sources) {
-            for (const QString &word : titleWords(source.text)) {
-                if (const KnownModel *model = known.findModel(brand->id, word)) {
-                    setKnownModel(&identity, *model);
-                    identity.source = QStringLiteral("known model");
-                    break;
+            const QStringList list = titleWords(source.text);
+            for (qsizetype i = 0; i < list.size() && identity.model.isEmpty(); ++i) {
+                QString joined;
+                for (qsizetype n = 0; n < 3 && i + n < list.size(); ++n) {
+                    joined += list.at(i + n);
+                    if (const KnownModel *model = known.findModel(brand->id, joined)) {
+                        setKnownModel(&identity, *model);
+                        identity.source = QStringLiteral("known model");
+                        break;
+                    }
                 }
             }
             if (!identity.model.isEmpty())

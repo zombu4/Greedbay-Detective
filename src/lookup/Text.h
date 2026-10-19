@@ -16,13 +16,14 @@ QString normalizeCode(const QString &code);
 // , ; ( ) [ ] ! ? " ' # * | : and typographic quotes; NOT at "-", "/" or
 // ".", so a hyphen- or slash-joined code ("15208-AA100", "SP-PR570-BML",
 // "M7X/B2") stays one word (owner rule 10 and case 3). Leading and trailing
-// "-", "." and "/" are removed from each word, except that a word that is
-// only letters followed by "/" keeps it ("w/", "p/n" stays as it is).
+// "-", "." and "/" are removed from each word, except from "p/n"; "w/" is
+// always a word of its own, also when glued to the next ("w/Leads" -> "w/",
+// "Leads").
 QStringList titleWords(const QString &text);
 
 // The same words, lower case, with "/"-joined words also split at "/"
-// ("parts/repair" -> "parts", "repair", "foot/feet" -> "foot", "feet"),
-// except "w/" and "p/n"; for matching the word lists.
+// ("parts/repair" -> "parts", "repair", "HP/Agilent" -> "hp", "agilent"),
+// except "w/" and "p/n"; for matching the word lists and brand names.
 QStringList listWords(const QString &text);
 
 // True when `word` has at least one letter and one digit.

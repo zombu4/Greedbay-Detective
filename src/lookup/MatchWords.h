@@ -14,6 +14,8 @@ namespace app::lookup {
 struct MatchWords {
     QStringList specUnits;    // a number with one of these is a specification
     QStringList specPrefixes; // <prefix>-<number> is a specification (DC-600)
+    QStringList notModels;    // regular expressions: model-like words that are no model
+    QStringList notBrands;    // Brand values that name no brand
     QStringList lot;
     QStringList documentation;
     QStringList partFits;     // a part on its own

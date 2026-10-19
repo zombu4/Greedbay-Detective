@@ -4,6 +4,7 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QRegularExpression>
 
 namespace app::lookup {
 
@@ -42,6 +43,8 @@ std::optional<MatchWords> MatchWords::fromJson(const QByteArray &json, QString *
     } lists[] = {
         {wordsOf("specUnits"), &words.specUnits, "specUnits"},
         {wordsOf("specPrefixes"), &words.specPrefixes, "specPrefixes"},
+        {root.value(QStringLiteral("notModels")).toObject().value(QStringLiteral("patterns")), &words.notModels, "notModels"},
+        {wordsOf("notBrands"), &words.notBrands, "notBrands"},
         {wordsOf("lot"), &words.lot, "lot"},
         {wordsOf("documentation"), &words.documentation, "documentation"},
         {wordsOf("partFits"), &words.partFits, "partFits"},
@@ -60,6 +63,12 @@ std::optional<MatchWords> MatchWords::fromJson(const QByteArray &json, QString *
     for (const auto &entry : lists) {
         if (!readList(entry.value, entry.list)) {
             *error = QStringLiteral("the word list %1 is missing or not a list of words").arg(QLatin1String(entry.name));
+            return std::nullopt;
+        }
+    }
+    for (const QString &pattern : std::as_const(words.notModels)) {
+        if (!QRegularExpression(pattern).isValid()) {
+            *error = QStringLiteral("the notModels pattern %1 is not a valid regular expression").arg(pattern);
             return std::nullopt;
         }
     }

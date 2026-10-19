@@ -77,14 +77,31 @@ QStringList otherModelCodes(const QStringList &words, const Identity &identity, 
         own.append(normalizeCode(member));
     QStringList others;
     for (qsizetype i = 0; i < words.size(); ++i) {
-        const QString &word = words.at(i);
-        if (!hasLetterAndDigit(word) || isSpecification(words, i, matchWords))
+        if (!isModelLike(words, i, matchWords))
             continue;
-        const QString code = normalizeCode(word);
+        const QString code = normalizeCode(words.at(i));
         if (!own.contains(code) && !others.contains(code))
             others.append(code);
     }
     return others;
+}
+
+// The first word of `list` at a position not preceded, within three words,
+// by a with-item word ("with manual", "w/ Leads"); -1 when none.
+qsizetype firstNotWithItem(const QStringList &words, const QStringList &list, const MatchWords &matchWords, QString *which)
+{
+    for (const QString &phrase : list) {
+        for (const qsizetype at : phrasePositions(words, phrase)) {
+            bool withItem = false;
+            for (qsizetype k = std::max<qsizetype>(0, at - 3); k < at && !withItem; ++k)
+                withItem = matchWords.withItem.contains(words.at(k), Qt::CaseInsensitive);
+            if (!withItem) {
+                *which = phrase;
+                return at;
+            }
+        }
+    }
+    return -1;
 }
 
 } // namespace
@@ -169,9 +186,29 @@ Match matchRow(const QString &title, const QString &ebayCondition, const Identit
         reasons.append(QStringLiteral("model %1 not in the title as a whole word").arg(identity.model));
         return done(Bucket::NoMatch);
     }
+    // A brand name may also stand inside a slash-joined word ("HP/Agilent").
     if (brands.isEmpty()) {
-        reasons.append(QStringLiteral("brand %1 not in the title").arg(identity.brandName));
-        return done(Bucket::NoMatch);
+        for (const QString &name : identity.matchNames) {
+            if (!phrasePositions(list, titleWords(name.toLower()).join(QLatin1Char(' '))).isEmpty()) {
+                brandWord = name;
+                break;
+            }
+        }
+    }
+    if (brandWord.isEmpty()) {
+        // The model without the brand: often another product with the same
+        // code (cards, car parts), sometimes the item with a short title.
+        // Shown for the user to decide, never counted by itself.
+        reasons.append(QStringLiteral("model %1 found, but the brand %2 is not in the title: check")
+                           .arg(codeList.at(models.first()), identity.brandName));
+        return done(Bucket::ToCheck);
+    }
+    // A model of digits only ("2022") also stands for years and quantities:
+    // it counts only right after a brand name.
+    if (!hasLetterAndDigit(normalizeCode(codeList.at(models.first()))) && !identity.model.isEmpty()
+        && std::none_of(models.cbegin(), models.cend(), [&brands](qsizetype at) { return brands.contains(at - 1); })) {
+        reasons.append(QStringLiteral("model %1 is digits only and does not follow the brand name: check").arg(identity.model));
+        return done(Bucket::ToCheck);
     }
     reasons.append(QStringLiteral("model %1 and brand %2 found").arg(codeList.at(models.first()), brandWord));
 
@@ -180,7 +217,7 @@ Match matchRow(const QString &title, const QString &ebayCondition, const Identit
         reasons.append(QStringLiteral("lot (\"%1\")").arg(word));
         return done(Bucket::Lot);
     }
-    if (firstPhrase(list, words.documentation, &word) >= 0) {
+    if (firstNotWithItem(list, words.documentation, words, &word) >= 0) {
         reasons.append(QStringLiteral("documentation (\"%1\")").arg(word));
         return done(Bucket::Documentation);
     }
@@ -228,17 +265,9 @@ Match matchRow(const QString &title, const QString &ebayCondition, const Identit
         reasons.append(QStringLiteral("several other models: %1").arg(others.join(QStringLiteral(", "))));
         return done(Bucket::PartFits);
     }
-    for (const QString &accessory : words.accessory) {
-        for (const qsizetype at : phrasePositions(list, accessory)) {
-            bool withItem = false;
-            for (qsizetype k = std::max<qsizetype>(0, at - 3); k < at && !withItem; ++k)
-                withItem = words.withItem.contains(list.at(k), Qt::CaseInsensitive);
-            if (!withItem) {
-                reasons.append(QStringLiteral("accessory (\"%1\")").arg(accessory));
-                return done(Bucket::Accessory);
-            }
-            reasons.append(QStringLiteral("with %1").arg(accessory));
-        }
+    if (firstNotWithItem(list, words.accessory, words, &word) >= 0) {
+        reasons.append(QStringLiteral("accessory (\"%1\")").arg(word));
+        return done(Bucket::Accessory);
     }
     reasons.append(QStringLiteral("same item"));
     return done(Bucket::SameItem);
@@ -261,6 +290,8 @@ QString bucketName(Bucket bucket)
         return QStringLiteral("lot");
     case Bucket::UnknownItem:
         return QStringLiteral("unknown item");
+    case Bucket::ToCheck:
+        return QStringLiteral("to check");
     case Bucket::NoMatch:
         break;
     }

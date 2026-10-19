@@ -63,7 +63,8 @@ std::optional<KnownModels> KnownModels::builtIn(QString *error)
     return fromJson(file.readAll(), true, error);
 }
 
-std::optional<KnownModels> KnownModels::fromJson(const QByteArray &json, bool requireSources, QString *error)
+std::optional<KnownModels> KnownModels::fromJson(const QByteArray &json, bool requireSources, QString *error,
+                                                 const QStringList &otherBrandIds)
 {
     const QJsonDocument document = QJsonDocument::fromJson(json);
     const QJsonObject root = document.object();
@@ -100,7 +101,7 @@ std::optional<KnownModels> KnownModels::fromJson(const QByteArray &json, bool re
         KnownModel model;
         model.brandId = object.value(QStringLiteral("brand")).toString();
         model.model = object.value(QStringLiteral("model")).toString().simplified();
-        if (model.model.isEmpty() || !data.brandById(model.brandId))
+        if (model.model.isEmpty() || (!data.brandById(model.brandId) && !otherBrandIds.contains(model.brandId)))
             return fail(QStringLiteral("a model has no code or an unknown brand"));
         if (requireSources && !hasSource(object))
             return fail(QStringLiteral("the model %1 has no source").arg(model.model));
@@ -153,11 +154,19 @@ bool KnownModels::addUserFile(const QString &path, QString *error)
     const std::optional<QJsonObject> object = readUserObject(path, error);
     if (!object)
         return false;
-    const std::optional<KnownModels> data = fromJson(QJsonDocument(*object).toJson(), false, error);
+    const std::optional<KnownModels> data = fromJson(QJsonDocument(*object).toJson(), false, error, brandIds());
     if (!data)
         return false;
     add(*data);
     return true;
+}
+
+QStringList KnownModels::brandIds() const
+{
+    QStringList ids;
+    for (const Brand &brand : m_brands)
+        ids.append(brand.id);
+    return ids;
 }
 
 bool KnownModels::saveConfirmed(const QString &path, const QString &itemId, const ConfirmedIdentity &identity,
@@ -205,7 +214,7 @@ bool KnownModels::saveConfirmed(const QString &path, const QString &itemId, cons
     root->insert(QStringLiteral("listings"), listings);
 
     // Checked before writing: what is saved must read back.
-    const std::optional<KnownModels> saved = fromJson(QJsonDocument(*root).toJson(), false, error);
+    const std::optional<KnownModels> saved = fromJson(QJsonDocument(*root).toJson(), false, error, brandIds());
     if (!saved)
         return false;
     QSaveFile file(path);

@@ -5,12 +5,6 @@
 
 namespace app {
 
-// User settings, stored only in an INI file at an explicit path.
-//
-// QSettings' native format would write to the macOS plist folder, the Windows
-// registry or ~/.config, outside the work folder. The work folder must hold
-// everything the app stores, so the INI format and an explicit file path are
-// always used and the platform default store is never touched.
 // The numbers of the value math (PLAN 6 and 14, DESIGN 3.4).
 struct ValueSettings {
     // Totals outside [P25 - f x IQR, P75 + f x IQR] are outliers.
@@ -26,6 +20,12 @@ struct ValueSettings {
     qint64 shippingFlagMinAboveCents = 1000;
 };
 
+// User settings, stored only in an INI file at an explicit path.
+//
+// QSettings' native format would write to the macOS plist folder, the Windows
+// registry or ~/.config, outside the work folder. The work folder must hold
+// everything the app stores, so the INI format and an explicit file path are
+// always used and the platform default store is never touched.
 class Settings {
 public:
     static constexpr int kDefaultSoldHistoryDays = 90;
