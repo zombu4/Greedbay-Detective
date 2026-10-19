@@ -38,6 +38,8 @@ ValueNumbers valueOf(const QList<Comp> &comps, const ValueSettings &settings)
     numbers.medianCents = percentile(kept, 50);
     numbers.p25Cents = percentile(kept, 25);
     numbers.p75Cents = percentile(kept, 75);
+    numbers.lowCents = percentile(kept, 0);
+    numbers.highCents = percentile(kept, 100);
     numbers.confidence = confidenceName(numbers.included, settings);
     numbers.unconfirmed = static_cast<int>(unconfirmed.size());
     numbers.unconfirmedMedianCents = percentile(unconfirmed, 50);

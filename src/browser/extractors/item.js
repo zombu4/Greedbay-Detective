@@ -86,6 +86,20 @@ function stringOrNull(value) {
     return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
 }
 
+// The listing's first photo from JSON-LD Product.image (recon section 3:
+// the Product has the key "image"): a URL string, the first entry of an
+// array, or the "url" of a schema.org ImageObject. Only https addresses;
+// anything else gives null.
+function imageUrlOf(value) {
+    const first = Array.isArray(value) ? value[0] : value;
+    let url = null;
+    if (typeof first === 'string')
+        url = first.trim();
+    else if (first !== null && typeof first === 'object' && typeof first.url === 'string')
+        url = first.url.trim();
+    return url !== null && /^https:\/\/[^\s]+$/.test(url) ? url : null;
+}
+
 function asArray(value) {
     if (value === undefined || value === null)
         return [];
@@ -215,6 +229,7 @@ function extract(input) {
         itemId: input.itemId || null,
         title: null,
         titleSource: null,
+        imageUrl: product ? imageUrlOf(product.image) : null,
         priceCents: null,
         currency: null,
         priceSource: null,

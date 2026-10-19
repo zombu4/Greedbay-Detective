@@ -104,6 +104,7 @@ ItemRecord ItemRecord::fromJson(const QJsonObject &data)
     // eBay's visible condition text, not the schema.org code.
     record.condition = data.value(QStringLiteral("conditionText")).toString();
     record.sellerName = data.value(QStringLiteral("seller")).toObject().value(QStringLiteral("name")).toString();
+    record.imageUrl = data.value(QStringLiteral("imageUrl")).toString();
     for (const QJsonValue &value : data.value(QStringLiteral("specifics")).toArray()) {
         const QJsonObject entry = value.toObject();
         record.specifics.append({entry.value(QStringLiteral("label")).toString(), entry.value(QStringLiteral("value")).toString()});

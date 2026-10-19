@@ -1,0 +1,193 @@
+#pragma once
+
+#include "core/WorkFolder.h"
+#include "lookup/KnownModels.h"
+#include "lookup/LookupStore.h"
+#include "lookup/MatchWords.h"
+
+#include <QJsonObject>
+#include <QObject>
+#include <QStringList>
+#include <QtQmlIntegration/qqmlintegration.h>
+
+#include <optional>
+
+class QNetworkAccessManager;
+class QNetworkReply;
+
+namespace app::browser {
+class BrowserController;
+}
+namespace app::lookup {
+class LookupRunner;
+}
+
+namespace app::ui {
+
+// One lookup from the user interface (inbox phase 6 step 4, PLAN 5):
+//   start(input)       a pasted link: a browser session in the user's
+//                      installed browser (BrowserController, its own profile
+//                      in the work folder), the item page, the identity,
+//                      then the searches
+//   startCorrected()   "Wrong item? Correct it" on a saved lookup: the
+//                      corrected identity is saved for the listing, then the
+//                      saved listing record is identified again (the saved
+//                      identity comes first) and searched; the item page is
+//                      not loaded again
+// With a confident identity the searches start at once with the queries
+// built from it (one per brand search name, owner rules 21, 23) and the
+// depths and period from Settings. Without one nothing is searched: state
+// AskIdentity shows the listing's title, item specifics and a link to it,
+// and the user enters brand, model and product name (submitIdentity(), rule
+// 26). Every identity the user enters is saved to the known models in the
+// work folder (KnownModels::saveConfirmed, reused next time, rule 7) and
+// recorded in the database (LookupStore::saveUserIdentity).
+//
+// When eBay shows a page the app cannot read (sign-in, ship-to prompt, a
+// check), the browser window comes to the front and state WaitingForUser
+// shows the browser controller's message; the user answers it there and
+// presses Continue (continueAfterUser()). Nothing is solved or skipped by
+// the app.
+//
+// The lookup is saved when it ends - complete, cancelled (partial) or
+// stopped (failed), with what was collected - in one transaction
+// (LookupStore::save), then saved(id) is emitted and the browser is closed.
+// When the browser ends the session itself (closed, crashed), what was
+// collected is saved as stopped. Only a session whose browser never got
+// ready saves nothing.
+//
+// The listing's photo: after the item page is read, its JSON-LD photo
+// address (https only) is downloaded once by the app itself (not through the
+// browser; it is no eBay page load and not counted in the daily cap): no
+// cookies are sent or kept, nothing is written to disk but the scaled JPEG
+// in the database (LookupStore::savePhoto). Any failure leaves the lookup
+// without a photo.
+class LookupSession : public QObject {
+    Q_OBJECT
+    QML_ELEMENT
+    QML_UNCREATABLE("Created by the app")
+    // The state for QML, as a word: "idle", "starting", "reading",
+    // "askIdentity", "searching", "waitingForUser", "closing".
+    Q_PROPERTY(QString stateName READ stateName NOTIFY stateChanged)
+    // True from start() until the session is over (state Idle).
+    Q_PROPERTY(bool running READ isRunning NOTIFY stateChanged)
+    // The step being done (an index into `steps`).
+    Q_PROPERTY(int step READ step NOTIFY progressChanged)
+    Q_PROPERTY(QStringList steps READ steps CONSTANT)
+    Q_PROPERTY(int pagesThisLookup READ pagesThisLookup NOTIFY progressChanged)
+    Q_PROPERTY(QString lastLine READ lastLine NOTIFY progressChanged)
+    Q_PROPERTY(QString browserName READ browserName NOTIFY stateChanged)
+    // WaitingForUser: what to do in the browser window.
+    Q_PROPERTY(QString userMessage READ userMessage NOTIFY stateChanged)
+    // Why the last start(), submitIdentity() or session failed; empty when
+    // nothing failed.
+    Q_PROPERTY(QString errorText READ errorText NOTIFY errorChanged)
+    // AskIdentity: the listing and the suggestions.
+    Q_PROPERTY(QString askTitle READ askTitle NOTIFY stateChanged)
+    Q_PROPERTY(QString askItemId READ askItemId NOTIFY stateChanged)
+    Q_PROPERTY(QString askReason READ askReason NOTIFY stateChanged)
+    Q_PROPERTY(QStringList askSpecifics READ askSpecifics NOTIFY stateChanged)
+    Q_PROPERTY(QStringList askSuggestions READ askSuggestions NOTIFY stateChanged)
+    Q_PROPERTY(QString askBrand READ askBrand NOTIFY stateChanged)
+    Q_PROPERTY(QString askModel READ askModel NOTIFY stateChanged)
+    Q_PROPERTY(QString askProductName READ askProductName NOTIFY stateChanged)
+public:
+    // Idle: no lookup. Starting: the browser starts. Reading: the listing
+    // page. AskIdentity: the user enters the identity. Searching: the
+    // comparison pages. WaitingForUser: the user acts in the browser window.
+    // Closing: saved, the browser closes.
+    enum class State { Idle, Starting, Reading, AskIdentity, Searching, WaitingForUser, Closing };
+
+    // `known`, `words` and `store` must outlive the session.
+    LookupSession(WorkFolder folder, lookup::KnownModels *known, const lookup::MatchWords *words,
+                  const lookup::LookupStore *store, QObject *parent = nullptr);
+    ~LookupSession() override;
+
+    // False (and errorText) when a lookup runs, the input is not an eBay
+    // item address or number (nothing is saved, owner decision Q21), no
+    // supported browser is installed, or the browser cannot be started.
+    bool start(const QString &input);
+    // False (and errorText) when a lookup runs, the identity is incomplete or
+    // cannot be saved, or the browser cannot be started.
+    bool startCorrected(const lookup::SavedLookup &saved, const QString &brand, const QString &model,
+                        const QString &productName);
+
+    // AskIdentity: the identity the user entered; the searches start. False
+    // (and errorText) when brand or model is empty or it cannot be saved.
+    Q_INVOKABLE bool submitIdentity(const QString &brand, const QString &model, const QString &productName);
+    // WaitingForUser: the user has done what userMessage asked for.
+    Q_INVOKABLE void continueAfterUser();
+    // Stops the lookup: after the page being loaded, at once while waiting
+    // for the user or for the identity. What was collected is saved.
+    Q_INVOKABLE void cancel();
+
+    State state() const { return m_state; }
+    QString stateName() const;
+    bool isRunning() const { return m_state != State::Idle; }
+    int step() const { return m_step; }
+    QStringList steps() const;
+    int pagesThisLookup() const { return m_pages; }
+    QString lastLine() const { return m_lastLine; }
+    QString browserName() const { return m_browserName; }
+    QString userMessage() const { return m_userMessage; }
+    QString errorText() const { return m_errorText; }
+    QString askTitle() const;
+    QString askItemId() const;
+    QString askReason() const;
+    QStringList askSpecifics() const;
+    QStringList askSuggestions() const;
+    QString askBrand() const;
+    QString askModel() const;
+    QString askProductName() const;
+
+signals:
+    void stateChanged();
+    void progressChanged();
+    void errorChanged();
+    // The lookup was saved as `lookupId`.
+    void saved(qint64 lookupId);
+    // A listing photo was saved.
+    void photoSaved(const QString &itemId);
+    // The session is over (state Idle again); the page count changed.
+    void ended();
+
+private:
+    bool startSession(const QString &input, const std::optional<lookup::ItemRecord> &item);
+    void setState(State state);
+    void setError(const QString &error);
+    void onReady();
+    void onItemReady();
+    void startSearches();
+    void onRunnerFinished();
+    void onBrowserFinished(bool normal);
+    // `lookupId`: the saved lookup being corrected, if any.
+    bool saveIdentity(const QString &itemId, const lookup::ConfirmedIdentity &identity, std::optional<qint64> lookupId,
+                      QString *error);
+    void saveLookup(lookup::LookupResult result);
+    void fetchPhoto(const lookup::ItemRecord &item);
+    void onPhotoReply(QNetworkReply *reply, const QString &itemId, const QString &url);
+
+    WorkFolder m_folder;
+    lookup::KnownModels *m_known;
+    const lookup::MatchWords *m_words;
+    const lookup::LookupStore *m_store;
+    browser::BrowserController *m_controller = nullptr;
+    lookup::LookupRunner *m_runner = nullptr;
+    QNetworkAccessManager *m_network = nullptr;
+    State m_state = State::Idle;
+    State m_stateBeforeUser = State::Idle;
+    QString m_input;
+    std::optional<lookup::ItemRecord> m_savedItem;
+    lookup::Depths m_depths;
+    int m_historyDays = 0;
+    bool m_savedOnce = false;
+    QString m_browserError;
+    int m_step = 0;
+    int m_pages = 0;
+    QString m_lastLine;
+    QString m_browserName;
+    QString m_userMessage;
+    QString m_errorText;
+};
+
+} // namespace app::ui

@@ -28,8 +28,10 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 include(cmake/warnings.cmake)
 
-find_package(Qt6 6.12 REQUIRED COMPONENTS Core Network Sql Test WebSockets Widgets)
-qt_standard_project_setup()
+find_package(Qt6 6.12 REQUIRED COMPONENTS Core Gui Network Qml Quick QuickControls2 Sql Test WebSockets Widgets)
+# REQUIRES 6.12: every Qt CMake policy of 6.12 set to NEW (no policy
+# warnings, which the presets make errors).
+qt_standard_project_setup(REQUIRES 6.12)
 
 enable_testing()
 

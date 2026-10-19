@@ -21,13 +21,20 @@ void TestMigrations::shippedMigrationsLoad()
     QString error;
     const auto migrations = app::loadMigrations(QStringLiteral(":/migrations"), &error);
     QVERIFY2(migrations, qPrintable(error));
-    QCOMPARE(migrations->size(), 1);
+    QCOMPARE(migrations->size(), 2);
     const Migration &init = migrations->first();
     QCOMPARE(init.version, 1);
     QCOMPARE(init.name, QStringLiteral("init"));
     // Five tables and two indexes.
     QCOMPARE(init.statements.size(), 7);
     QVERIFY(init.statements.first().startsWith(QStringLiteral("CREATE TABLE lookup")));
+    const Migration &saved = migrations->at(1);
+    QCOMPARE(saved.version, 2);
+    QCOMPARE(saved.name, QStringLiteral("saved_lookups"));
+    // Four tables, three indexes, two copies of version-1 rows, five drops.
+    QCOMPARE(saved.statements.size(), 14);
+    QVERIFY(saved.statements.first().startsWith(QStringLiteral("CREATE TABLE lookups")));
+    QVERIFY(saved.statements.last().startsWith(QStringLiteral("DROP TABLE lookup")));
 }
 
 void TestMigrations::contiguityCheck()

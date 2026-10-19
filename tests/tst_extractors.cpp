@@ -363,6 +363,7 @@ void TestExtractors::itemFromJsonLd()
     QVERIFY(data.value("itemId").isNull());
     QCOMPARE(data.value("title").toString(), QStringLiteral("Acme Model 7 Digital Multimeter (JSON-LD title)"));
     QCOMPARE(data.value("titleSource").toString(), QStringLiteral("json-ld"));
+    QCOMPARE(data.value("imageUrl").toString(), QStringLiteral("https://images.example.com/acme-model-7-front.jpg"));
     QCOMPARE(data.value("priceCents").toInt(), 24995);
     QCOMPARE(data.value("currency").toString(), QStringLiteral("USD"));
     QCOMPARE(data.value("priceSource").toString(), QStringLiteral("json-ld"));
@@ -431,7 +432,7 @@ void TestExtractors::itemFromDom()
     // watchers, soldCount and quantityAvailable are optional: null, not missing.
     QVERIFY(data.value("watchers").isNull());
     QCOMPARE(names(data.value("missing")),
-             set({"itemId", "availability", "listingStartedAt", "returnsText", "seller"}));
+             set({"itemId", "imageUrl", "availability", "listingStartedAt", "returnsText", "seller"}));
 }
 
 void TestExtractors::itemShippingBlockOnOneLine()

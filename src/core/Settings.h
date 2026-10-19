@@ -44,14 +44,24 @@ public:
 
     QString fileName() const;
 
+    // The longest Product Research period: dayRange=1095 shows "Last 3
+    // years" (recon section 4; owner decision Q20: up to the longest period
+    // Product Research offers).
+    static constexpr int kMaxSoldHistoryDays = 1095;
+
     // Key "lookup/soldHistoryDays". Returns kDefaultSoldHistoryDays when the
-    // key is absent, is not an integer, or is below 1.
+    // key is absent, is not an integer, or is outside 1..kMaxSoldHistoryDays.
     int soldHistoryDays() const;
 
-    // Returns false and stores nothing when days < 1. No upper bound is
-    // enforced yet: the limit will be the longest period eBay's Product
-    // Research offers, which is still to be confirmed.
+    // Returns false and stores nothing when days is outside
+    // 1..kMaxSoldHistoryDays.
     bool setSoldHistoryDays(int days);
+
+    // Key "updates/check": whether the app may check for a new version
+    // (owner answer 6: off by default, opt-in). Anything but "true" reads as
+    // off.
+    bool updateCheck() const;
+    void setUpdateCheck(bool enabled);
 
     // Key "browser/preferred": the id of the browser the user picked in
     // Settings ("brave", "chrome", "edge", "chromium"), or an empty string for

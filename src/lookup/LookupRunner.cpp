@@ -3,6 +3,7 @@
 #include "ebay/SearchUrls.h"
 
 #include <QJsonArray>
+#include <QTimer>
 
 #include <utility>
 
@@ -51,6 +52,31 @@ bool LookupRunner::startItem(const QString &input, QString *error)
     m_state = State::Item;
     emit progress(QStringLiteral("reading the listing %1").arg(m_itemId));
     fetch(ebay::itemUrl(m_itemId), ebay::PageKind::Item);
+    return true;
+}
+
+bool LookupRunner::startFromItem(const ItemRecord &item, QString *error)
+{
+    if (m_state != State::Idle) {
+        *error = QStringLiteral("a lookup is already running");
+        return false;
+    }
+    if (item.itemId.isEmpty()) {
+        *error = QStringLiteral("the saved listing has no item number");
+        return false;
+    }
+    m_clock.start();
+    m_itemId = item.itemId;
+    m_result.item = item;
+    m_result.identity = identify(m_result.item, *m_known, *m_words);
+    m_result.queries = buildQueries(m_result.identity);
+    m_state = State::WaitingForQueries;
+    emit progress(QStringLiteral("listing %1 taken from the saved lookup (not loaded again)").arg(m_itemId));
+    // From the event loop, as after a page load; not when cancel() came first.
+    QTimer::singleShot(0, this, [this]() {
+        if (m_state == State::WaitingForQueries)
+            emit itemReady();
+    });
     return true;
 }
 

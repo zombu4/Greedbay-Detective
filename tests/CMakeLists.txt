@@ -61,6 +61,14 @@ target_link_libraries(tst_lookup PRIVATE applookup)
 app_add_unit_test(tst_matching tst_matching.cpp support/TestFiles.h)
 target_link_libraries(tst_matching PRIVATE applookup)
 
+app_add_unit_test(tst_lookupstore tst_lookupstore.cpp)
+target_link_libraries(tst_lookupstore PRIVATE applookup)
+
+# The Qt Quick views on synthetic data, offscreen (QT_QPA_PLATFORM set by
+# the test itself).
+app_add_unit_test(tst_ui tst_ui.cpp)
+target_link_libraries(tst_ui PRIVATE appui appuiplugin)
+
 app_add_unit_test(tst_browserlogic tst_browserlogic.cpp)
 target_link_libraries(tst_browserlogic PRIVATE appbrowser)
 

@@ -92,6 +92,13 @@ public:
     // nothing is fetched then.
     bool startItem(const QString &input, QString *error);
 
+    // Instead of startItem(): takes the listing record of a saved lookup
+    // (the item page is not loaded again), identifies it as startItem() does
+    // (an identity the user saved for it comes first) and emits itemReady()
+    // from the event loop. False (and *error) when a lookup is already
+    // running or the record has no item number.
+    bool startFromItem(const ItemRecord &item, QString *error);
+
     // After itemReady(): the identity the user entered or corrected; the
     // queries are built anew from it. False (and *error) when not waiting for
     // queries.

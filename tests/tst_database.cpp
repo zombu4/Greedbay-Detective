@@ -229,26 +229,34 @@ void TestDatabase::createsTheShippedSchema()
     QVERIFY2(result.ok(), qPrintable(result.error));
     QCOMPARE(result.outcome, Database::Outcome::Created);
     QCOMPARE(result.fromVersion, 0);
-    QCOMPARE(result.toVersion, 1);
+    QCOMPARE(result.toVersion, 2);
     QVERIFY(result.backupPath.isEmpty());
 
-    QCOMPARE(queryOn(QStringLiteral("main"), QStringLiteral("PRAGMA user_version")).toInt(), 1);
+    QCOMPARE(queryOn(QStringLiteral("main"), QStringLiteral("PRAGMA user_version")).toInt(), 2);
     QCOMPARE(queryOn(QStringLiteral("main"), QStringLiteral("PRAGMA application_id")).toInt(),
              Database::kApplicationId);
     QCOMPARE(queryOn(QStringLiteral("main"), QStringLiteral("PRAGMA foreign_keys")).toInt(), 1);
     QCOMPARE(queryOn(QStringLiteral("main"), QStringLiteral("PRAGMA temp_store")).toInt(), 2);
-    for (const char *table : {"lookup", "listing", "research_summary", "valuation", "excluded_listing"}) {
+    // Version 2 (0002_saved_lookups.sql) replaced the version-1 tables.
+    for (const char *table : {"lookups", "lookup_rows", "user_identities", "listing_photos"}) {
         const QVariant count = queryOn(
             QStringLiteral("main"),
             QStringLiteral("SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = '%1'")
                 .arg(QLatin1String(table)));
         QVERIFY2(count.toInt() == 1, table);
     }
+    for (const char *table : {"lookup", "listing", "research_summary", "valuation", "excluded_listing"}) {
+        const QVariant count = queryOn(
+            QStringLiteral("main"),
+            QStringLiteral("SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = '%1'")
+                .arg(QLatin1String(table)));
+        QVERIFY2(count.toInt() == 0, table);
+    }
 
-    // The schema's constraints hold: a listing needs an existing lookup.
+    // The schema's constraints hold: a row needs an existing lookup.
     QSqlQuery insert(QSqlDatabase::database(QStringLiteral("main")));
     QVERIFY(!insert.exec(QStringLiteral(
-        "INSERT INTO listing (lookup_id, role, source, price_status) VALUES (42, 'sold', 'sold_search', 'unconfirmed')")));
+        "INSERT INTO lookup_rows (lookup_id, source, position, bucket, included) VALUES (42, 'sold', 0, 'same_item', 1)")));
 }
 
 void TestDatabase::reopeningChangesNothing()

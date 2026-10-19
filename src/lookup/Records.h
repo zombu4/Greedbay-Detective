@@ -62,6 +62,9 @@ struct ItemRecord {
     std::optional<qint64> shippingCents;
     QString condition; // as eBay shows it (item extractor's conditionText)
     QString sellerName;
+    // The listing's first photo (https), from the item page's JSON-LD; empty
+    // when the page gave none.
+    QString imageUrl;
     struct Specific {
         QString label;
         QString value;

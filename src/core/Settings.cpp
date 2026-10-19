@@ -7,6 +7,7 @@ namespace app {
 namespace {
 const QString kSoldHistoryDaysKey = QStringLiteral("lookup/soldHistoryDays");
 const QString kPreferredBrowserKey = QStringLiteral("browser/preferred");
+const QString kUpdateCheckKey = QStringLiteral("updates/check");
 const QString kPageDelayMinKey = QStringLiteral("pace/pageDelayMinMs");
 const QString kPageDelayMaxKey = QStringLiteral("pace/pageDelayMaxMs");
 const QString kDailyPageCapKey = QStringLiteral("pace/dailyPageCap");
@@ -66,12 +67,12 @@ int Settings::soldHistoryDays() const
         return kDefaultSoldHistoryDays;
     bool ok = false;
     const int days = value.toString().toInt(&ok);
-    return (ok && days >= 1) ? days : kDefaultSoldHistoryDays;
+    return (ok && days >= 1 && days <= kMaxSoldHistoryDays) ? days : kDefaultSoldHistoryDays;
 }
 
 bool Settings::setSoldHistoryDays(int days)
 {
-    if (days < 1)
+    if (days < 1 || days > kMaxSoldHistoryDays)
         return false;
     m_settings.setValue(kSoldHistoryDaysKey, days);
     return true;
@@ -206,6 +207,16 @@ bool Settings::setValueSettings(const ValueSettings &values)
     m_settings.setValue(kShippingRatioKey, values.shippingFlagRatio);
     m_settings.setValue(kShippingMinKey, values.shippingFlagMinAboveCents);
     return true;
+}
+
+bool Settings::updateCheck() const
+{
+    return m_settings.value(kUpdateCheckKey).toString() == QLatin1String("true");
+}
+
+void Settings::setUpdateCheck(bool enabled)
+{
+    m_settings.setValue(kUpdateCheckKey, enabled ? QStringLiteral("true") : QStringLiteral("false"));
 }
 
 bool Settings::sync()

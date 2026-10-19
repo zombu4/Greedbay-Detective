@@ -1,0 +1,344 @@
+// Results (ui-spec 2) of the lookup shown: identity bar, listing card, flag
+// cards, what the same item sold for (range bar and key numbers), and the
+// two tabs of rows. Unticking or ticking a row recomputes everything at once
+// (ResultsController::setIncluded).
+import QtQuick
+import QtQuick.Controls.Basic
+import QtQuick.Layouts
+
+Item {
+    id: screen
+    required property Backend backend
+    readonly property ResultsController results: backend.results
+    property int tab: 0
+
+    component Muted: Text {
+        font.family: Theme.sans
+        font.pixelSize: Theme.labelSize
+        color: Theme.mutedText
+        wrapMode: Text.WordWrap
+    }
+
+    Text {
+        visible: !screen.results.hasLookup
+        anchors.centerIn: parent
+        text: "No lookup is open. Paste a listing link on the Lookups screen."
+        font.family: Theme.sans
+        font.pixelSize: Theme.bodySize
+        color: Theme.mutedText
+    }
+
+    ScrollView {
+        id: scroll
+        visible: screen.results.hasLookup
+        anchors.fill: parent
+        contentWidth: availableWidth
+        clip: true
+
+        ColumnLayout {
+            width: scroll.availableWidth - 56
+            x: 28
+            spacing: Theme.gap
+
+            Item { Layout.preferredHeight: 4 }
+
+            Muted {
+                Layout.fillWidth: true
+                text: screen.results.statusText
+                color: screen.results.statusKind === "complete" ? Theme.mutedText : Theme.warnLabel
+            }
+            Muted {
+                Layout.fillWidth: true
+                visible: screen.results.storeError.length > 0
+                text: screen.results.storeError
+                color: Theme.warnLabel
+            }
+
+            // Identity bar.
+            Card {
+                Layout.fillWidth: true
+                RowLayout {
+                    anchors.fill: parent
+                    spacing: Theme.gap
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        spacing: 4
+                        Text {
+                            Layout.fillWidth: true
+                            textFormat: Text.StyledText
+                            text: "Identified as <b>" + screen.results.identityName.replace(/&/g, "&amp;").replace(/</g, "&lt;") + "</b>"
+                                  + (screen.results.productName.length > 0
+                                     ? " - " + screen.results.productName.replace(/&/g, "&amp;").replace(/</g, "&lt;") : "")
+                            wrapMode: Text.WordWrap
+                            font.family: Theme.sans
+                            font.pixelSize: Theme.sectionSize
+                            color: Theme.text
+                        }
+                        Muted {
+                            Layout.fillWidth: true
+                            text: screen.results.identitySource + "  ·  searches: " + screen.results.searches
+                        }
+                        Repeater {
+                            model: screen.results.identityNotes
+                            Muted {
+                                required property string modelData
+                                Layout.fillWidth: true
+                                text: modelData
+                                color: Theme.secondaryText
+                            }
+                        }
+                    }
+                    AppButton {
+                        text: "Wrong item? Correct it"
+                        enabled: !screen.backend.session.running && screen.results.itemId.length > 0
+                        onClicked: editor.openWith(screen.results.brand, screen.results.model, screen.results.productName)
+                    }
+                }
+            }
+
+            // Listing card.
+            Card {
+                Layout.fillWidth: true
+                RowLayout {
+                    anchors.fill: parent
+                    spacing: 24
+                    Rectangle {
+                        Layout.preferredWidth: 150
+                        Layout.preferredHeight: 150
+                        radius: Theme.controlRadius
+                        color: Theme.raised
+                        border.color: Theme.border
+                        Image {
+                            anchors.fill: parent
+                            anchors.margins: 4
+                            source: screen.results.photoSource
+                            fillMode: Image.PreserveAspectFit
+                            asynchronous: false
+                            cache: false
+                            Accessible.name: "Photo of the listing"
+                        }
+                        Muted {
+                            visible: screen.results.photoSource.length === 0
+                            anchors.centerIn: parent
+                            text: "no photo"
+                        }
+                    }
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        spacing: 6
+                        Text {
+                            text: "THIS LISTING - item " + screen.results.itemId
+                            font.family: Theme.mono
+                            font.pixelSize: Theme.labelSize
+                            font.weight: Font.Medium
+                            color: Theme.accent
+                        }
+                        Text {
+                            Layout.fillWidth: true
+                            text: screen.results.title.length > 0 ? screen.results.title : "(the listing was not read)"
+                            wrapMode: Text.WordWrap
+                            font.family: Theme.sans
+                            font.pixelSize: Theme.sectionSize
+                            font.weight: Font.DemiBold
+                            color: Theme.text
+                        }
+                        Muted {
+                            Layout.fillWidth: true
+                            text: "eBay condition: " + (screen.results.condition.length > 0 ? screen.results.condition : "-")
+                                  + "  ·  seller: " + (screen.results.seller.length > 0 ? screen.results.seller : "-")
+                            color: Theme.secondaryText
+                        }
+                        LinkText {
+                            visible: screen.results.itemId.length > 0
+                            text: "Open on eBay"
+                            onActivated: screen.backend.openOnEbay(screen.results.itemId)
+                        }
+                    }
+                    ColumnLayout {
+                        Layout.alignment: Qt.AlignRight | Qt.AlignVCenter
+                        spacing: 2
+                        Muted {
+                            Layout.alignment: Qt.AlignRight
+                            text: "price + shipping ="
+                        }
+                        Text {
+                            Layout.alignment: Qt.AlignRight
+                            text: screen.results.priceText + " + " + screen.results.shippingText
+                            font.family: Theme.mono
+                            font.pixelSize: Theme.bodySize
+                            color: Theme.secondaryText
+                        }
+                        Text {
+                            Layout.alignment: Qt.AlignRight
+                            text: screen.results.totalText
+                            font.family: Theme.mono
+                            font.pixelSize: Theme.bigTotalSize
+                            font.weight: Font.Medium
+                            color: Theme.text
+                            Accessible.name: "Total " + text
+                        }
+                    }
+                }
+            }
+
+            // Flag cards, only the ones that apply.
+            RowLayout {
+                Layout.fillWidth: true
+                visible: screen.results.shippingFlag || screen.results.cheaperFlag
+                spacing: Theme.gap
+                FlagCard {
+                    Layout.fillWidth: true
+                    Layout.preferredWidth: 1
+                    visible: screen.results.shippingFlag
+                    kind: "warn"
+                    label: "SHIPPING"
+                    lines: screen.results.shippingLines
+                }
+                FlagCard {
+                    Layout.fillWidth: true
+                    Layout.preferredWidth: 1
+                    visible: screen.results.cheaperFlag
+                    kind: "info"
+                    label: "CHEAPER RIGHT NOW"
+                    lines: [screen.results.cheaperLine]
+                    linkText: "Open the cheapest on eBay"
+                    onLinkActivated: screen.backend.openOnEbay(screen.results.cheapestItemId)
+                }
+            }
+
+            // What the same item sold for.
+            Card {
+                Layout.fillWidth: true
+                ColumnLayout {
+                    anchors.fill: parent
+                    spacing: 12
+                    Text {
+                        text: "What the same item really sold for"
+                        font.family: Theme.sans
+                        font.pixelSize: Theme.sectionSize
+                        font.weight: Font.DemiBold
+                        color: Theme.text
+                    }
+                    Muted {
+                        Layout.fillWidth: true
+                        text: screen.results.soldLine
+                    }
+                    RangeBar {
+                        Layout.fillWidth: true
+                        visible: screen.results.hasSoldNumbers
+                        minimum: screen.results.barMin
+                        maximum: screen.results.barMax
+                        bandLow: screen.results.bandLow
+                        bandHigh: screen.results.bandHigh
+                        median: screen.results.medianValue
+                        thisValue: screen.results.thisValue
+                        thisLabel: "THIS " + screen.results.totalText
+                        cheapest: screen.results.cheapestValue
+                        cheapestLabel: screen.results.cheapestLabel
+                    }
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 40
+                        KeyNumber { label: "Median sold"; value: screen.results.medianText }
+                        KeyNumber { label: "Middle half of sales"; value: screen.results.middleText }
+                        KeyNumber { label: "Lowest / highest sale"; value: screen.results.lowHighText }
+                        KeyNumber { label: "For sale now (from lowest)"; value: screen.results.forSaleText }
+                        Item { Layout.fillWidth: true }
+                    }
+                    Repeater {
+                        model: screen.results.sideLines
+                        Muted {
+                            required property string modelData
+                            Layout.fillWidth: true
+                            text: modelData
+                        }
+                    }
+                }
+            }
+
+            // Tabs.
+            RowLayout {
+                spacing: 8
+                Repeater {
+                    model: [
+                        "Same item (" + screen.results.sameItem.count + ")",
+                        "Not this item (" + screen.results.notThisItem.count + ")"
+                    ]
+                    Button {
+                        id: tabButton
+                        required property string modelData
+                        required property int index
+                        text: modelData
+                        implicitHeight: Theme.target
+                        leftPadding: 16
+                        rightPadding: 16
+                        Accessible.role: Accessible.PageTab
+                        contentItem: Text {
+                            text: tabButton.text
+                            font.family: Theme.sans
+                            font.pixelSize: Theme.bodySize
+                            font.weight: screen.tab === tabButton.index ? Font.DemiBold : Font.Normal
+                            color: screen.tab === tabButton.index ? Theme.text : Theme.secondaryText
+                            verticalAlignment: Text.AlignVCenter
+                        }
+                        background: Rectangle {
+                            radius: Theme.controlRadius
+                            color: screen.tab === tabButton.index ? Theme.raised : "transparent"
+                            border.color: tabButton.visualFocus ? Theme.accent : "transparent"
+                            Rectangle {
+                                visible: screen.tab === tabButton.index
+                                anchors.bottom: parent.bottom
+                                anchors.horizontalCenter: parent.horizontalCenter
+                                width: parent.width - 16
+                                height: 2
+                                color: Theme.accent
+                            }
+                        }
+                        onClicked: screen.tab = index
+                    }
+                }
+            }
+
+            Card {
+                Layout.fillWidth: true
+                ColumnLayout {
+                    anchors.fill: parent
+                    spacing: 8
+                    RowsTable {
+                        Layout.fillWidth: true
+                        visible: screen.tab === 0
+                        rows: screen.results.sameItem
+                        onRowToggled: (row, included) => screen.results.setIncluded(row, included)
+                        onOpenRequested: (itemId) => screen.backend.openOnEbay(itemId)
+                    }
+                    RowsTable {
+                        Layout.fillWidth: true
+                        visible: screen.tab === 1
+                        rows: screen.results.notThisItem
+                        showReasons: true
+                        onRowToggled: (row, included) => screen.results.setIncluded(row, included)
+                        onOpenRequested: (itemId) => screen.backend.openOnEbay(itemId)
+                    }
+                    Muted {
+                        Layout.fillWidth: true
+                        text: "Ticked rows are counted. Same-item rows start ticked; tick a row in \"Not this item\" if it "
+                              + "is the same thing after all. Every number above is computed again at once and your "
+                              + "choice is saved with this lookup."
+                    }
+                }
+            }
+
+            Item { Layout.preferredHeight: 24 }
+        }
+    }
+
+    IdentityEditor {
+        id: editor
+        onSaveRequested: (brand, model, productName) => {
+            if (screen.backend.correctIdentity(brand, model, productName))
+                editor.close()
+            else
+                editor.error = screen.backend.session.errorText
+        }
+    }
+}

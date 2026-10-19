@@ -121,6 +121,7 @@ private slots:
     void cancelWhileWaitingForQueries();
     void browserCancelEndsAsCancelled();
     void refusesBadInput();
+    void startFromSavedItem();
     void reportNumbers();
 };
 
@@ -538,6 +539,49 @@ void TestLookup::reportNumbers()
     rows[0].included = false;
     valuation = valuate(result, rows, app::ValueSettings());
     QCOMPARE(valuation.sold.included, 3);
+}
+
+// "Wrong item? Correct it" on a saved lookup: the saved listing record is
+// identified again without loading the item page, itemReady() comes from
+// the event loop, and the searches then run as usual. A cancel before the
+// event loop ran ends it without itemReady().
+void TestLookup::startFromSavedItem()
+{
+    const ItemRecord item = ItemRecord::fromJson(itemData());
+    QCOMPARE(item.imageUrl, QString());
+    LookupRunner *runner = makeRunner();
+    QSignalSpy ready(runner, &LookupRunner::itemReady);
+    QString error;
+    QVERIFY2(runner->startFromItem(item, &error), qPrintable(error));
+    QVERIFY(m_requests.isEmpty());
+    QCOMPARE(ready.count(), 0);
+    QVERIFY(runner->isWaitingForQueries());
+    QVERIFY(ready.wait(5000));
+    QCOMPARE(runner->result().item.itemId, QStringLiteral("100000000050"));
+    QVERIFY(runner->result().identity.confident);
+    QVERIFY(!runner->result().queries.isEmpty());
+    QVERIFY2(runner->startComps(runner->result().queries, Depths{10, 0, 0}, 90, &error), qPrintable(error));
+    QCOMPARE(m_requests.size(), 1);
+    QCOMPARE(m_requests.first().kind, PageKind::SoldSearch);
+    QVERIFY(!runner->startFromItem(item, &error));
+
+    LookupRunner *cancelled = makeRunner();
+    QSignalSpy cancelledReady(cancelled, &LookupRunner::itemReady);
+    QSignalSpy finished(cancelled, &LookupRunner::finished);
+    QVERIFY(cancelled->startFromItem(item, &error));
+    cancelled->cancel();
+    QCOMPARE(finished.count(), 1);
+    QCOMPARE(cancelled->result().status, QStringLiteral("cancelled"));
+    QTest::qWait(50);
+    QCOMPARE(cancelledReady.count(), 0);
+
+    ItemRecord noNumber = item;
+    noNumber.itemId.clear();
+    QVERIFY(!makeRunner()->startFromItem(noNumber, &error));
+
+    QJsonObject withPhoto = itemData();
+    withPhoto.insert("imageUrl", "https://images.example.com/m7x.jpg");
+    QCOMPARE(ItemRecord::fromJson(withPhoto).imageUrl, QStringLiteral("https://images.example.com/m7x.jpg"));
 }
 
 QTEST_GUILESS_MAIN(TestLookup)

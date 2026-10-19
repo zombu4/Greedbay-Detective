@@ -28,17 +28,19 @@ Under active development. No release yet.
 
 ## Building from source
 
-What builds today: the core library (work folder, settings, logging,
-single-instance lock, version, database, the daily page limit), the browser
-control that reads eBay pages through an installed browser, a first rough
-lookup (a listing, its sold and for-sale comparisons and Product Research
-rows, as text tables with the median and middle range of sold totals), a small
-developer window for trying them, and their tests. There is no app window yet.
+What builds today: the app itself (paste a listing link; it reads the
+listing, what the same item sold for, what is for sale now and eBay's Product
+Research through your installed browser, sorts out what is not the same item,
+shows the numbers and the flags, and saves every lookup), its settings, a
+developer window for checking the browser session and a lookup by hand (a
+tool, not part of the app), and the tests. The price history screen comes in
+the next phase.
 
 You need:
 - CMake 4.4.4 (the project requires 4.4 or newer)
-- Qt 6.12.0 with Qt WebSockets. The code uses Qt Core, Qt Network, Qt SQL,
-  Qt WebSockets, Qt Widgets and Qt Test; the exact pinned install is in
+- Qt 6.12.0 with Qt WebSockets and Qt Task Tree. The code uses Qt Core, Qt Gui,
+  Qt Network, Qt SQL, Qt WebSockets, Qt Qml, Qt Quick, Qt Quick Controls,
+  Qt Widgets (developer window only) and Qt Test; the exact pinned install is in
   [.github/workflows/ci.yml](.github/workflows/ci.yml).
 - A Chromium-based browser for reading eBay pages: Brave, Google Chrome or
   Microsoft Edge (on Linux also Chromium). The app starts it as a separate
@@ -63,6 +65,13 @@ The `macos` preset builds for Apple Silicon (arm64) Macs with macOS 14.4 and
 newer; Intel Macs are not supported. For a debug build use `macos-debug` in the
 last two commands.
 
+The app is then `build/macos/src/Release/GreedbayDetective.app` (macOS),
+`build/linux/src/Release/GreedbayDetective` (Linux) or
+`build\windows\src\Release\GreedbayDetective.exe` (Windows). It keeps
+everything it stores in its work folder: `$HOME/Library/Application
+Support/GreedbayDetective` on macOS, `%LOCALAPPDATA%\GreedbayDetective` on
+Windows, `$HOME/.local/share/GreedbayDetective` on Linux.
+
 On Linux use the presets `linux` and `linux-release`, on Windows `windows` and
 `windows-release` (each also has a `-debug` variant). On Windows the tests load
 the Qt DLLs from Qt's `bin` folder, so add `%QT_ROOT_DIR%\bin` to `PATH` before
@@ -72,6 +81,12 @@ CI builds and tests the release presets on macOS 26 (Apple Silicon), Windows
 Server 2025 and Ubuntu 24.04 on every push and pull request.
 
 Compiler warnings are errors in every build.
+
+## Fonts
+
+The app's text uses IBM Plex Sans and IBM Plex Mono from IBM's official
+release, under the SIL Open Font License 1.1; source, versions and checksums
+are in [resources/fonts/README.md](resources/fonts/README.md).
 
 ## License
 

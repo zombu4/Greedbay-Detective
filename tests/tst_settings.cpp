@@ -29,6 +29,7 @@ private slots:
     void dailyPageCap();
     void searchDepths();
     void valueSettings();
+    void updateCheck();
 };
 
 // Synthetic names, so the native settings store checked below belongs to this
@@ -72,6 +73,11 @@ void TestSettings::rejectsInvalidDays()
     QCOMPARE(settings.soldHistoryDays(), 30);
     QVERIFY(!settings.setSoldHistoryDays(-5));
     QCOMPARE(settings.soldHistoryDays(), 30);
+    // Product Research offers at most 1095 days ("Last 3 years").
+    QVERIFY(settings.setSoldHistoryDays(Settings::kMaxSoldHistoryDays));
+    QCOMPARE(settings.soldHistoryDays(), 1095);
+    QVERIFY(!settings.setSoldHistoryDays(1096));
+    QCOMPARE(settings.soldHistoryDays(), 1095);
 }
 
 void TestSettings::invalidStoredValuesReadAsDefault()
@@ -86,6 +92,10 @@ void TestSettings::invalidStoredValuesReadAsDefault()
     const QString negative = tmp.path() + QStringLiteral("/negative.ini");
     QVERIFY(writeTestFile(negative, "[lookup]\nsoldHistoryDays=-5\n"));
     QCOMPARE(Settings(negative).soldHistoryDays(), 90);
+
+    const QString tooLong = tmp.path() + QStringLiteral("/toolong.ini");
+    QVERIFY(writeTestFile(tooLong, "[lookup]\nsoldHistoryDays=1096\n"));
+    QCOMPARE(Settings(tooLong).soldHistoryDays(), 90);
 }
 
 void TestSettings::writesIniText()
@@ -245,6 +255,31 @@ void TestSettings::searchDepths()
     QCOMPARE(edited.soldDepth(), 240);
     QCOMPARE(edited.activeDepth(), 240);
     QCOMPARE(edited.researchDepth(), 200);
+}
+
+void TestSettings::updateCheck()
+{
+    QTemporaryDir tmp;
+    QVERIFY(tmp.isValid());
+    const QString path = tmp.path() + QStringLiteral("/settings.ini");
+    {
+        Settings settings(path);
+        // Owner answer 6: off by default.
+        QCOMPARE(settings.updateCheck(), false);
+        settings.setUpdateCheck(true);
+        QVERIFY(settings.sync());
+    }
+    QCOMPARE(Settings(path).updateCheck(), true);
+    {
+        Settings settings(path);
+        settings.setUpdateCheck(false);
+        QVERIFY(settings.sync());
+    }
+    QCOMPARE(Settings(path).updateCheck(), false);
+
+    const QString odd = tmp.path() + QStringLiteral("/odd.ini");
+    QVERIFY(writeTestFile(odd, "[updates]\ncheck=yes\n"));
+    QCOMPARE(Settings(odd).updateCheck(), false);
 }
 
 void TestSettings::valueSettings()

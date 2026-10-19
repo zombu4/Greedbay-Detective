@@ -29,6 +29,9 @@ struct ValueNumbers {
     std::optional<qint64> medianCents;
     std::optional<qint64> p25Cents;
     std::optional<qint64> p75Cents;
+    // The lowest and highest of the counted totals (outliers left out).
+    std::optional<qint64> lowCents;
+    std::optional<qint64> highCents;
     QString confidence;
     int unconfirmed = 0;
     std::optional<qint64> unconfirmedMedianCents;
