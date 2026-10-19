@@ -11,7 +11,8 @@
 //     (QtWebEngineProcess children included) is gone
 //   - sign-out afterwards deletes the browser data without starting anything
 // No folder is listed or scanned (owner rule): the app sets every browser
-// path inside the work folder in code.
+// path inside the work folder in code. Processes are listed (on Linux by
+// reading /proc, the process table) to check the lifecycle.
 // On Linux it also reports how the renderer processes were sandboxed.
 #include "core/BrowserProtocol.h"
 #include "core/BrowserWorker.h"
@@ -21,6 +22,7 @@
 
 #include <QCoreApplication>
 #include <QFile>
+#include <QFileInfo>
 #include <QJsonArray>
 #include <QMap>
 #include <QSignalSpy>
@@ -176,7 +178,7 @@ void TestBrowserWorker::fetchThroughTheWorker()
     QSignalSpy finished(&worker, &BrowserWorker::finished);
     QString error;
     QVERIFY2(worker.start(&error), qPrintable(error));
-    QVERIFY2(ready.wait(BrowserWorker::kStartTimeoutMs), "the worker did not report ready");
+    QVERIFY2(ready.wait(30000), "the worker did not report ready");
     // The worker runs, but no browser profile exists before the first
     // request: no QtWebEngineProcess yet.
     for (const ProcessInfo &process : descendants(QCoreApplication::applicationPid()))
@@ -189,7 +191,7 @@ void TestBrowserWorker::fetchThroughTheWorker()
                                               {QStringLiteral("url"), url}});
     QVERIFY(id > 0);
     QCOMPARE(worker.request(QJsonObject{{QStringLiteral("cmd"), QStringLiteral("signIn")}}), -1); // one at a time
-    QVERIFY2(replied.wait(120000), "no reply to the fetch");
+    QVERIFY2(replied.wait(60000), "no reply to the fetch");
     recordDescendants();
     QCOMPARE(replied.at(0).at(0).toInt(), id);
     const QJsonObject reply = replied.at(0).at(1).toJsonObject();
@@ -254,10 +256,11 @@ void TestBrowserWorker::signOutDeletesBrowserDataWithoutABrowser()
     QString error;
     QVERIFY2(WebEngineData::clear(*m_folder, &error), qPrintable(error));
     QVERIFY(descendants(QCoreApplication::applicationPid()).isEmpty());
-    const QDir::Filters all = QDir::AllEntries | QDir::Hidden | QDir::System | QDir::NoDotAndDotDot;
-    QVERIFY(QDir(m_folder->webEngineStorageDir()).isEmpty(all));
-    QVERIFY(QDir(m_folder->webEngineCacheDir()).isEmpty(all));
-    QVERIFY(QDir(m_folder->webEngineDownloadsDir()).isEmpty(all));
+    // What sign-out deletes is checked file by file in tst_webenginedata;
+    // here: it succeeds after the session and the three folders are back.
+    QVERIFY(QFileInfo(m_folder->webEngineStorageDir()).isDir());
+    QVERIFY(QFileInfo(m_folder->webEngineCacheDir()).isDir());
+    QVERIFY(QFileInfo(m_folder->webEngineDownloadsDir()).isDir());
 }
 
 QTEST_GUILESS_MAIN(TestBrowserWorker)

@@ -239,8 +239,9 @@ function extract(input) {
         record.currency = jsonCurrency;
         record.priceSource = 'json-ld';
     } else {
-        // "US $269.99", possibly followed by "or Best Offer".
-        const match = /^US \$(\d{1,3}(?:,\d{3})+|\d+)\.(\d{2})(?: |$)/.exec(
+        // "US $249.95", possibly followed by "or Best Offer"; any other text
+        // after the price (for example a price range) gives no price.
+        const match = /^US \$(\d{1,3}(?:,\d{3})+|\d+)\.(\d{2})(?: or Best Offer)?$/.exec(
             textOf(document.querySelector('.x-price-primary')) || '');
         if (match) {
             record.priceCents = parseInt(match[1].replace(/,/g, ''), 10) * 100 + parseInt(match[2], 10);
@@ -270,5 +271,13 @@ function extract(input) {
     record.location = shipping.location;
 
     record.missing = missingFields(record);
+    // Nested values that are missing are listed as "seller.name",
+    // "shippingOptions[0].currency" and so on.
+    if (record.seller !== null) {
+        missingFields(record.seller).forEach(function (key) { record.missing.push('seller.' + key); });
+    }
+    record.shippingOptions.forEach(function (option, index) {
+        missingFields(option).forEach(function (key) { record.missing.push('shippingOptions[' + index + '].' + key); });
+    });
     return expected(record);
 }

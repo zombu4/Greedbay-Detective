@@ -64,7 +64,8 @@ struct SessionOptions {
 //
 // Pacing: one page at a time, and at least kPoliteDelayMs between the end of
 // any page load (the app's or the user's, finished or stopped) and the start
-// of the next page load the app makes.
+// of the next page load the app makes; the first load of a session waits
+// kPoliteDelayMs from the session's start.
 class BrowserSession : public QObject {
     Q_OBJECT
 public:

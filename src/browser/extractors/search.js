@@ -106,6 +106,10 @@ function readRows(card, record, counters) {
             record.seller = {name: match[1], positivePercent: parseFloat(match[2]), feedbackCount: intOf(match[3])};
         } else {
             counters.unrecognizedRows += 1;
+            // A row about an offer that matches no known text: whether a
+            // Best Offer was accepted is then unknown.
+            if (/offer/i.test(text))
+                record.offerRowUnrecognized = true;
         }
     }
 }
@@ -142,7 +146,10 @@ function readCard(card, sold, counters) {
         record.soldDate = match ? usDate(match[1]) : null;
         // With "Best offer accepted" the shown price is the original asking
         // price; the accepted amount is not on the page (recon section 2).
-        record.priceStatus = record.bestOfferAccepted ? 'unconfirmed' : 'shown';
+        // A row mentioning an offer in words the app does not know also
+        // makes the price unconfirmed.
+        record.priceStatus = record.bestOfferAccepted || record.offerRowUnrecognized ? 'unconfirmed' : 'shown';
+        delete record.offerRowUnrecognized;
     }
     record.missing = missingFields(record);
     return record;
@@ -159,7 +166,8 @@ function extract(input) {
     const sold = input.kind === 'soldSearch';
     const headingMatch = /^(\d{1,3}(?:,\d{3})+|\d+)(\+)? results?(?: |$)/.exec(textOf(heading));
     const totalResults = headingMatch ? intOf(headingMatch[1]) : null;
-    const page = intParam(url, '_pgn') || 1;
+    // _pgn absent = page 1; present but not a positive integer = unknown.
+    const page = url.searchParams.get('_pgn') === null ? 1 : intParam(url, '_pgn');
     const perPage = intParam(url, '_ipg');
 
     const counters = {unrecognizedRows: 0};
@@ -176,10 +184,10 @@ function extract(input) {
     return expected({
         kind: input.kind,
         totalResults: totalResults,
-        totalIsLowerBound: headingMatch ? headingMatch[2] === '+' : false,
+        totalIsLowerBound: headingMatch ? headingMatch[2] === '+' : null,
         page: page,
         perPage: perPage,
-        hasMorePages: totalResults !== null && perPage !== null ? page * perPage < totalResults : null,
+        hasMorePages: totalResults !== null && perPage !== null && page !== null ? page * perPage < totalResults : null,
         skippedDummyCards: skippedDummyCards,
         unrecognizedRows: counters.unrecognizedRows,
         items: items,

@@ -21,7 +21,11 @@ class TestWebEngineData : public QObject {
 private:
     // Creates nested files in all three browser folders.
     static bool fill(const WorkFolder &folder);
-    static bool isEmptyDir(const QString &path);
+    // True when `dir` is a folder and none of the entries fill() creates in
+    // it is there any more. Checks those exact paths; lists nothing.
+    static bool filledEntriesGone(const QString &dir);
+    // True when anything, including a link whose target is gone, is at `path`.
+    static bool present(const QString &path);
 
 private slots:
     void clearsAllThreeFolders();
@@ -46,10 +50,16 @@ bool TestWebEngineData::fill(const WorkFolder &folder)
     return true;
 }
 
-bool TestWebEngineData::isEmptyDir(const QString &path)
+bool TestWebEngineData::present(const QString &path)
 {
-    return QFileInfo(path).isDir()
-           && QDir(path).isEmpty(QDir::AllEntries | QDir::Hidden | QDir::System | QDir::NoDotAndDotDot);
+    const QFileInfo info(path);
+    return info.exists() || info.isSymLink();
+}
+
+bool TestWebEngineData::filledEntriesGone(const QString &dir)
+{
+    return QFileInfo(dir).isDir() && !present(dir + QStringLiteral("/Cookies"))
+           && !present(dir + QStringLiteral("/.hidden")) && !present(dir + QStringLiteral("/sub"));
 }
 
 void TestWebEngineData::clearsAllThreeFolders()
@@ -61,9 +71,9 @@ void TestWebEngineData::clearsAllThreeFolders()
     QVERIFY2(folder, qPrintable(error));
     QVERIFY(fill(*folder));
     QVERIFY2(WebEngineData::clear(*folder, &error), qPrintable(error));
-    QVERIFY(isEmptyDir(folder->webEngineStorageDir()));
-    QVERIFY(isEmptyDir(folder->webEngineCacheDir()));
-    QVERIFY(isEmptyDir(folder->webEngineDownloadsDir()));
+    QVERIFY(filledEntriesGone(folder->webEngineStorageDir()));
+    QVERIFY(filledEntriesGone(folder->webEngineCacheDir()));
+    QVERIFY(filledEntriesGone(folder->webEngineDownloadsDir()));
 }
 
 void TestWebEngineData::clearsAllOfWebEngineAndKeepsTheRest()
@@ -78,15 +88,12 @@ void TestWebEngineData::clearsAllOfWebEngineAndKeepsTheRest()
     QVERIFY(writeTestFile(folder->path() + QStringLiteral("/webengine/other"), "x"));
     QVERIFY(QDir().mkpath(folder->path() + QStringLiteral("/webengine/extra/inner")));
     QVERIFY2(WebEngineData::clear(*folder, &error), qPrintable(error));
-    // Everything in webengine/ is gone; the three folders are there, empty.
+    // What was in webengine/ is gone; the three folders are there again.
     QVERIFY(!QFileInfo::exists(folder->path() + QStringLiteral("/webengine/other")));
     QVERIFY(!QFileInfo::exists(folder->path() + QStringLiteral("/webengine/extra")));
-    QVERIFY(isEmptyDir(folder->webEngineStorageDir()));
-    QVERIFY(isEmptyDir(folder->webEngineCacheDir()));
-    QVERIFY(isEmptyDir(folder->webEngineDownloadsDir()));
-    QCOMPARE(QDir(folder->path() + QStringLiteral("/webengine"))
-                 .entryList(QDir::AllEntries | QDir::Hidden | QDir::System | QDir::NoDotAndDotDot, QDir::Name),
-             QStringList({QStringLiteral("cache"), QStringLiteral("downloads"), QStringLiteral("storage")}));
+    QVERIFY(filledEntriesGone(folder->webEngineStorageDir()));
+    QVERIFY(filledEntriesGone(folder->webEngineCacheDir()));
+    QVERIFY(filledEntriesGone(folder->webEngineDownloadsDir()));
     // Nothing outside webengine/ is touched.
     QVERIFY(QFileInfo::exists(folder->settingsPath()));
     QVERIFY(QFileInfo::exists(folder->markerPath()));
@@ -107,8 +114,8 @@ void TestWebEngineData::removesLinksWithoutFollowingThem()
         QVERIFY(QFile::link(outside + QStringLiteral("/keep.txt"), folder->webEngineCacheDir() + QStringLiteral("/filelink")));
 
     QVERIFY2(WebEngineData::clear(*folder, &error), qPrintable(error));
-    QVERIFY(isEmptyDir(folder->webEngineStorageDir()));
-    QVERIFY(isEmptyDir(folder->webEngineCacheDir()));
+    QVERIFY(!present(folder->webEngineStorageDir() + QStringLiteral("/dirlink")));
+    QVERIFY(!present(folder->webEngineCacheDir() + QStringLiteral("/filelink")));
     QCOMPARE(readTestFile(outside + QStringLiteral("/keep.txt")), QByteArray("keep"));
 }
 
@@ -135,7 +142,7 @@ void TestWebEngineData::refusesWhileASessionHoldsTheLock()
     holder.write("\n");
     QVERIFY(holder.waitForFinished(30000));
     QVERIFY2(WebEngineData::clear(*folder, &error), qPrintable(error));
-    QVERIFY(isEmptyDir(folder->webEngineStorageDir()));
+    QVERIFY(filledEntriesGone(folder->webEngineStorageDir()));
 }
 
 void TestWebEngineData::takesOverTheLockOfACrashedSession()
@@ -153,7 +160,7 @@ void TestWebEngineData::takesOverTheLockOfACrashedSession()
     QVERIFY(QFileInfo::exists(WebEngineData::sessionLockPath(*folder)));
 
     QVERIFY2(WebEngineData::clear(*folder, &error), qPrintable(error));
-    QVERIFY(isEmptyDir(folder->webEngineStorageDir()));
+    QVERIFY(filledEntriesGone(folder->webEngineStorageDir()));
 }
 
 void TestWebEngineData::removesALinkedSubfolderWithoutFollowingIt()
@@ -174,7 +181,7 @@ void TestWebEngineData::removesALinkedSubfolderWithoutFollowingIt()
     // the link pointed to is untouched.
     QVERIFY(!QFileInfo(folder->webEngineCacheDir()).isSymLink());
     QVERIFY(!QFileInfo(folder->webEngineCacheDir()).isJunction());
-    QVERIFY(isEmptyDir(folder->webEngineCacheDir()));
+    QVERIFY(QFileInfo(folder->webEngineCacheDir()).isDir());
     QCOMPARE(readTestFile(outside + QStringLiteral("/keep.txt")), QByteArray("keep"));
 }
 

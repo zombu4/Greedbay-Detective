@@ -57,14 +57,18 @@ QString BrowserWorker::defaultProgram()
 
 bool BrowserWorker::start(QString *error)
 {
+    if (m_process) {
+        // Leaves the running worker and its socket alone.
+        if (error)
+            *error = QStringLiteral("a browser worker is already running");
+        return false;
+    }
     auto failStart = [this, error](const QString &message) {
         closeServer();
         if (error)
             *error = message;
         return false;
     };
-    if (m_process)
-        return failStart(QStringLiteral("a browser worker is already running"));
 
     m_token = randomHex();
     m_reader = browserprotocol::LineReader();
@@ -247,7 +251,9 @@ void BrowserWorker::onReadyRead()
         const int id = message->value(QStringLiteral("id")).toInt(-1);
         if (id >= 0 && id == m_pendingId) {
             m_pendingId = -1;
-        } else if (id < 0 || id != m_quitId) {
+        } else if (id >= 0 && id == m_quitId) {
+            m_quitId = -1;
+        } else {
             fail(QStringLiteral("the browser worker sent a reply nobody asked for"));
             return;
         }

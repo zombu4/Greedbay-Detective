@@ -107,6 +107,10 @@ QString logSummary(const QJsonObject &data)
 BrowserSession::BrowserSession(const WorkFolder &folder, SessionOptions options)
     : m_folder(folder), m_options(options)
 {
+    // The delay also holds across sessions: each session is a new worker
+    // process, so the first page load of a session waits kPoliteDelayMs from
+    // the session's start, which comes after the previous session's last load.
+    m_sinceLastLoad.start();
 }
 
 std::unique_ptr<BrowserSession> BrowserSession::create(const WorkFolder &folder, SessionOptions options,

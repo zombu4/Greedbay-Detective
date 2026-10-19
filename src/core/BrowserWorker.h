@@ -52,8 +52,10 @@ public:
     // bytes on macOS (108 on Linux), including the final zero byte.
     static constexpr int kMaxSocketPathBytes = 103;
 
-    // Starts the worker process. Returns false and sets *error when the
-    // local socket cannot be opened or a worker is already running.
+    // Starts the worker process. Returns false and sets *error when a worker
+    // is already running (it is left alone), the local socket cannot be
+    // opened, or the program cannot be started; in the last case failed() and
+    // finished() have already been emitted when start() returns.
     bool start(QString *error);
 
     // Sends one command (see BrowserProtocol.h; "id" is added here). Returns

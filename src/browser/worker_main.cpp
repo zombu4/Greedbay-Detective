@@ -96,7 +96,8 @@ int main(int argc, char *argv[])
     }
 
     // The worker only uses a work folder the app has created: the folder and
-    // its marker must exist, so WorkFolder::open below creates nothing new.
+    // its marker must exist (WorkFolder::open below only recreates missing
+    // subfolders of it).
     if (!QFileInfo(options->workFolder).isDir()
         || !QFileInfo::exists(options->workFolder + QLatin1Char('/') + QLatin1String(app::WorkFolder::kMarkerFileName))) {
         printError(QStringLiteral("the work folder does not exist or was not created by the app"));
