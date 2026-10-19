@@ -84,7 +84,6 @@ public:
     Q_INVOKABLE QString useStandardDepths();
     Q_INVOKABLE QString setDepths(int sold, int active, int research);
     Q_INVOKABLE QString setHistoryDays(int days);
-    Q_INVOKABLE QString setUpdateCheck(bool enabled);
     Q_INVOKABLE QString setNumbers(double outlierFactor, int high, int medium, int low, double shippingRatio,
                                    double shippingMinAboveDollars);
     // Deletes the app's profile folder of every supported browser (core/

@@ -152,6 +152,14 @@ target_link_libraries(appui PUBLIC appbrowser applookup Qt6::Gui Qt6::Network Qt
 target_include_directories(appui PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/ui")
 
 app_enable_warnings(appui)
+# MSVC C4702 "unreachable code" is raised inside Qt's own templates that the
+# generated QML and moc code instantiates (CI run 39328016064, appui only):
+# qmetatype.h:514, qvariant.h:792 and :797, qjsengine.h:112 - each an
+# `if constexpr` chain whose later return cannot be reached for some types.
+# Only that one warning is off, only for this target.
+if(MSVC)
+    target_compile_options(appui PRIVATE /wd4702)
+endif()
 
 set(app_qml_files
     ui/qml/AppButton.qml

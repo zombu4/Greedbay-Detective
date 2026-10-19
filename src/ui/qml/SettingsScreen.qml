@@ -257,14 +257,14 @@ Item {
 
             Section {
                 heading: "Updates"
-                note: "Off by default. When on, a later version of the app may check for a new release; the check "
-                      + "itself is not built yet, so for now only your choice is stored."
+                note: "available after the first release"
+                // Owner decision (a), 2026-10-19: shown, greyed out, until a
+                // release exists; nothing checks anything yet.
                 CheckBox {
                     text: "Check for a new version"
                     checked: screen.settings.updateCheck
-                    onToggled: screen.report(screen.settings.setUpdateCheck(checked), updateResult)
+                    enabled: false
                 }
-                Result { id: updateResult }
             }
 
             Section {

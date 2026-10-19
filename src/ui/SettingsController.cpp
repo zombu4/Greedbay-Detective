@@ -146,13 +146,6 @@ QString SettingsController::setHistoryDays(int days)
                       .arg(Settings::kMaxSoldHistoryDays));
 }
 
-QString SettingsController::setUpdateCheck(bool enabled)
-{
-    Settings settings(m_folder.settingsPath());
-    settings.setUpdateCheck(enabled);
-    return stored(settings, true, QString());
-}
-
 QString SettingsController::setNumbers(double outlierFactor, int high, int medium, int low, double shippingRatio,
                                        double shippingMinAboveDollars)
 {
