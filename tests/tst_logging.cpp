@@ -110,9 +110,17 @@ void TestLogging::cutsMessagesLongerThanTheLineLimit()
     QTemporaryDir tmp;
     QVERIFY(tmp.isValid());
     QString error;
+    // Logging passes each message on to the handler installed before it;
+    // here that would be QtTest's, printing the whole message as one line of
+    // 2 MiB. Every CI log stopped right before that line and the test step
+    // never ended (seen on all four runners, run 39186908428), so a silent
+    // handler stands in for this test. The log file is what is checked.
+    const QtMessageHandler testHandler =
+        qInstallMessageHandler([](QtMsgType, const QMessageLogContext &, const QString &) {});
     QVERIFY2(Logging::install(tmp.path(), QStringLiteral(TEST_APP_NAME), &error), qPrintable(error));
     qInfo("%s", QByteArray(Logging::kMaxFileBytes * 2, 'y').constData());
     Logging::uninstall();
+    qInstallMessageHandler(testHandler);
     const QByteArray content = readTestFile(tmp.path() + QStringLiteral("/" TEST_APP_NAME ".log"));
     QVERIFY(content.size() <= Logging::kMaxLineBytes);
     QVERIFY(content.endsWith(" [cut]\n"));
