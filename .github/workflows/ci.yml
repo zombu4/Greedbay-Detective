@@ -48,15 +48,6 @@ jobs:
             cmake_archive: cmake-4.4.4-macos-universal.tar.gz
             cmake_bin: cmake-4.4.4-macos-universal/CMake.app/Contents/bin
             ninja_archive: ninja-mac.zip
-          - name: macos-x86_64
-            runner: macos-26-intel
-            qt_os: mac
-            qt_arch: clang_64
-            qt_dir: macos
-            preset: macos
-            cmake_archive: cmake-4.4.4-macos-universal.tar.gz
-            cmake_bin: cmake-4.4.4-macos-universal/CMake.app/Contents/bin
-            ninja_archive: ninja-mac.zip
           - name: windows-x64
             runner: windows-2025
             qt_os: windows

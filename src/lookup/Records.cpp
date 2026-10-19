@@ -101,7 +101,8 @@ ItemRecord ItemRecord::fromJson(const QJsonObject &data)
     if (record.currency == QLatin1String("USD"))
         record.priceCents = wholeNumber(data.value(QStringLiteral("priceCents")));
     record.shippingCents = wholeNumber(data.value(QStringLiteral("shippingCents")));
-    record.condition = data.value(QStringLiteral("condition")).toString();
+    // eBay's visible condition text, not the schema.org code.
+    record.condition = data.value(QStringLiteral("conditionText")).toString();
     record.sellerName = data.value(QStringLiteral("seller")).toObject().value(QStringLiteral("name")).toString();
     for (const QJsonValue &value : data.value(QStringLiteral("specifics")).toArray()) {
         const QJsonObject entry = value.toObject();

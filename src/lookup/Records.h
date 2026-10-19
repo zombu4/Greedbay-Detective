@@ -60,7 +60,7 @@ struct ItemRecord {
     std::optional<qint64> priceCents; // only when the currency is USD
     QString currency;
     std::optional<qint64> shippingCents;
-    QString condition;
+    QString condition; // as eBay shows it (item extractor's conditionText)
     QString sellerName;
     struct Specific {
         QString label;

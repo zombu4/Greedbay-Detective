@@ -66,9 +66,8 @@ QJsonObject Extractor::parseResult(const QJsonValue &value)
             return outcome("invalid", QStringLiteral("the extractor result has no data"));
         return QJsonObject{{QStringLiteral("page"), page}, {QStringLiteral("data"), result.value(QStringLiteral("data"))}};
     }
-    if (page == QLatin1String("error_page") || page == QLatin1String("unexpected"))
-        return outcome(page == QLatin1String("error_page") ? "error_page" : "unexpected",
-                       result.value(QStringLiteral("reason")).toString());
+    if (page == QLatin1String("error_page") || page == QLatin1String("unexpected") || page == QLatin1String("ship_to"))
+        return QJsonObject{{QStringLiteral("page"), page}, {QStringLiteral("reason"), result.value(QStringLiteral("reason")).toString()}};
     return outcome("invalid", QStringLiteral("the extractor result names no known page type"));
 }
 

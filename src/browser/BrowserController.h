@@ -34,9 +34,6 @@ struct BrowserControllerOptions {
     int dailyPageCap = Settings::kDefaultDailyPageCap;
     // Tests only: fetch may also open http://127.0.0.1 and file: pages.
     bool allowLocalTestPages = false;
-    // Tests only: a file for the browser's error output (otherwise
-    // discarded; it may contain page details).
-    QString browserErrorFile;
 };
 
 // One browser session in the user's installed browser: a separate instance
@@ -45,9 +42,13 @@ struct BrowserControllerOptions {
 // closed by stop(). The app never touches the user's normal browser profile.
 //
 // Exactly one tab: at start the browser may restore tabs of earlier sessions
-// of the app's profile; the app keeps one (the start about:blank) and closes
-// the others. A tab a page opens later is left alone, and the app's tab is
-// brought back to the front unless the user is acting in the window.
+// of the app's profile (Brave restores the last session by default); the app
+// keeps one (the start about:blank) and closes the others - page targets at
+// start, and before ready and before every page load every "tab" target that
+// is not the app's active tab (this also covers tabs without a page target).
+// Later, a tab no page opened is closed; a tab a page opens is left alone and
+// the app's tab is brought back to the front. While the user acts in the
+// window (a check page, sign-in) no tab is touched.
 //
 // The browser is driven over the DevTools protocol (CdpConnection). It runs
 // as a normal browser: no automation switches, so pages see no automation
@@ -151,6 +152,9 @@ private:
     void onBrowserFinished(int exitCode, bool crashed);
     void attachToFirstPage(int attemptsLeft);
     void setWindowState(const char *state);
+    // Closes every tab but the app's (see the class comment); `then` runs
+    // when done.
+    void keepOneTab(std::function<void()> then);
 
     void scheduleLoad(const QUrl &url);
     void startLoad();

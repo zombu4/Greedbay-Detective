@@ -206,7 +206,7 @@ function extract(input) {
     const product = jsonLdProduct();
     const heading = document.querySelector(TITLE_SELECTOR);
     if (!product && !heading)
-        return notExpected('unexpected', 'no JSON-LD Product and no item title heading');
+        return missingKeyElements('no JSON-LD Product and no item title heading');
 
     const offers = product ? asArray(product.offers) : [];
     const offer = offers.length === 1 && offers[0] !== null && typeof offers[0] === 'object' ? offers[0] : null;
@@ -264,21 +264,28 @@ function extract(input) {
         }
     }
 
+    // The condition as the page shows it ("Used", "New other (see details)")
+    // before eBay's explanation: the first span.ux-textspans in the box (the
+    // real page also has a hidden screen-reader copy next to it, recon
+    // 2026-10-19), else the first element inside; a trailing colon removed.
+    const box = document.querySelector('.x-item-condition-text');
+    const visibleElement = box ? (box.querySelector('.ux-textspans') || box.firstElementChild) : null;
+    const visible = visibleElement ? norm(visibleElement.textContent).replace(/:$/, '') : '';
+
     const jsonCondition = offer ? schemaEnum(offer.itemCondition) : null;
     if (jsonCondition !== null) {
         record.condition = jsonCondition;
         record.conditionSource = 'json-ld';
-    } else {
-        // The condition ("Used", "New other (see details)") followed by
-        // eBay's explanation: the text of the first element inside, without
-        // a trailing colon. Without an element inside, null.
-        const box = document.querySelector('.x-item-condition-text');
-        const first = box && box.firstElementChild ? norm(box.firstElementChild.textContent).replace(/:$/, '') : '';
-        if (first.length > 0) {
-            record.condition = first;
-            record.conditionSource = 'dom';
-        }
+    } else if (visible.length > 0) {
+        record.condition = visible;
+        record.conditionSource = 'dom';
     }
+    // conditionText: what eBay shows. Without it, a schema.org code in
+    // eBay's words where that pair was seen on a real page (UsedCondition
+    // with "Used", recon 2026-10-19); any other code as it is.
+    const SCHEMA_TO_EBAY = {UsedCondition: 'Used'};
+    record.conditionText = visible.length > 0 ? visible
+                         : (jsonCondition !== null ? (SCHEMA_TO_EBAY[jsonCondition] || jsonCondition) : null);
 
     const shipping = shippingFromBlock();
     record.shippingCents = shipping.costCents;

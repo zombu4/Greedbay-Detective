@@ -176,7 +176,7 @@ function extract(input) {
     const empty = Array.prototype.some.call(document.querySelectorAll('.sold-tab-content .research__generic-error .page-notice__title'),
         function (element) { return /^Your search didn't return any results\./.test(textOf(element)); });
     if (rows.length === 0 && !empty)
-        return notExpected('unexpected', 'no research result rows');
+        return missingKeyElements('no research result rows');
 
     const offsetText = url.searchParams.get('offset');
     const limit = intParam(url, 'limit');

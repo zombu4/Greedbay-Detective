@@ -34,6 +34,7 @@ QJsonObject itemData()
                        {"currency", "USD"},
                        {"shippingCents", 1500},
                        {"condition", "UsedCondition"},
+                       {"conditionText", "Parts Only"},
                        {"seller", QJsonObject{{"name", "examplestore"}}},
                        {"specifics", QJsonArray{QJsonObject{{"label", "Brand"}, {"value", "Acme"}},
                                                 QJsonObject{{"label", "Model"}, {"value", "Acme M7-X"}},
@@ -522,6 +523,9 @@ void TestLookup::reportNumbers()
     QVERIFY2(text.contains(QStringLiteral("4 sales, median $255.00, P25-P75 $180.00-$330.00")), qPrintable(text));
     QVERIFY2(text.contains(QStringLiteral("THIS LISTING: total $265.00 | sold median $255.00 (+$10.00)")), qPrintable(text));
     QVERIFY2(text.contains(QStringLiteral("your estimate: $200-300")), qPrintable(text));
+    // eBay's visible condition text, never the schema.org code.
+    QVERIFY2(text.contains(QStringLiteral("eBay condition: Parts Only")), qPrintable(text));
+    QVERIFY(!text.contains(QStringLiteral("UsedCondition")));
     QVERIFY(text.contains(QStringLiteral("SOLD - same item (6)")));
     // The pasted listing against what is for sale now; lowest total first,
     // the cheapest marked.

@@ -221,7 +221,7 @@ function extract(input) {
         return notExpected('error_page', 'eBay error page');
     const heading = document.querySelector('.srp-controls__count-heading');
     if (!heading)
-        return notExpected('unexpected', 'no .srp-controls__count-heading');
+        return missingKeyElements('no .srp-controls__count-heading');
 
     const url = new URL(input.url);
     const sold = input.kind === 'soldSearch';

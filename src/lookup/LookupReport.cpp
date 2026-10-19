@@ -253,6 +253,8 @@ QString reportText(const LookupResult &result, const QList<Row> &rows, const Val
                    .arg(moneyOr(shipping.listingCents))
                    .arg(shipping.compsWithShipping)
                    .arg(moneyOr(shipping.compMedianCents), moneyOr(shipping.ebayAverageCents)));
+    out.append(QStringLiteral("  (shipping costs shown by eBay can depend on the ship-to location eBay has for the app's "
+                              "browser profile)"));
     out.append(QStringLiteral("eBay's own Product Research summary (query 1, may mix models): average sold %1")
                    .arg(moneyOr(valuation.ebayAverageSoldCents)));
     if (!expectation.trimmed().isEmpty())

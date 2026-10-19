@@ -25,8 +25,6 @@
 #include <QTest>
 #include <QTimer>
 
-#include <algorithm>
-
 #include <optional>
 
 using app::browser::BrowserController;
@@ -85,7 +83,6 @@ private:
 private slots:
     void initTestCase();
     void cleanupTestCase();
-    void cleanup();
     void activeSearch();
     void soldSearch();
     void itemFromJsonLd();
@@ -95,6 +92,8 @@ private slots:
     void stopsAtFewerWordsDivider();
     void zeroResultsIsAnEmptyResult();
     void emptyResearchIsAnEmptyResult();
+    void shipToPromptIsReported();
+    void hiddenShipToDialogDoesNotBlock();
     void errorPage_data();
     void errorPage();
     void unexpectedPage_data();
@@ -180,7 +179,6 @@ void TestExtractors::initTestCase()
     options.pageDelayMinMs = 0; // no pacing against the local test server
     options.pageDelayMaxMs = 0;
     options.allowLocalTestPages = true;
-    options.browserErrorFile = m_temp.path() + QStringLiteral("/browser-errors.txt");
     m_controller = new BrowserController(*m_folder, browsers.first(), options, this);
     qInfo().noquote() << "browser:" << browsers.first().name << browsers.first().executable;
     connect(m_controller, &BrowserController::needsUser, this, [this](const QString &message) {
@@ -193,21 +191,6 @@ void TestExtractors::initTestCase()
     QVERIFY2(m_controller->start(&error), qPrintable(error));
     QVERIFY2(ready.wait(BrowserController::kStartTimeoutMs) || !ready.isEmpty(),
              failed.isEmpty() ? "the browser did not get ready" : qPrintable(failed.at(0).at(0).toString()));
-}
-
-void TestExtractors::cleanup()
-{
-    // After a failed test: the end of the browser's own error output, to see
-    // why on a machine where it fails (the output is synthetic test pages).
-    if (!QTest::currentTestFailed())
-        return;
-    QFile file(m_temp.path() + QStringLiteral("/browser-errors.txt"));
-    if (!file.open(QIODevice::ReadOnly))
-        return;
-    const QList<QByteArray> lines = file.readAll().split('\n');
-    qInfo().noquote() << "browser error output, last lines:";
-    for (qsizetype i = std::max<qsizetype>(0, lines.size() - 40); i < lines.size(); ++i)
-        qInfo().noquote() << QString::fromUtf8(lines.at(i).left(300));
 }
 
 void TestExtractors::cleanupTestCase()
@@ -385,6 +368,8 @@ void TestExtractors::itemFromJsonLd()
     QCOMPARE(data.value("priceSource").toString(), QStringLiteral("json-ld"));
     QCOMPARE(data.value("condition").toString(), QStringLiteral("UsedCondition"));
     QCOMPARE(data.value("conditionSource").toString(), QStringLiteral("json-ld"));
+    // What eBay shows, not the schema.org code.
+    QCOMPARE(data.value("conditionText").toString(), QStringLiteral("Used"));
     QCOMPARE(data.value("availability").toString(), QStringLiteral("InStock"));
     QCOMPARE(data.value("listingStartedAt").toString(), QStringLiteral("2026-10-01T12:00:00.000Z"));
     const QJsonArray options = data.value("shippingOptions").toArray();
@@ -463,6 +448,7 @@ void TestExtractors::itemShippingBlockOnOneLine()
     QVERIFY(data.value("location").isNull());
     // The whole first element of the condition box, not its first word.
     QCOMPARE(data.value("condition").toString(), QStringLiteral("New other (see details)"));
+    QCOMPARE(data.value("conditionText").toString(), QStringLiteral("New other (see details)"));
     QCOMPARE(data.value("conditionSource").toString(), QStringLiteral("dom"));
     // One "watchers" counter on the page; two "sold" counters of other
     // listings, so the item's own count is unknown.
@@ -584,6 +570,26 @@ void TestExtractors::emptyResearchIsAnEmptyResult()
     QCOMPARE(data.value("rowCount").toInt(), 0);
     QCOMPARE(data.value("emptyResult").toBool(), true);
     QCOMPARE(data.value("morePossible").toBool(true), false);
+}
+
+void TestExtractors::shipToPromptIsReported()
+{
+    // No results and eBay's ship-to prompt shown: reported as such, never
+    // filled in (the user answers it in the window).
+    QString error;
+    const std::optional<QJsonObject> result = extract("ship_to.html", kActiveUrl, PageKind::ActiveSearch, &error);
+    QVERIFY2(result, qPrintable(error));
+    QCOMPARE(result->value("page").toString(), QStringLiteral("ship_to"));
+    QVERIFY2(m_lastUserMessage.contains(QStringLiteral("eBay asks where you ship to")), qPrintable(m_lastUserMessage));
+}
+
+void TestExtractors::hiddenShipToDialogDoesNotBlock()
+{
+    QString error;
+    const std::optional<QJsonObject> result = extract("ship_to_hidden.html", kActiveUrl, PageKind::ActiveSearch, &error);
+    QVERIFY2(result, qPrintable(error));
+    QCOMPARE(result->value("page").toString(), QStringLiteral("expected"));
+    QCOMPARE(result->value("data").toObject().value("items").toArray().size(), 1);
 }
 
 void TestExtractors::errorPage_data()

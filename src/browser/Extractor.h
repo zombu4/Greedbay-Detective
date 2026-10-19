@@ -21,6 +21,8 @@ namespace app::browser {
 //   {"page":"sign_in","reason":"..."}           eBay's sign-in page (from the URL)
 //   {"page":"no_access","reason":"..."}         Product Research redirected to /sh/landing (from the URL)
 //   {"page":"error_page","reason":"..."}        eBay's error page
+//   {"page":"ship_to","reason":"..."}           the key elements are missing and eBay's
+//                                               "Are you shipping to ...?" prompt is shown
 //   {"page":"unexpected","reason":"..."}        the key elements of the expected page are missing
 //                                               (a security check, a changed page, a failed load, ...)
 //   {"page":"invalid","reason":"..."}           the script did not return a valid result

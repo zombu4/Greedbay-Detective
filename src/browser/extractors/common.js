@@ -8,7 +8,7 @@
 //
 // Result envelope:
 //   {page: "expected", data: {...}}                  the expected page; data per extractor
-//   {page: "error_page" | "unexpected", reason: "..."}  anything else
+//   {page: "error_page" | "ship_to" | "unexpected", reason: "..."}  anything else
 // Inside data, a field the page did not provide is null and its name is
 // listed in the record's "missing" array. Nothing is guessed: a text that
 // does not match its exact pattern gives null, never a nearby value.
@@ -98,6 +98,24 @@ function missingFields(record) {
 // <title>Error Page | eBay</title> and div.error-header with #error-info.
 function isErrorPage() {
     return document.title === 'Error Page | eBay' || document.querySelector('.error-header #error-info') !== null;
+}
+
+// eBay's "Are you shipping to ...?" prompt (recon "2026-10-19 re-test
+// fixes"): div.address-dialog__lightbox, shown (not hidden) on the page.
+function shipToPromptShown() {
+    const dialog = document.querySelector('.address-dialog__lightbox');
+    if (!dialog || dialog.hidden)
+        return false;
+    const style = getComputedStyle(dialog);
+    return style.display !== 'none' && style.visibility !== 'hidden';
+}
+
+// The answer for a page without its key elements: eBay's ship-to prompt
+// when it is shown (the user answers it; the app never fills in an
+// address), otherwise "unexpected" with `reason`.
+function missingKeyElements(reason) {
+    return shipToPromptShown() ? notExpected('ship_to', 'eBay asks where the items ship to')
+                               : notExpected('unexpected', reason);
 }
 
 function expected(data) {

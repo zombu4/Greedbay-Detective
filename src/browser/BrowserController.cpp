@@ -14,6 +14,8 @@
 #include <QTimer>
 #include <QUrlQuery>
 
+#include <memory>
+
 #include <algorithm>
 #include <limits>
 #include <utility>
@@ -28,7 +30,8 @@ const QUrl kHomepage(QStringLiteral("https://www.ebay.com/"));
 
 const QString kSignInMessage = QStringLiteral(
     "Sign in to eBay in the browser window: click \"Sign in\" at the top of the eBay page and sign in on eBay's "
-    "own page. The app never sees or stores your password. Then press Continue.");
+    "own page. The app never sees or stores your password. If eBay asks where you ship to, answer it there "
+    "yourself (the app never fills in an address). Then press Continue.");
 
 // Run on the My eBay page after sign-in: is it eBay's error page, and does it
 // ask for a password (a sign-in or check form)?
@@ -46,6 +49,10 @@ QString messageFor(const QString &page, bool loadOk)
         return QStringLiteral("eBay asks you to sign in. You can sign in in the browser window; the app never "
                               "sees your password. Press Continue when you are done; the app does not reload "
                               "the page by itself.");
+    if (page == QLatin1String("ship_to"))
+        return QStringLiteral("eBay asks where you ship to - answer it once in the browser window, then press "
+                              "Continue. The app never fills in an address; eBay keeps your answer in the app's own "
+                              "browser profile, so it should not ask again.");
     if (page == QLatin1String("no_access"))
         return QStringLiteral("eBay opened the Seller Hub start page instead of Product Research: this account "
                               "has no Product Research access. Prices from sold listings will be marked "
@@ -205,7 +212,6 @@ bool BrowserController::start(QString *error)
     }
 
     m_cdp = new CdpConnection(this);
-    m_cdp->setErrorFile(m_options.browserErrorFile);
     connect(m_cdp, &CdpConnection::connected, this, [this]() {
         if (!m_stopping && !m_failed)
             attachToFirstPage(100);
@@ -323,10 +329,14 @@ void BrowserController::attachToFirstPage(int attemptsLeft)
                                 m_windowId = window.value(QStringLiteral("windowId")).toInt(-1);
                                 // The window stays out of the way until the user has to act.
                                 setWindowState("minimized");
-                                m_startTimer->stop();
-                                m_ready = true;
-                                qCInfo(lcBrowser) << "browser ready";
-                                emit ready();
+                                keepOneTab([this]() {
+                                    if (m_stopping || m_failed)
+                                        return;
+                                    m_startTimer->stop();
+                                    m_ready = true;
+                                    qCInfo(lcBrowser) << "browser ready";
+                                    emit ready();
+                                });
                             }, false);
                 });
             }, false);
@@ -338,6 +348,52 @@ void BrowserController::attachToFirstPage(int attemptsLeft)
             return;
         }
         QTimer::singleShot(200, this, [this, attemptsLeft]() { attachToFirstPage(attemptsLeft - 1); });
+    }, false);
+}
+
+void BrowserController::keepOneTab(std::function<void()> then)
+{
+    // Every tab of the browser, including ones without a page target (the
+    // "tab" targets of Target.getTargets with a type filter). The app's tab
+    // is made the active one first; any other tab - inactive, or in another
+    // window - is closed.
+    command(QStringLiteral("Target.activateTarget"), {{QStringLiteral("targetId"), m_targetId}},
+            [this, then](const QJsonObject &, const QJsonObject &) {
+        const QJsonObject filter{{QStringLiteral("filter"), QJsonArray{QJsonObject{{QStringLiteral("type"), QStringLiteral("tab")}}}}};
+        command(QStringLiteral("Target.getTargets"), filter, [this, then](const QJsonObject &result, const QJsonObject &) {
+            const QJsonArray tabs = result.value(QStringLiteral("targetInfos")).toArray();
+            auto pending = std::make_shared<int>(static_cast<int>(tabs.size()));
+            auto closed = std::make_shared<int>(0);
+            auto finishOne = [then, pending, closed, count = tabs.size()]() {
+                if (--*pending > 0)
+                    return;
+                qCInfo(lcBrowser) << "browser tabs:" << count << "- kept 1, closed" << *closed;
+                if (then)
+                    then();
+            };
+            if (tabs.isEmpty()) {
+                *pending = 1;
+                finishOne();
+                return;
+            }
+            for (const QJsonValue &value : tabs) {
+                const QJsonObject tab = value.toObject();
+                const QString id = tab.value(QStringLiteral("targetId")).toString();
+                const bool active = tab.value(QStringLiteral("embedderData")).toObject().value(QStringLiteral("tabActive")).toBool();
+                command(QStringLiteral("Browser.getWindowForTarget"), {{QStringLiteral("targetId"), id}},
+                        [this, id, active, closed, finishOne](const QJsonObject &window, const QJsonObject &error) {
+                    // Another window only on a valid answer: an error never
+                    // closes the active tab.
+                    const bool otherWindow = error.isEmpty() && window.value(QStringLiteral("windowId")).isDouble()
+                                             && window.value(QStringLiteral("windowId")).toInt() != m_windowId;
+                    if (!active || otherWindow) {
+                        ++*closed;
+                        command(QStringLiteral("Target.closeTarget"), {{QStringLiteral("targetId"), id}}, nullptr, false);
+                    }
+                    finishOne();
+                }, false);
+            }
+        }, false);
     }, false);
 }
 
@@ -378,9 +434,19 @@ void BrowserController::onEvent(const QString &method, const QJsonObject &params
                 return;
             }
             const bool userActs = m_waitingForUser || m_op == Op::SignInWaiting;
-            qCInfo(lcBrowser) << "a page opened another tab;" << (userActs ? "left to the user" : "the app's tab stays in front");
-            if (!userActs)
+            const bool byPage = !info.value(QStringLiteral("openerId")).toString().isEmpty();
+            if (userActs) {
+                qCInfo(lcBrowser) << "another tab opened while the user acts in the window; left to the user";
+            } else if (byPage) {
+                // A popup or tab a page opened: left open, the app's tab in front.
+                qCInfo(lcBrowser) << "a page opened another tab; the app's tab stays in front";
                 command(QStringLiteral("Target.activateTarget"), {{QStringLiteral("targetId"), m_targetId}}, nullptr, false);
+            } else {
+                // A tab no page opened (the browser's own): the window keeps
+                // exactly one tab.
+                qCInfo(lcBrowser) << "closed a tab the browser opened by itself";
+                command(QStringLiteral("Target.closeTarget"), {{QStringLiteral("targetId"), id}}, nullptr, false);
+            }
         }
         return;
     }
@@ -540,6 +606,8 @@ void BrowserController::startLoad()
         finish(reply);
         return;
     }
+    // Exactly one tab before every page load the app makes.
+    keepOneTab(nullptr);
     m_loading = true;
     ++m_serial;
     m_navigationError.clear();
@@ -700,7 +768,8 @@ void BrowserController::onExtracted(const QJsonObject &result)
     const bool loadOk = m_lastLoadOk;
     // Content that is built after loading: look again until the key elements
     // appear or kSettleMs has passed.
-    if (page == QLatin1String("unexpected") && loadOk && m_settleClock.elapsed() < kSettleMs) {
+    const bool notYet = page == QLatin1String("unexpected") || page == QLatin1String("ship_to");
+    if (notYet && loadOk && m_settleClock.elapsed() < kSettleMs) {
         m_settleTimer->start(kSettleStepMs);
         return;
     }
@@ -721,7 +790,7 @@ void BrowserController::onExtracted(const QJsonObject &result)
     }
     QString shown = page;
     QString reason = result.value(QStringLiteral("reason")).toString();
-    if (!loadOk && (page == QLatin1String("expected") || page == QLatin1String("unexpected"))) {
+    if (!loadOk && (page == QLatin1String("expected") || notYet)) {
         // A failed load never counts as the expected page.
         shown = QStringLiteral("unexpected");
         reason = m_httpStatus >= 400 ? QStringLiteral("the page answered with HTTP status %1").arg(m_httpStatus)

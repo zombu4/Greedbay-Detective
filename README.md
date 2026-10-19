@@ -59,16 +59,17 @@ cmake --build --preset macos-release
 ctest --preset macos-release
 ```
 
-The `macos` preset builds universal binaries (arm64 and x86_64) for macOS 14.4
-and newer. For a debug build use `macos-debug` in the last two commands.
+The `macos` preset builds for Apple Silicon (arm64) Macs with macOS 14.4 and
+newer; Intel Macs are not supported. For a debug build use `macos-debug` in the
+last two commands.
 
 On Linux use the presets `linux` and `linux-release`, on Windows `windows` and
 `windows-release` (each also has a `-debug` variant). On Windows the tests load
 the Qt DLLs from Qt's `bin` folder, so add `%QT_ROOT_DIR%\bin` to `PATH` before
 running `ctest`; CI does the same.
 
-CI builds and tests the release presets on macOS (arm64 and x86_64), Windows
-and Ubuntu 24.04 on every push and pull request.
+CI builds and tests the release presets on macOS 26 (Apple Silicon), Windows
+Server 2025 and Ubuntu 24.04 on every push and pull request.
 
 Compiler warnings are errors in every build.
 

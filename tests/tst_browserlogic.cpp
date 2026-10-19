@@ -131,9 +131,6 @@ void TestBrowserLogic::runnerBrowsersAreFound()
     qInfo().noquote() << "installed browsers:" << (ids.isEmpty() ? QStringLiteral("none") : ids.join(QStringLiteral(", ")));
     if (qEnvironmentVariable("GITHUB_ACTIONS") != QLatin1String("true"))
         QSKIP("not on a GitHub Actions runner; the expected browsers are known only there");
-#if defined(Q_OS_MACOS) && defined(Q_PROCESSOR_X86_64)
-    QSKIP("macos-26-intel: no software list for this runner image was found, so no browser is expected");
-#endif
     // The runner images list Google Chrome and Microsoft Edge on macOS 26,
     // Windows 2025 and Ubuntu 24.04 (github.com/actions/runner-images), and
     // Chromium on Ubuntu 24.04. Finding them proves the lookup per system.

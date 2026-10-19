@@ -64,10 +64,6 @@ public:
     // be chosen or the process cannot be started.
     bool start(const QString &program, const QStringList &arguments, QString *error);
 
-    // Tests only: before start(), a file for the browser's error output
-    // (otherwise discarded).
-    void setErrorFile(const QString &path) { m_errorFile = path; }
-
     // Sends one command; returns its id (> 0), or -1 when not connected.
     int send(const QString &method, const QJsonObject &params = {}, const QString &sessionId = {});
 
@@ -111,7 +107,6 @@ private:
     QTimer *m_pollTimer = nullptr;
     QNetworkAccessManager *m_network = nullptr;
     bool m_polling = false;
-    QString m_errorFile;
     int m_port = 0;
     int m_pollsLeft = 0;
     bool m_connected = false;

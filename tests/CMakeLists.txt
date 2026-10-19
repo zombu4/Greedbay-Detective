@@ -76,6 +76,8 @@ set(app_test_fixtures
     fixtures/late_page.html
     fixtures/research.html
     fixtures/research_empty.html
+    fixtures/ship_to.html
+    fixtures/ship_to_hidden.html
     fixtures/sold_search.html
     fixtures/webdriver_check.html
     fixtures/zero_results.html
