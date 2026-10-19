@@ -6,7 +6,6 @@
 #include "core/Settings.h"
 #include "core/Version.h"
 #include "ebay/SearchUrls.h"
-#include "lookup/LookupReport.h"
 #include "lookup/LookupRunner.h"
 
 #include <QDateTime>
@@ -14,12 +13,15 @@
 #include <QFontDatabase>
 #include <QFormLayout>
 #include <QHBoxLayout>
+#include <QHeaderView>
 #include <QJsonDocument>
 #include <QLabel>
 #include <QLineEdit>
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QSpinBox>
+#include <QSplitter>
+#include <QTreeWidget>
 #include <QVBoxLayout>
 
 #include <utility>
@@ -33,12 +35,19 @@ const char kTestUrl[] = "https://www.ebay.com/sch/i.html?_nkw=usb+c+cable&_ipg=2
 // cap limits the loads).
 constexpr int kDepthSpinMaximum = 100000;
 
+enum Column { ColUse, ColSource, ColCondition, ColTotal, ColExtra, ColTitle, ColReasons, ColCount };
+
 QSpinBox *depthBox(int value, QWidget *parent)
 {
     auto *box = new QSpinBox(parent);
     box->setRange(0, kDepthSpinMaximum);
     box->setValue(value);
     return box;
+}
+
+QString moneyOr(const std::optional<qint64> &cents)
+{
+    return cents ? app::lookup::money(*cents) : QStringLiteral("-");
 }
 
 } // namespace
@@ -49,22 +58,41 @@ DevWindow::DevWindow(app::WorkFolder folder, QWidget *parent)
       m_continue(new QPushButton(QStringLiteral("Continue"), this)),
       m_fetch(new QPushButton(QStringLiteral("Fetch test page"), this)),
       m_signOut(new QPushButton(QStringLiteral("Sign out"), this)), m_listing(new QLineEdit(this)),
-      m_check(new QPushButton(QStringLiteral("Check listing"), this)), m_soldDepth(nullptr), m_activeDepth(nullptr),
-      m_researchDepth(nullptr), m_fetchComps(new QPushButton(QStringLiteral("Fetch comps"), this)),
+      m_check(new QPushButton(QStringLiteral("Check listing"), this)), m_brand(new QLineEdit(this)),
+      m_model(new QLineEdit(this)), m_productName(new QLineEdit(this)),
+      m_saveIdentity(new QPushButton(QStringLiteral("Save identity"), this)), m_identityNote(new QLabel(this)),
+      m_queries(new QPlainTextEdit(this)), m_expectation(new QLineEdit(this)), m_soldDepth(nullptr),
+      m_activeDepth(nullptr), m_researchDepth(nullptr), m_fetchComps(new QPushButton(QStringLiteral("Fetch comps"), this)),
       m_cancel(new QPushButton(QStringLiteral("Cancel"), this)), m_status(new QLabel(this)),
-      m_output(new QPlainTextEdit(this))
+      m_table(new QTreeWidget(this)), m_numbers(new QPlainTextEdit(this)), m_output(new QPlainTextEdit(this))
 {
     setWindowTitle(QString::fromLatin1(app::version::kDisplayName) + QStringLiteral(" - developer window"));
     const app::Settings settings(m_folder.settingsPath());
     m_soldDepth = depthBox(settings.soldDepth(), this);
     m_activeDepth = depthBox(settings.activeDepth(), this);
     m_researchDepth = depthBox(settings.researchDepth(), this);
-    for (QLineEdit *&query : m_queries)
-        query = new QLineEdit(this);
     m_listing->setPlaceholderText(QStringLiteral("https://www.ebay.com/itm/... or the 12-digit item number"));
+    m_productName->setPlaceholderText(QStringLiteral("optional, e.g. a product line name"));
+    m_expectation->setPlaceholderText(QStringLiteral("optional: what you think it is worth, shown next to the market numbers"));
+    m_queries->setPlaceholderText(QStringLiteral("one search per line"));
+    m_queries->setMaximumHeight(70);
+    m_identityNote->setWordWrap(true);
+    m_identityNote->setTextFormat(Qt::RichText);
+    m_identityNote->setOpenExternalLinks(true);
+    m_identityNote->setTextInteractionFlags(Qt::TextBrowserInteraction);
+    const QFont fixed = QFontDatabase::systemFont(QFontDatabase::FixedFont);
     m_output->setReadOnly(true);
     m_output->setLineWrapMode(QPlainTextEdit::NoWrap);
-    m_output->setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));
+    m_output->setFont(fixed);
+    m_numbers->setReadOnly(true);
+    m_numbers->setLineWrapMode(QPlainTextEdit::NoWrap);
+    m_numbers->setFont(fixed);
+    m_table->setColumnCount(ColCount);
+    m_table->setHeaderLabels({QStringLiteral("use"), QStringLiteral("source"), QStringLiteral("condition"),
+                              QStringLiteral("total"), QStringLiteral("sold/format"), QStringLiteral("title"),
+                              QStringLiteral("reasons")});
+    m_table->setUniformRowHeights(true);
+    m_table->header()->setStretchLastSection(true);
     m_status->setWordWrap(true);
     m_browserLabel->setWordWrap(true);
     m_browserLabel->setTextInteractionFlags(Qt::TextSelectableByMouse | Qt::LinksAccessibleByMouse);
@@ -80,6 +108,14 @@ DevWindow::DevWindow(app::WorkFolder folder, QWidget *parent)
     auto *listingRow = new QHBoxLayout;
     listingRow->addWidget(m_listing, 1);
     listingRow->addWidget(m_check);
+    auto *identityRow = new QHBoxLayout;
+    identityRow->addWidget(new QLabel(QStringLiteral("brand"), this));
+    identityRow->addWidget(m_brand, 2);
+    identityRow->addWidget(new QLabel(QStringLiteral("model"), this));
+    identityRow->addWidget(m_model, 1);
+    identityRow->addWidget(new QLabel(QStringLiteral("product name"), this));
+    identityRow->addWidget(m_productName, 2);
+    identityRow->addWidget(m_saveIdentity);
     auto *depthRow = new QHBoxLayout;
     depthRow->addWidget(new QLabel(QStringLiteral("sold"), this));
     depthRow->addWidget(m_soldDepth);
@@ -92,9 +128,19 @@ DevWindow::DevWindow(app::WorkFolder folder, QWidget *parent)
     depthRow->addWidget(m_cancel);
     auto *lookup = new QFormLayout;
     lookup->addRow(QStringLiteral("Listing:"), listingRow);
-    for (std::size_t i = 0; i < m_queries.size(); ++i)
-        lookup->addRow(QStringLiteral("Query %1:").arg(i + 1), m_queries.at(i));
+    lookup->addRow(QStringLiteral("Identity:"), identityRow);
+    lookup->addRow(QString(), m_identityNote);
+    lookup->addRow(QStringLiteral("Queries:"), m_queries);
+    lookup->addRow(QStringLiteral("Your estimate:"), m_expectation);
     lookup->addRow(QStringLiteral("Depth:"), depthRow);
+
+    auto *splitter = new QSplitter(Qt::Vertical, this);
+    splitter->addWidget(m_table);
+    splitter->addWidget(m_numbers);
+    splitter->addWidget(m_output);
+    splitter->setStretchFactor(0, 3);
+    splitter->setStretchFactor(1, 1);
+    splitter->setStretchFactor(2, 1);
 
     auto *layout = new QVBoxLayout(this);
     layout->addWidget(m_browserLabel);
@@ -103,14 +149,22 @@ DevWindow::DevWindow(app::WorkFolder folder, QWidget *parent)
     layout->addLayout(buttons);
     layout->addLayout(lookup);
     layout->addWidget(m_status);
-    layout->addWidget(m_output, 1);
-    resize(1100, 800);
+    layout->addWidget(splitter, 1);
+    resize(1300, 950);
 
     connect(m_signIn, &QPushButton::clicked, this, [this]() { runSession(Task::SignIn); });
     connect(m_fetch, &QPushButton::clicked, this, [this]() { runSession(Task::Fetch); });
     connect(m_check, &QPushButton::clicked, this, &DevWindow::checkListing);
+    connect(m_saveIdentity, &QPushButton::clicked, this, &DevWindow::saveIdentity);
     connect(m_fetchComps, &QPushButton::clicked, this, &DevWindow::fetchComps);
     connect(m_cancel, &QPushButton::clicked, this, &DevWindow::cancelLookup);
+    connect(m_expectation, &QLineEdit::editingFinished, this, &DevWindow::recompute);
+    connect(m_table, &QTreeWidget::itemChanged, this, [this](QTreeWidgetItem *item, int column) {
+        if (m_filling || column != ColUse || !m_rowOf.contains(item))
+            return;
+        m_rows[m_rowOf.value(item)].included = item->checkState(ColUse) == Qt::Checked;
+        recompute();
+    });
     connect(m_continue, &QPushButton::clicked, this, [this]() {
         if (m_controller) {
             m_continue->setEnabled(false);
@@ -124,6 +178,15 @@ DevWindow::DevWindow(app::WorkFolder folder, QWidget *parent)
 
     append(QStringLiteral("work folder: %1").arg(QDir::toNativeSeparators(m_folder.path())));
     append(pagesToday());
+    QString error;
+    m_known = app::lookup::KnownModels::builtIn(&error);
+    if (m_known && !m_known->addUserFile(m_folder.knownModelsPath(), &error)) {
+        append(QStringLiteral("your known-models file is not used: %1").arg(error));
+        error.clear();
+    }
+    m_words = app::lookup::MatchWords::builtIn(&error);
+    if (!m_known || !m_words)
+        append(QStringLiteral("the matching data cannot be loaded, lookups are off: %1").arg(error));
     refreshBrowser();
     setBusy(false);
 }
@@ -207,21 +270,26 @@ void DevWindow::onReady()
         return;
     }
     m_runner = new app::lookup::LookupRunner(
-        [this](const QUrl &url, app::ebay::PageKind kind) { m_controller->fetch(url, kind); }, this);
+        [this](const QUrl &url, app::ebay::PageKind kind) { m_controller->fetch(url, kind); }, &*m_known, &*m_words, this);
     connect(m_runner, &app::lookup::LookupRunner::progress, this, &DevWindow::append);
     connect(m_runner, &app::lookup::LookupRunner::itemReady, this, [this]() {
-        const QStringList queries = m_runner->result().queries;
-        for (std::size_t i = 0; i < m_queries.size(); ++i) {
-            m_queries.at(i)->setText(static_cast<qsizetype>(i) < queries.size() ? queries.at(static_cast<qsizetype>(i)) : QString());
-            m_queries.at(i)->setEnabled(true);
-        }
+        m_result = m_runner->result();
+        showIdentity();
         m_fetchComps->setEnabled(true);
-        m_status->setText(QStringLiteral("Check the search queries (edit or clear them), set the depths, then press "
-                                         "Fetch comps."));
+        m_saveIdentity->setEnabled(true);
+        m_status->setText(m_result.identity.confident
+                              ? QStringLiteral("Check the identity and the queries (correct and Save if wrong), set the depths, "
+                                               "then press Fetch comps.")
+                              : QStringLiteral("The model is not known with confidence: enter the brand and model above and "
+                                               "press Save identity. Nothing is searched before that."));
     });
     connect(m_runner, &app::lookup::LookupRunner::finished, this, [this]() {
         m_fetchComps->setEnabled(false);
-        append(QStringLiteral("report:\n%1").arg(app::lookup::reportText(m_runner->result())));
+        m_saveIdentity->setEnabled(false);
+        m_result = m_runner->result();
+        m_rows = app::lookup::classifyRows(m_result, *m_words);
+        showRows();
+        recompute();
         m_controller->stop();
     });
     QString error;
@@ -262,22 +330,83 @@ void DevWindow::onFinished(bool normal)
 
 void DevWindow::checkListing()
 {
+    if (!m_known || !m_words) {
+        append(QStringLiteral("the matching data cannot be loaded, lookups are off"));
+        return;
+    }
     if (app::ebay::itemIdFromInput(m_listing->text()).isEmpty()) {
         append(QStringLiteral("not an eBay item address (https://www.ebay.com/itm/<number>) or a 12-digit item number"));
         return;
     }
-    for (QLineEdit *query : m_queries)
-        query->clear();
+    // A new lookup starts clean: nothing of the previous one stays on screen.
+    m_result = app::lookup::LookupResult();
+    m_rows.clear();
+    m_rowOf.clear();
+    m_table->clear();
+    m_numbers->clear();
+    m_queries->clear();
+    m_brand->clear();
+    m_model->clear();
+    m_productName->clear();
+    m_identityNote->clear();
     runSession(Task::Lookup);
+}
+
+void DevWindow::showIdentity()
+{
+    const app::lookup::Identity &identity = m_result.identity;
+    m_brand->setText(identity.brandName);
+    m_model->setText(identity.model);
+    m_productName->setText(identity.productName);
+    m_queries->setPlainText(m_result.queries.join(QLatin1Char('\n')));
+    QStringList lines;
+    if (identity.confident) {
+        lines << QStringLiteral("Identity from: %1.").arg(identity.source.toHtmlEscaped());
+    } else {
+        lines << QStringLiteral("<b>Model not known with confidence</b> (%1). Please enter it.").arg(identity.reason.toHtmlEscaped());
+        lines << QStringLiteral("Title: %1").arg(m_result.item.title.toHtmlEscaped());
+        QStringList specifics;
+        for (const app::lookup::ItemRecord::Specific &specific : m_result.item.specifics)
+            specifics << QStringLiteral("%1: %2").arg(specific.label, specific.value).toHtmlEscaped();
+        if (!specifics.isEmpty())
+            lines << QStringLiteral("Item specifics: %1").arg(specifics.join(QStringLiteral(" | ")));
+        lines << QStringLiteral("<a href=\"%1\">Open the listing (photos)</a>")
+                     .arg(app::ebay::itemUrl(m_result.item.itemId).toString(QUrl::FullyEncoded));
+        if (!identity.candidates.isEmpty())
+            lines << QStringLiteral("Suggestions: %1").arg(identity.candidates.join(QStringLiteral(", ")).toHtmlEscaped());
+    }
+    if (!identity.family.isEmpty())
+        lines << QStringLiteral("Counts as the same item: %1").arg(identity.family.join(QStringLiteral(", ")).toHtmlEscaped());
+    for (const QString &note : identity.notes)
+        lines << QStringLiteral("Known issue: %1").arg(note.toHtmlEscaped());
+    m_identityNote->setText(lines.join(QStringLiteral("<br>")));
+}
+
+void DevWindow::saveIdentity()
+{
+    if (!m_runner || !m_runner->isWaitingForQueries())
+        return;
+    const app::lookup::ConfirmedIdentity entered{m_brand->text(), m_model->text(), m_productName->text()};
+    QString error;
+    if (!m_known->saveConfirmed(m_folder.knownModelsPath(), m_result.item.itemId, entered, &error)) {
+        append(QStringLiteral("identity not saved: %1").arg(error));
+        return;
+    }
+    if (!m_runner->setIdentity(entered, &error)) {
+        append(QStringLiteral("identity not used: %1").arg(error));
+        return;
+    }
+    m_result = m_runner->result();
+    showIdentity();
+    append(QStringLiteral("identity saved for this listing: %1 %2").arg(m_result.identity.brandName, m_result.identity.model));
+    m_status->setText(QStringLiteral("Identity saved. Check the queries, then press Fetch comps."));
 }
 
 void DevWindow::fetchComps()
 {
     if (!m_runner || !m_runner->isWaitingForQueries())
         return;
-    QStringList queries;
-    for (QLineEdit *query : m_queries)
-        queries.append(query->text());
+    const QStringList queries = m_queries->toPlainText().split(QLatin1Char('\n'));
     const app::lookup::Depths depths{m_soldDepth->value(), m_activeDepth->value(), m_researchDepth->value()};
     const app::Settings settings(m_folder.settingsPath());
     QString error;
@@ -286,8 +415,7 @@ void DevWindow::fetchComps()
         return;
     }
     m_fetchComps->setEnabled(false);
-    for (QLineEdit *query : m_queries)
-        query->setEnabled(false);
+    m_saveIdentity->setEnabled(false);
     m_status->setText(QStringLiteral("Fetching comparison pages..."));
 }
 
@@ -308,6 +436,70 @@ void DevWindow::cancelLookup()
         return;
     }
     m_runner->cancel();
+}
+
+void DevWindow::showRows()
+{
+    using app::lookup::Row;
+    m_filling = true;
+    m_table->clear();
+    m_rowOf.clear();
+    const app::lookup::Bucket order[] = {app::lookup::Bucket::SameItem, app::lookup::Bucket::Documentation,
+                                         app::lookup::Bucket::PartFits, app::lookup::Bucket::Companion,
+                                         app::lookup::Bucket::Accessory, app::lookup::Bucket::Lot,
+                                         app::lookup::Bucket::UnknownItem, app::lookup::Bucket::NoMatch};
+    for (const app::lookup::Bucket bucket : order) {
+        QTreeWidgetItem *group = nullptr;
+        for (qsizetype i = 0; i < m_rows.size(); ++i) {
+            const Row &row = m_rows.at(i);
+            if (row.match.bucket != bucket)
+                continue;
+            if (!group) {
+                group = new QTreeWidgetItem(m_table);
+                group->setFirstColumnSpanned(true);
+            }
+            auto *item = new QTreeWidgetItem(group);
+            item->setFlags(item->flags() | Qt::ItemIsUserCheckable);
+            item->setCheckState(ColUse, row.included ? Qt::Checked : Qt::Unchecked);
+            item->setText(ColCondition, app::lookup::conditionName(row.match.condition));
+            item->setText(ColReasons, row.match.reasons.join(QStringLiteral("; ")));
+            if (row.source == Row::Source::Research) {
+                const app::lookup::ResearchRecord &record = m_result.research.at(row.index);
+                item->setText(ColSource, QStringLiteral("research"));
+                std::optional<qint64> total;
+                if (record.avgSoldPriceCents && record.avgShippingCents)
+                    total = *record.avgSoldPriceCents + *record.avgShippingCents;
+                item->setText(ColTotal, moneyOr(total));
+                item->setText(ColExtra, record.lastSoldDate);
+                item->setText(ColTitle, record.title);
+            } else {
+                const bool sold = row.source == Row::Source::Sold;
+                const app::lookup::SearchRecord &record = sold ? m_result.sold.at(row.index) : m_result.active.at(row.index);
+                item->setText(ColSource, sold ? (record.confirmed ? QStringLiteral("sold") : QStringLiteral("sold, unconfirmed"))
+                                              : QStringLiteral("for sale"));
+                item->setText(ColTotal, moneyOr(record.totalCents()));
+                item->setText(ColExtra, sold ? record.soldDate : record.format);
+                item->setText(ColTitle, record.title);
+            }
+            m_rowOf.insert(item, i);
+        }
+        if (group) {
+            group->setText(ColUse, QStringLiteral("%1 (%2)").arg(app::lookup::bucketName(bucket)).arg(group->childCount()));
+            group->setExpanded(bucket != app::lookup::Bucket::NoMatch);
+        }
+    }
+    for (int column = 0; column < ColReasons; ++column)
+        m_table->resizeColumnToContents(column);
+    m_filling = false;
+}
+
+void DevWindow::recompute()
+{
+    if (!m_words || m_result.status == QLatin1String("running"))
+        return;
+    const app::Settings settings(m_folder.settingsPath());
+    const app::lookup::Valuation valuation = app::lookup::valuate(m_result, m_rows, *m_words, settings.valueSettings());
+    m_numbers->setPlainText(app::lookup::reportText(m_result, m_rows, valuation, m_expectation->text()));
 }
 
 void DevWindow::signOut()
@@ -335,6 +527,7 @@ void DevWindow::setBusy(bool busy)
     if (!busy) {
         m_continue->setEnabled(false);
         m_fetchComps->setEnabled(false);
+        m_saveIdentity->setEnabled(false);
     }
     m_status->setText(busy ? QStringLiteral("Browser session running...") : QStringLiteral("No browser session."));
 }

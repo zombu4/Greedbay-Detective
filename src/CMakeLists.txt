@@ -80,21 +80,40 @@ qt_add_resources(appbrowser "extractors"
 )
 
 # applookup: one lookup (item page -> identity -> queries -> comparison pages
-# -> records -> report). Browser-free: it asks for pages through a callback,
-# so tests run it on fake page records.
+# -> records -> matching -> value). Browser-free: it asks for pages through a
+# callback, so tests run it on fake page records.
 qt_add_library(applookup STATIC
     lookup/Identity.cpp
     lookup/Identity.h
+    lookup/KnownModels.cpp
+    lookup/KnownModels.h
     lookup/LookupReport.cpp
     lookup/LookupReport.h
     lookup/LookupRunner.cpp
     lookup/LookupRunner.h
+    lookup/MatchWords.cpp
+    lookup/MatchWords.h
+    lookup/Matcher.cpp
+    lookup/Matcher.h
     lookup/Records.cpp
     lookup/Records.h
     lookup/Stats.cpp
     lookup/Stats.h
+    lookup/Text.cpp
+    lookup/Text.h
+    lookup/Value.cpp
+    lookup/Value.h
 )
 
 target_link_libraries(applookup PUBLIC appcore)
 
 app_enable_warnings(applookup)
+
+# The matcher's data ships inside the binary as :/lookup/<name>.json.
+qt_add_resources(applookup "lookup_data"
+    PREFIX "/lookup"
+    BASE "lookup/data"
+    FILES
+        lookup/data/known-models.json
+        lookup/data/match-words.json
+)

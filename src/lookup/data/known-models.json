@@ -1,0 +1,113 @@
+{
+    "format": 1,
+    "about": "Brands and models the lookup knows. Every fact names its source: a URL, or \"owner\" for the project owner's own statements about these items. A brand name with \"search\": true is used in search queries; every name is accepted when matching result titles.",
+    "brands": [
+        {
+            "id": "hp",
+            "names": [
+                {"name": "HP", "search": true, "source": "owner"},
+                {"name": "Hewlett Packard", "search": true, "source": "owner"},
+                {"name": "Hewlett-Packard", "search": true, "source": "https://www.sec.gov/Archives/edgar/data/0001090872/000091205700002160/0000912057-00-002160.txt"},
+                {"name": "Agilent", "search": false, "note": "took over HP's test and measurement business (announced 1999)", "source": "https://www.sec.gov/Archives/edgar/data/0001090872/000091205700002160/0000912057-00-002160.txt"},
+                {"name": "Keysight", "search": false, "note": "spun off from Agilent as its electronic measurement business (2014)", "source": "https://www.sec.gov/Archives/edgar/data/0001090872/000109087214000036/ex991completionpressrelease.htm"}
+            ]
+        },
+        {
+            "id": "marconi",
+            "names": [
+                {"name": "Marconi Instruments", "search": true, "source": "owner"},
+                {"name": "Marconi", "search": true, "source": "owner"},
+                {"name": "IFR", "search": false, "note": "IFR Systems acquired Marconi Instruments in 1998", "source": "https://wiki.radimation.com/wiki/index.php/Aeroflex"},
+                {"name": "Aeroflex", "search": false, "note": "\"Aeroflex was previously known as IFR, which was previously known as Marconi\"", "source": "https://wiki.radimation.com/wiki/index.php/Aeroflex"}
+            ]
+        },
+        {
+            "id": "heathkit",
+            "names": [
+                {"name": "Heathkit", "search": true, "source": "owner"}
+            ]
+        },
+        {
+            "id": "sencore",
+            "names": [
+                {"name": "Sencore", "search": true, "source": "owner"}
+            ]
+        }
+    ],
+    "models": [
+        {
+            "brand": "hp",
+            "model": "8904A",
+            "source": "https://www.keysight.com/us/en/product/8904A/multifunction-synthesizer-dc600-khz.html",
+            "productName": {"name": "Multifunction Synthesizer", "source": "https://www.keysight.com/us/en/product/8904A/multifunction-synthesizer-dc600-khz.html"},
+            "family": [],
+            "notes": [
+                {"text": "Known issues: a dead RAM battery (the unit loses its serial number), bad capacitors, and RIFA safety capacitors that can burst into flames.", "source": "owner"}
+            ]
+        },
+        {
+            "brand": "marconi",
+            "model": "2022",
+            "source": "owner",
+            "productName": {"name": "AM/FM Signal Generator", "source": "https://www.analyticalelectronics.in/testequipment/manuals/ifr_marconi_aeroflex.html"},
+            "family": [
+                {"model": "2022A", "source": "https://www.analyticalelectronics.in/testequipment/manuals/ifr_marconi_aeroflex.html"},
+                {"model": "2022C", "source": "https://www.analyticalelectronics.in/testequipment/manuals/ifr_marconi_aeroflex.html"},
+                {"model": "2022D", "source": "https://www.analyticalelectronics.in/testequipment/manuals/ifr_marconi_aeroflex.html"},
+                {"model": "2022E", "source": "https://www.analyticalelectronics.in/testequipment/manuals/ifr_marconi_aeroflex.html"}
+            ],
+            "familyNote": {"text": "The 2022 and its sub-versions count as the same item.", "source": "owner"},
+            "notes": [
+                {"text": "Most units are broken (bad capacitors).", "source": "owner"}
+            ]
+        },
+        {
+            "brand": "heathkit",
+            "model": "IM-13",
+            "source": "https://www.manualslib.com/manual/3552263/Heathkit-Im-13.html",
+            "family": [],
+            "notes": []
+        },
+        {
+            "brand": "heathkit",
+            "model": "AA-100",
+            "source": "https://archive.org/details/Heathkit_AA-100_Stereo_Amplifer",
+            "family": [],
+            "notes": [
+                {"text": "Most units are completely roached: circuit boards baked from heat that need replacing.", "source": "owner"}
+            ]
+        },
+        {
+            "brand": "sencore",
+            "model": "LC53",
+            "source": "https://www.ultimateservicemanuals.com/products/sencore-repair-service-owner-manuals-schematics",
+            "productName": {"name": "Z Meter", "source": "owner"},
+            "family": [],
+            "notes": []
+        },
+        {
+            "brand": "sencore",
+            "model": "PR57",
+            "source": "https://www.ultimateservicemanuals.com/products/sencore-repair-service-owner-manuals-schematics",
+            "productName": {"name": "Powerite", "source": "owner"},
+            "family": [],
+            "notes": []
+        },
+        {
+            "brand": "sencore",
+            "model": "PR570",
+            "source": "https://www.ultimateservicemanuals.com/products/sencore-repair-service-owner-manuals-schematics",
+            "productName": {"name": "Powerite II", "source": "owner"},
+            "family": [],
+            "notes": []
+        },
+        {
+            "brand": "sencore",
+            "model": "VG91",
+            "source": "https://www.scribd.com/document/583843570/Sencore-VG-91-Operators-Manual",
+            "productName": {"name": "Universal Video Generator", "source": "https://www.scribd.com/document/583843570/Sencore-VG-91-Operators-Manual"},
+            "family": [],
+            "notes": []
+        }
+    ]
+}

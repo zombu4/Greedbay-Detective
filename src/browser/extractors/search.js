@@ -9,7 +9,8 @@
 //   totalResults        number from the heading, or null
 //   totalIsLowerBound   true when the heading shows "<n>+ results"
 //   page, perPage       from the URL (_pgn, default 1; _ipg, null when absent)
-//   hasMorePages        page * perPage < totalResults; null when either is unknown.
+//   hasMorePages        page * perPage < totalResults; null when either is unknown;
+//                       false with the fewer-words divider or 0 results.
 //                       perPage is the requested _ipg, so this assumes eBay
 //                       shows as many results per page as requested (seen
 //                       2026-10-19: 240 real cards for _ipg=240).
@@ -17,7 +18,10 @@
 //   skippedDummyCards   cards skipped because they are eBay's "Shop on eBay"
 //                       placeholder: link /itm/123456 (its data-listingid was
 //                       123456 on 2026-10-18 and a long number on 2026-10-19)
-//   items[]             one record per real card, see readCard()
+//   fewerWordsDivider   eBay's "Results matching fewer words" divider is on the page
+//   paddingCards        cards after that divider, or every card when the heading
+//                       says 0 results: not results for the query, not read
+//   items[]             one record per real card before the divider, see readCard()
 //   unrecognizedRows    attribute rows that matched no known pattern
 //   unrecognizedSamples up to 10 distinct texts of such rows (listing text
 //                       only: the rows are inside result cards)
@@ -227,16 +231,29 @@ function extract(input) {
     const page = url.searchParams.get('_pgn') === null ? 1 : intParam(url, '_pgn');
     const perPage = intParam(url, '_ipg');
 
+    // Owner rule 9, recon "2026-10-19 phase 4": the cards after eBay's
+    // "Results matching fewer words" divider are not results for the query;
+    // with "0 results" in the heading every card is such padding.
+    const divider = document.querySelector('li.srp-river-answer--REWRITE_START');
+    const noResults = totalResults === 0;
     const counters = {unrecognizedRows: 0, samples: []};
     const items = [];
     let skippedDummyCards = 0;
+    let paddingCards = 0;
     for (const card of document.querySelectorAll('li.s-card')) {
         if (isDummyCard(card)) {
             skippedDummyCards += 1;
             continue;
         }
+        if (noResults || (divider !== null && (divider.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING))) {
+            paddingCards += 1;
+            continue;
+        }
         items.push(readCard(card, sold, counters));
     }
+    let hasMorePages = totalResults !== null && perPage !== null && page !== null ? page * perPage < totalResults : null;
+    if (noResults || divider !== null)
+        hasMorePages = false;
 
     return expected({
         kind: input.kind,
@@ -244,8 +261,10 @@ function extract(input) {
         totalIsLowerBound: headingMatch ? headingMatch[2] === '+' : null,
         page: page,
         perPage: perPage,
-        hasMorePages: totalResults !== null && perPage !== null && page !== null ? page * perPage < totalResults : null,
+        hasMorePages: hasMorePages,
         skippedDummyCards: skippedDummyCards,
+        fewerWordsDivider: divider !== null,
+        paddingCards: paddingCards,
         unrecognizedRows: counters.unrecognizedRows,
         unrecognizedSamples: counters.samples,
         items: items,

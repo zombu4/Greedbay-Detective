@@ -11,6 +11,21 @@ namespace app {
 // registry or ~/.config, outside the work folder. The work folder must hold
 // everything the app stores, so the INI format and an explicit file path are
 // always used and the platform default store is never touched.
+// The numbers of the value math (PLAN 6 and 14, DESIGN 3.4).
+struct ValueSettings {
+    // Totals outside [P25 - f x IQR, P75 + f x IQR] are outliers.
+    double outlierIqrFactor = 1.5;
+    // Confidence by the number of included sales: High >= high, Medium >=
+    // medium, Low >= low, else not enough data.
+    int confidenceHigh = 10;
+    int confidenceMedium = 5;
+    int confidenceLow = 2;
+    // The listing's shipping is flagged when it is more than ratio x the
+    // median shipping AND more than minAboveCents above it.
+    double shippingFlagRatio = 2.0;
+    qint64 shippingFlagMinAboveCents = 1000;
+};
+
 class Settings {
 public:
     static constexpr int kDefaultSoldHistoryDays = 90;
@@ -74,6 +89,16 @@ public:
     bool setSoldDepth(int depth);
     bool setActiveDepth(int depth);
     bool setResearchDepth(int depth);
+
+    // Keys "value/outlierIqrFactor", "value/confidenceHigh",
+    // "value/confidenceMedium", "value/confidenceLow", "shipping/flagRatio",
+    // "shipping/flagMinAboveCents". A value that is missing or out of range
+    // reads as its default; the three confidence numbers must satisfy
+    // high >= medium >= low >= 1, else all three read as their defaults.
+    ValueSettings valueSettings() const;
+    // Returns false and stores nothing when a value is out of range (factor
+    // and ratio must be > 0 and finite, the minimum >= 0).
+    bool setValueSettings(const ValueSettings &values);
 
     // Writes pending changes to disk. True when QSettings reports no error.
     bool sync();

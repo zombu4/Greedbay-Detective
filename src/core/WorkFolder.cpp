@@ -164,6 +164,7 @@ std::optional<WorkFolder> WorkFolder::open(const QString &path, const QString &a
     // Files other code opens later must not be links either.
     const QString files[] = {root + QStringLiteral("/settings.ini"),
                              root + QStringLiteral("/page-count.json"),
+                             root + QStringLiteral("/known-models.json"),
                              root + QLatin1Char('/') + appIdentifier + QStringLiteral(".sqlite"),
                              root + QLatin1Char('/') + QLatin1String(kLockFileName)};
     for (const QString &file : files) {
@@ -205,6 +206,7 @@ QString WorkFolder::backupsDir() const { return m_path + QStringLiteral("/backup
 QString WorkFolder::logsDir() const { return m_path + QStringLiteral("/logs"); }
 QString WorkFolder::settingsPath() const { return m_path + QStringLiteral("/settings.ini"); }
 QString WorkFolder::pageCountPath() const { return m_path + QStringLiteral("/page-count.json"); }
+QString WorkFolder::knownModelsPath() const { return m_path + QStringLiteral("/known-models.json"); }
 QString WorkFolder::browserProfilesDir() const { return m_path + QStringLiteral("/browser"); }
 QString WorkFolder::tmpDir() const { return m_path + QStringLiteral("/tmp"); }
 

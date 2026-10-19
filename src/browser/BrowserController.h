@@ -8,6 +8,7 @@
 
 #include <QElapsedTimer>
 #include <QHash>
+#include <QSet>
 #include <QJsonObject>
 #include <QLockFile>
 #include <QObject>
@@ -33,12 +34,20 @@ struct BrowserControllerOptions {
     int dailyPageCap = Settings::kDefaultDailyPageCap;
     // Tests only: fetch may also open http://127.0.0.1 and file: pages.
     bool allowLocalTestPages = false;
+    // Tests only: a file for the browser's error output (otherwise
+    // discarded; it may contain page details).
+    QString browserErrorFile;
 };
 
 // One browser session in the user's installed browser: a separate instance
 // of that browser with its own profile folder in the work folder
 // (<work>/browser/<id>/, see core/BrowserProfiles), started by start() and
 // closed by stop(). The app never touches the user's normal browser profile.
+//
+// Exactly one tab: at start the browser may restore tabs of earlier sessions
+// of the app's profile; the app keeps one (the start about:blank) and closes
+// the others. A tab a page opens later is left alone, and the app's tab is
+// brought back to the front unless the user is acting in the window.
 //
 // The browser is driven over the DevTools protocol (CdpConnection). It runs
 // as a normal browser: no automation switches, so pages see no automation
@@ -168,6 +177,8 @@ private:
     CdpConnection *m_cdp = nullptr;
     std::map<int, Callback> m_callbacks;
     QString m_targetId;
+    // Page targets already seen: the tabs at start and tabs reported later.
+    QSet<QString> m_startTabs;
     QString m_sessionId;
     int m_windowId = -1;
     QString m_mainFrameId;

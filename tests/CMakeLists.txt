@@ -58,6 +58,9 @@ app_add_unit_test(tst_pagebudget tst_pagebudget.cpp support/TestFiles.h)
 app_add_unit_test(tst_lookup tst_lookup.cpp)
 target_link_libraries(tst_lookup PRIVATE applookup)
 
+app_add_unit_test(tst_matching tst_matching.cpp support/TestFiles.h)
+target_link_libraries(tst_matching PRIVATE applookup)
+
 app_add_unit_test(tst_browserlogic tst_browserlogic.cpp)
 target_link_libraries(tst_browserlogic PRIVATE appbrowser)
 
@@ -66,13 +69,16 @@ set(app_test_fixtures
     fixtures/active_search.html
     fixtures/check_page.html
     fixtures/error_page.html
+    fixtures/fewer_words.html
     fixtures/item_dom.html
     fixtures/item_inline.html
     fixtures/item_jsonld.html
     fixtures/late_page.html
     fixtures/research.html
+    fixtures/research_empty.html
     fixtures/sold_search.html
     fixtures/webdriver_check.html
+    fixtures/zero_results.html
 )
 
 # Extractors on fixtures through a real installed browser (skipped, with a

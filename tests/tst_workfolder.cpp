@@ -27,6 +27,7 @@ private slots:
     void refusesRootThatIsAFile();
     void refusesLinkedSettingsFile();
     void refusesLinkedPageCountFile();
+    void refusesLinkedKnownModelsFile();
     void restrictsFolderToOwner();
     void redirectsTempDirectory();
 };
@@ -72,6 +73,7 @@ void TestWorkFolder::createsLayoutAndMarker()
     QCOMPARE(folder->databasePath(), root + QStringLiteral("/" TEST_APP_NAME ".sqlite"));
     QCOMPARE(folder->settingsPath(), root + QStringLiteral("/settings.ini"));
     QCOMPARE(folder->pageCountPath(), root + QStringLiteral("/page-count.json"));
+    QCOMPARE(folder->knownModelsPath(), root + QStringLiteral("/known-models.json"));
     QCOMPARE(folder->lockPath(), root + QStringLiteral("/.lock"));
     QCOMPARE(folder->markerPath(), root + QStringLiteral("/.workfolder"));
 }
@@ -268,6 +270,22 @@ void TestWorkFolder::refusesLinkedPageCountFile()
     QVERIFY(QFile::link(outside, root + QStringLiteral("/page-count.json")));
     QVERIFY(!WorkFolder::open(root, QStringLiteral(TEST_APP_NAME), &error));
     QVERIFY2(error.contains(QStringLiteral("page-count.json is a link")), qPrintable(error));
+}
+
+void TestWorkFolder::refusesLinkedKnownModelsFile()
+{
+    if (!kCanLinkFiles)
+        QSKIP("File links need extra privileges on Windows");
+    QTemporaryDir tmp;
+    QVERIFY(tmp.isValid());
+    const QString root = tmp.path() + QStringLiteral("/work");
+    QString error;
+    QVERIFY2(WorkFolder::open(root, QStringLiteral(TEST_APP_NAME), &error), qPrintable(error));
+    const QString outside = tmp.path() + QStringLiteral("/outside.json");
+    QVERIFY(writeTestFile(outside, "{}"));
+    QVERIFY(QFile::link(outside, root + QStringLiteral("/known-models.json")));
+    QVERIFY(!WorkFolder::open(root, QStringLiteral(TEST_APP_NAME), &error));
+    QVERIFY2(error.contains(QStringLiteral("known-models.json is a link")), qPrintable(error));
 }
 
 void TestWorkFolder::restrictsFolderToOwner()

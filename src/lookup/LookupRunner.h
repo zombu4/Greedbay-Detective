@@ -2,6 +2,8 @@
 
 #include "ebay/PageKind.h"
 #include "lookup/Identity.h"
+#include "lookup/KnownModels.h"
+#include "lookup/MatchWords.h"
 #include "lookup/Records.h"
 
 #include <QElapsedTimer>
@@ -45,10 +47,13 @@ struct LookupResult {
     qint64 elapsedMs = 0;
 };
 
-// One lookup (PLAN 5, phase-3b form): the item page -> listing record ->
-// identity -> 1-3 queries for the user to edit -> sold search, active search
-// and Product Research, each paginated until its depth is reached or the
-// queries have no more results -> records. Nothing is saved (phase 6).
+// One lookup (PLAN 5): the item page -> listing record -> identity (owner
+// rules 1, 7, 21-28) -> one query per brand search name for the user to edit
+// -> sold search, active search and Product Research, each paginated until
+// its depth is reached or the queries have no more results -> records. When
+// the identity is not confident nothing is searched: the user enters it
+// (setIdentity()) first (rule 26). Matching and value are computed from the
+// records (LookupReport); no records are saved to the database (phase 6).
 //
 // The runner does not drive the browser itself: it calls `fetcher` with the
 // page to load and its kind, and gets the browser's reply through onReply()
@@ -79,17 +84,24 @@ class LookupRunner : public QObject {
 public:
     using Fetcher = std::function<void(const QUrl &url, ebay::PageKind kind)>;
 
-    explicit LookupRunner(Fetcher fetcher, QObject *parent = nullptr);
+    // `known` and `words` must outlive the runner.
+    LookupRunner(Fetcher fetcher, const KnownModels *known, const MatchWords *words, QObject *parent = nullptr);
 
     // Reads the item page of `input` (an item address or number, see
     // ebay::itemIdFromInput). False (and *error) for input that is not one;
     // nothing is fetched then.
     bool startItem(const QString &input, QString *error);
 
+    // After itemReady(): the identity the user entered or corrected; the
+    // queries are built anew from it. False (and *error) when not waiting for
+    // queries.
+    bool setIdentity(const ConfirmedIdentity &entered, QString *error);
+
     // After itemReady(): fetches the comparison pages for `queries` (empty
     // entries are dropped). `dayRange` is Product Research's period in days.
-    // False (and *error) when not waiting for queries, no query is left, or a
-    // depth is negative.
+    // False (and *error) when not waiting for queries, the identity has no
+    // brand and model to search for, no query is left, or a depth is
+    // negative.
     bool startComps(const QStringList &queries, const Depths &depths, int dayRange, QString *error);
 
     // The browser's reply to the last fetch.
@@ -105,7 +117,8 @@ public:
 
 signals:
     void progress(const QString &line);
-    // The item page was read: result().item, identity and queries are set.
+    // The item page was read: result().item, identity and queries are set
+    // (no queries when the identity is not confident).
     void itemReady();
     void finished();
 
@@ -127,6 +140,8 @@ private:
     void finish(const QString &status, const QString &message);
 
     Fetcher m_fetcher;
+    const KnownModels *m_known;
+    const MatchWords *m_words;
     State m_state = State::Idle;
     bool m_fetching = false;
     bool m_cancelRequested = false;

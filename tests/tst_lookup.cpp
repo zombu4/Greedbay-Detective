@@ -1,7 +1,8 @@
-// The lookup flow without a browser (src/lookup/): identity and queries from
-// a listing record, the percentile and money helpers, records from extractor
-// JSON, and LookupRunner driven with fake page replies (the reply objects of
-// BrowserController). Every item, seller and number is invented.
+// The lookup flow without a browser (src/lookup/): the percentile and money
+// helpers, records from extractor JSON, and LookupRunner driven with fake
+// page replies (the reply objects of BrowserController), with the built-in
+// matching data. Identity, matching and value: tst_matching. Every item,
+// seller and number is invented.
 #include "ebay/SearchUrls.h"
 #include "lookup/Identity.h"
 #include "lookup/LookupReport.h"
@@ -87,6 +88,9 @@ class TestLookup : public QObject {
     Q_OBJECT
 
 private:
+    // No known brands: "Acme" is taken as a new brand from the Brand specific.
+    app::lookup::KnownModels m_known;
+    app::lookup::MatchWords m_words;
     // A runner whose fetches are recorded in m_requests; replies are given
     // by the test with onReply().
     LookupRunner *makeRunner();
@@ -97,10 +101,8 @@ private:
     QList<Request> m_requests;
 
 private slots:
+    void initTestCase();
     void init();
-    void modelTokens();
-    void identityFromItem();
-    void queries();
     void itemInput_data();
     void itemInput();
     void searchUrls();
@@ -121,6 +123,14 @@ private slots:
     void reportNumbers();
 };
 
+void TestLookup::initTestCase()
+{
+    QString error;
+    const std::optional<MatchWords> words = MatchWords::builtIn(&error);
+    QVERIFY2(words, qPrintable(error));
+    m_words = *words;
+}
+
 void TestLookup::init()
 {
     m_requests.clear();
@@ -128,7 +138,8 @@ void TestLookup::init()
 
 LookupRunner *TestLookup::makeRunner()
 {
-    return new LookupRunner([this](const QUrl &url, PageKind kind) { m_requests.append({url, kind}); }, this);
+    return new LookupRunner([this](const QUrl &url, PageKind kind) { m_requests.append({url, kind}); }, &m_known, &m_words,
+                            this);
 }
 
 LookupRunner *TestLookup::runnerWithItem()
@@ -139,39 +150,6 @@ LookupRunner *TestLookup::runnerWithItem()
         return nullptr;
     runner->onReply(okReply(itemData()));
     return runner;
-}
-
-void TestLookup::modelTokens()
-{
-    QCOMPARE(app::lookup::modelTokens(QStringLiteral("Acme 42 V True RMS"), true), QStringList({"42V"}));
-    QCOMPARE(app::lookup::modelTokens(QStringLiteral("Acme 42-V and 42V"), true), QStringList({"42V"}));
-    QCOMPARE(app::lookup::modelTokens(QStringLiteral("Acme 7904a (Opt 001)"), true), QStringList({"7904A"}));
-    // Bare numbers count only where no letter is required.
-    QCOMPARE(app::lookup::modelTokens(QStringLiteral("Model 465 6000 counts"), true), QStringList());
-    QCOMPARE(app::lookup::modelTokens(QStringLiteral("465"), false), QStringList({"465"}));
-    // A lower-case single letter is not joined ("42 a" stays apart).
-    QCOMPARE(app::lookup::modelTokens(QStringLiteral("42 a"), false), QStringList({"42"}));
-    QCOMPARE(app::lookup::modelTokens(QStringLiteral("Q1241AN, Q1242C/B"), true), QStringList({"Q1241AN", "Q1242C"}));
-    QCOMPARE(canonicalModel(QStringLiteral("m7-x.2")), QStringLiteral("M7X2"));
-}
-
-void TestLookup::identityFromItem()
-{
-    const Identity identity = identify(ItemRecord::fromJson(itemData()));
-    QCOMPARE(identity.brand, QStringLiteral("Acme"));
-    // Model first, then MPN, then the title ("4-1/2" splits at "/" into
-    // "4-1" and "2", which have no letter).
-    QCOMPARE(identity.modelTokens, QStringList({"M7X", "B2", "1000V"}));
-}
-
-void TestLookup::queries()
-{
-    QCOMPARE(buildQueries(Identity{QStringLiteral("Acme"), {"M7X", "B2"}}, QStringLiteral("t")),
-             QStringList({"Acme M7X", "M7X", "Acme B2"}));
-    QCOMPARE(buildQueries(Identity{QString(), {"M7X", "B2"}}, QStringLiteral("t")), QStringList({"M7X", "B2"}));
-    QCOMPARE(buildQueries(Identity{QStringLiteral("Acme"), {"M7X"}}, QStringLiteral("t")), QStringList({"Acme M7X", "M7X"}));
-    QCOMPARE(buildQueries(Identity{QStringLiteral("Acme"), {}}, QStringLiteral("  Acme  bench   meter ")),
-             QStringList({"Acme bench meter"}));
 }
 
 void TestLookup::itemInput_data()
@@ -279,7 +257,10 @@ void TestLookup::fullLookup()
     runner->onReply(okReply(itemData()));
     QCOMPARE(itemReady.size(), 1);
     QVERIFY(runner->isWaitingForQueries());
-    QCOMPARE(runner->result().queries, QStringList({"Acme M7X", "M7X", "Acme B2"}));
+    // Brand "Acme" (a new brand, as written) and the one model-like word of
+    // the Model specific, with its hyphen: one query (owner rule 21).
+    QVERIFY(runner->result().identity.confident);
+    QCOMPARE(runner->result().queries, QStringList({"Acme M7-X"}));
 
     // The user keeps two queries (and clears the third).
     QVERIFY(runner->startComps({QStringLiteral("Acme M7X"), QStringLiteral("M7X"), QStringLiteral("  ")},
@@ -346,8 +327,12 @@ void TestLookup::researchWithoutAccess()
     QCOMPARE(m_requests.size(), 4);
     for (const SearchRecord &record : runner->result().sold)
         QVERIFY(!record.confirmed);
-    QCOMPARE(computeNumbers(runner->result()).confirmedWithTotal, 0);
-    QCOMPARE(computeNumbers(runner->result()).medianCents, std::nullopt);
+    const QList<Row> rows = classifyRows(runner->result(), m_words);
+    const Valuation valuation = valuate(runner->result(), rows, m_words, app::ValueSettings());
+    for (const ConditionNumbers &level : valuation.sold) {
+        QCOMPARE(level.included, 0);
+        QCOMPARE(level.medianCents, std::nullopt);
+    }
     QCOMPARE(finished.size(), 1);
     QCOMPARE(runner->result().status, QStringLiteral("complete"));
     QVERIFY(runner->result().researchUnavailable);
@@ -504,32 +489,44 @@ void TestLookup::reportNumbers()
 {
     LookupResult result;
     result.item = ItemRecord::fromJson(itemData()); // total $265.00, shipping $15.00
-    // Confirmed totals 105, 205, 305, 405 (dollars); one unconfirmed and one
-    // without shipping, neither counted.
+    result.identity = identityFromUser({QStringLiteral("Acme"), QStringLiteral("M7X"), QString()}, m_known, QStringLiteral("user"));
+    // Confirmed totals $105, $205, $305, $405 of the same item; one
+    // unconfirmed; one without shipping (no total).
     for (int i = 0; i < 4; ++i)
         result.sold.append(SearchRecord::fromJson(card(i, 10000 + i * 10000, 500), true));
     result.sold.append(SearchRecord::fromJson(card(9, 99900, 500, false), true));
     QJsonObject noShipping = card(10, 50000, 0);
     noShipping.insert("shippingCents", QJsonValue());
     result.sold.append(SearchRecord::fromJson(noShipping, true));
+    result.status = QStringLiteral("complete");
 
-    const LookupNumbers numbers = computeNumbers(result);
-    QCOMPARE(numbers.confirmedWithTotal, 4);
-    QCOMPARE(numbers.p25Cents, std::optional<qint64>(18000));
-    QCOMPARE(numbers.medianCents, std::optional<qint64>(25500));
-    QCOMPARE(numbers.p75Cents, std::optional<qint64>(33000));
-    QCOMPARE(numbers.confirmedWithShipping, 4);
-    QCOMPARE(numbers.medianShippingCents, std::optional<qint64>(500));
+    QList<Row> rows = classifyRows(result, m_words);
+    QCOMPARE(rows.size(), 6);
+    for (const Row &row : std::as_const(rows))
+        QCOMPARE(row.match.bucket, Bucket::SameItem);
+    Valuation valuation = valuate(result, rows, m_words, app::ValueSettings());
+    QCOMPARE(valuation.sold.size(), 1);
+    const ConditionNumbers &level = valuation.sold.at(0);
+    QCOMPARE(level.condition, Condition::NotStated);
+    QCOMPARE(level.included, 4);
+    QCOMPARE(level.p25Cents, std::optional<qint64>(18000));
+    QCOMPARE(level.medianCents, std::optional<qint64>(25500));
+    QCOMPARE(level.p75Cents, std::optional<qint64>(33000));
+    QCOMPARE(level.unconfirmed, 1);
+    QCOMPARE(valuation.shipping.compsWithShipping, 4);
+    QCOMPARE(valuation.shipping.compMedianCents, std::optional<qint64>(500));
+    // $15 vs $5: 3 x the median, but only $10 above it, not more: no flag.
+    QVERIFY(!valuation.shipping.flagged);
 
-    const QString text = reportText(result);
-    QVERIFY2(text.contains(QStringLiteral("median $255.00, P25 $180.00, P75 $330.00")), qPrintable(text));
-    QVERIFY2(text.contains(QStringLiteral("listing total $265.00: between P25 and P75; +$10.00 against the median")),
-             qPrintable(text));
-    QVERIFY2(text.contains(QStringLiteral("shipping: listing $15.00, median of 4 confirmed sold $5.00 (+$10.00)")),
-             qPrintable(text));
-    QVERIFY(text.contains(QStringLiteral("SOLD, CONFIRMED (price shown is the price paid) (5)")));
-    QVERIFY(text.contains(QStringLiteral("SOLD, UNCONFIRMED (the price paid is not shown: Best offer accepted, an offer "
-                                         "row the app does not know, or no Product Research access) (1)")));
+    const QString text = reportText(result, rows, valuation, QStringLiteral("$200-300"));
+    QVERIFY2(text.contains(QStringLiteral("4 sales, median $255.00, P25-P75 $180.00-$330.00")), qPrintable(text));
+    QVERIFY2(text.contains(QStringLiteral("your estimate: $200-300")), qPrintable(text));
+    QVERIFY(text.contains(QStringLiteral("SOLD - same item (6)")));
+
+    // Unticking a row changes the numbers.
+    rows[0].included = false;
+    valuation = valuate(result, rows, m_words, app::ValueSettings());
+    QCOMPARE(valuation.sold.at(0).included, 3);
 }
 
 QTEST_GUILESS_MAIN(TestLookup)

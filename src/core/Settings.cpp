@@ -1,5 +1,7 @@
 #include "core/Settings.h"
 
+#include <cmath>
+
 namespace app {
 
 namespace {
@@ -11,7 +13,21 @@ const QString kDailyPageCapKey = QStringLiteral("pace/dailyPageCap");
 const QString kSoldDepthKey = QStringLiteral("lookup/soldDepth");
 const QString kActiveDepthKey = QStringLiteral("lookup/activeDepth");
 const QString kResearchDepthKey = QStringLiteral("lookup/researchDepth");
+const QString kOutlierFactorKey = QStringLiteral("value/outlierIqrFactor");
+const QString kConfidenceHighKey = QStringLiteral("value/confidenceHigh");
+const QString kConfidenceMediumKey = QStringLiteral("value/confidenceMedium");
+const QString kConfidenceLowKey = QStringLiteral("value/confidenceLow");
+const QString kShippingRatioKey = QStringLiteral("shipping/flagRatio");
+const QString kShippingMinKey = QStringLiteral("shipping/flagMinAboveCents");
 constexpr int kMinPageDelayMs = 1000;
+
+// The stored value as a finite number > 0, or `fallback`.
+double storedPositive(const QSettings &settings, const QString &key, double fallback)
+{
+    bool ok = false;
+    const double value = settings.value(key).toString().toDouble(&ok);
+    return ok && std::isfinite(value) && value > 0 ? value : fallback;
+}
 
 bool isBrowserId(const QString &id)
 {
@@ -151,6 +167,44 @@ bool Settings::setResearchDepth(int depth)
     if (depth < 0)
         return false;
     m_settings.setValue(kResearchDepthKey, depth);
+    return true;
+}
+
+ValueSettings Settings::valueSettings() const
+{
+    const ValueSettings defaults;
+    ValueSettings values;
+    values.outlierIqrFactor = storedPositive(m_settings, kOutlierFactorKey, defaults.outlierIqrFactor);
+    const int high = storedInt(m_settings, kConfidenceHighKey);
+    const int medium = storedInt(m_settings, kConfidenceMediumKey);
+    const int low = storedInt(m_settings, kConfidenceLowKey);
+    const int h = high >= 1 ? high : defaults.confidenceHigh;
+    const int m = medium >= 1 ? medium : defaults.confidenceMedium;
+    const int l = low >= 1 ? low : defaults.confidenceLow;
+    if (h >= m && m >= l) {
+        values.confidenceHigh = h;
+        values.confidenceMedium = m;
+        values.confidenceLow = l;
+    }
+    values.shippingFlagRatio = storedPositive(m_settings, kShippingRatioKey, defaults.shippingFlagRatio);
+    bool ok = false;
+    const qint64 minimum = m_settings.value(kShippingMinKey).toString().toLongLong(&ok);
+    values.shippingFlagMinAboveCents = ok && minimum >= 0 ? minimum : defaults.shippingFlagMinAboveCents;
+    return values;
+}
+
+bool Settings::setValueSettings(const ValueSettings &values)
+{
+    if (!(std::isfinite(values.outlierIqrFactor) && values.outlierIqrFactor > 0) || values.confidenceLow < 1
+        || values.confidenceMedium < values.confidenceLow || values.confidenceHigh < values.confidenceMedium
+        || !(std::isfinite(values.shippingFlagRatio) && values.shippingFlagRatio > 0) || values.shippingFlagMinAboveCents < 0)
+        return false;
+    m_settings.setValue(kOutlierFactorKey, values.outlierIqrFactor);
+    m_settings.setValue(kConfidenceHighKey, values.confidenceHigh);
+    m_settings.setValue(kConfidenceMediumKey, values.confidenceMedium);
+    m_settings.setValue(kConfidenceLowKey, values.confidenceLow);
+    m_settings.setValue(kShippingRatioKey, values.shippingFlagRatio);
+    m_settings.setValue(kShippingMinKey, values.shippingFlagMinAboveCents);
     return true;
 }
 

@@ -25,6 +25,8 @@
 #include <QTest>
 #include <QTimer>
 
+#include <algorithm>
+
 #include <optional>
 
 using app::browser::BrowserController;
@@ -83,12 +85,16 @@ private:
 private slots:
     void initTestCase();
     void cleanupTestCase();
+    void cleanup();
     void activeSearch();
     void soldSearch();
     void itemFromJsonLd();
     void itemFromDom();
     void itemShippingBlockOnOneLine();
     void research();
+    void stopsAtFewerWordsDivider();
+    void zeroResultsIsAnEmptyResult();
+    void emptyResearchIsAnEmptyResult();
     void errorPage_data();
     void errorPage();
     void unexpectedPage_data();
@@ -174,6 +180,7 @@ void TestExtractors::initTestCase()
     options.pageDelayMinMs = 0; // no pacing against the local test server
     options.pageDelayMaxMs = 0;
     options.allowLocalTestPages = true;
+    options.browserErrorFile = m_temp.path() + QStringLiteral("/browser-errors.txt");
     m_controller = new BrowserController(*m_folder, browsers.first(), options, this);
     qInfo().noquote() << "browser:" << browsers.first().name << browsers.first().executable;
     connect(m_controller, &BrowserController::needsUser, this, [this](const QString &message) {
@@ -186,6 +193,21 @@ void TestExtractors::initTestCase()
     QVERIFY2(m_controller->start(&error), qPrintable(error));
     QVERIFY2(ready.wait(BrowserController::kStartTimeoutMs) || !ready.isEmpty(),
              failed.isEmpty() ? "the browser did not get ready" : qPrintable(failed.at(0).at(0).toString()));
+}
+
+void TestExtractors::cleanup()
+{
+    // After a failed test: the end of the browser's own error output, to see
+    // why on a machine where it fails (the output is synthetic test pages).
+    if (!QTest::currentTestFailed())
+        return;
+    QFile file(m_temp.path() + QStringLiteral("/browser-errors.txt"));
+    if (!file.open(QIODevice::ReadOnly))
+        return;
+    const QList<QByteArray> lines = file.readAll().split('\n');
+    qInfo().noquote() << "browser error output, last lines:";
+    for (qsizetype i = std::max<qsizetype>(0, lines.size() - 40); i < lines.size(); ++i)
+        qInfo().noquote() << QString::fromUtf8(lines.at(i).left(300));
 }
 
 void TestExtractors::cleanupTestCase()
@@ -518,6 +540,50 @@ void TestExtractors::research()
     QCOMPARE(r3.value("totalSold").toInt(), 2);
     QCOMPARE(names(r3.value("missing")), set({"formatText", "avgShippingCents", "freeShippingPercent",
                                                "totalSalesCents", "bids", "lastSoldDate"}));
+}
+
+void TestExtractors::stopsAtFewerWordsDivider()
+{
+    QString error;
+    const std::optional<QJsonObject> result = extract("fewer_words.html", kActiveUrl, PageKind::ActiveSearch, &error);
+    QVERIFY2(result, qPrintable(error));
+    QCOMPARE(result->value("page").toString(), QStringLiteral("expected"));
+    const QJsonObject data = result->value("data").toObject();
+    QCOMPARE(data.value("totalResults").toInt(), 3);
+    QCOMPARE(data.value("fewerWordsDivider").toBool(), true);
+    // The 3 cards before "Results matching fewer words" (the live-events
+    // block between them is no card); the 2 after it are not results.
+    QCOMPARE(data.value("paddingCards").toInt(), 2);
+    const QJsonArray items = data.value("items").toArray();
+    QCOMPARE(items.size(), 3);
+    QCOMPARE(items.at(2).toObject().value("itemId").toString(), QStringLiteral("100000000062"));
+    QCOMPARE(data.value("hasMorePages").toBool(true), false);
+}
+
+void TestExtractors::zeroResultsIsAnEmptyResult()
+{
+    QString error;
+    const std::optional<QJsonObject> result = extract("zero_results.html", kActiveUrl, PageKind::ActiveSearch, &error);
+    QVERIFY2(result, qPrintable(error));
+    QCOMPARE(result->value("page").toString(), QStringLiteral("expected"));
+    const QJsonObject data = result->value("data").toObject();
+    QCOMPARE(data.value("totalResults").toInt(), 0);
+    // "0 results" with cards below: every card is padding.
+    QCOMPARE(data.value("items").toArray().size(), 0);
+    QCOMPARE(data.value("paddingCards").toInt(), 2);
+    QCOMPARE(data.value("hasMorePages").toBool(true), false);
+}
+
+void TestExtractors::emptyResearchIsAnEmptyResult()
+{
+    QString error;
+    const std::optional<QJsonObject> result = extract("research_empty.html", kResearchUrl, PageKind::Research, &error);
+    QVERIFY2(result, qPrintable(error));
+    QCOMPARE(result->value("page").toString(), QStringLiteral("expected"));
+    const QJsonObject data = result->value("data").toObject();
+    QCOMPARE(data.value("rowCount").toInt(), 0);
+    QCOMPARE(data.value("emptyResult").toBool(), true);
+    QCOMPARE(data.value("morePossible").toBool(true), false);
 }
 
 void TestExtractors::errorPage_data()

@@ -18,9 +18,21 @@ QString pageText(const QJsonObject &reply)
 
 } // namespace
 
-LookupRunner::LookupRunner(Fetcher fetcher, QObject *parent)
-    : QObject(parent), m_fetcher(std::move(fetcher))
+LookupRunner::LookupRunner(Fetcher fetcher, const KnownModels *known, const MatchWords *words, QObject *parent)
+    : QObject(parent), m_fetcher(std::move(fetcher)), m_known(known), m_words(words)
 {
+}
+
+bool LookupRunner::setIdentity(const ConfirmedIdentity &entered, QString *error)
+{
+    if (m_state != State::WaitingForQueries) {
+        *error = QStringLiteral("the listing has not been read yet");
+        return false;
+    }
+    m_result.identity = identityFromUser(entered, *m_known, QStringLiteral("user"));
+    m_result.queries = buildQueries(m_result.identity);
+    emit progress(QStringLiteral("identity set: %1 %2").arg(m_result.identity.brandName, m_result.identity.model));
+    return true;
 }
 
 bool LookupRunner::startItem(const QString &input, QString *error)
@@ -52,6 +64,10 @@ bool LookupRunner::startComps(const QStringList &queries, const Depths &depths, 
     for (const QString &query : queries) {
         if (!query.simplified().isEmpty())
             kept.append(query.simplified());
+    }
+    if (!m_result.identity.canSearch()) {
+        *error = QStringLiteral("enter the brand and the model first: nothing is searched without them");
+        return false;
     }
     if (kept.isEmpty()) {
         *error = QStringLiteral("enter at least one search query");
@@ -124,14 +140,17 @@ void LookupRunner::onItemReply(const QJsonObject &reply)
     if (m_result.item.itemId.isEmpty())
         m_result.notes.append(QStringLiteral("the item page that was read has no item number in its address (asked for %1)")
                                   .arg(m_itemId));
-    m_result.identity = identify(m_result.item);
-    m_result.queries = buildQueries(m_result.identity, m_result.item.title);
+    m_result.identity = identify(m_result.item, *m_known, *m_words);
+    m_result.queries = buildQueries(m_result.identity);
     if (m_cancelRequested) {
         finish(QStringLiteral("cancelled"), QStringLiteral("cancelled by the user"));
         return;
     }
     m_state = State::WaitingForQueries;
     emit progress(QStringLiteral("listing read: %1").arg(m_result.item.title));
+    if (!m_result.identity.confident)
+        emit progress(QStringLiteral("model not known with confidence (%1): enter the brand and model")
+                          .arg(m_result.identity.reason));
     emit itemReady();
 }
 
@@ -156,11 +175,7 @@ void LookupRunner::onCompsReply(const QJsonObject &reply)
         finish(QStringLiteral("cancelled"), QStringLiteral("cancelled by the user"));
         return;
     } else if (status == QLatin1String("unexpected_page")) {
-        QString message = QStringLiteral("%1 page not read: eBay showed %2").arg(sourceName(m_source), pageText(reply));
-        if (m_source == Source::Research && reply.value(QStringLiteral("page")).toString() == QLatin1String("unexpected"))
-            message += QStringLiteral("; for Product Research this can also be a query without sales in the period "
-                                      "(eBay's page for that case has not been recorded yet)");
-        finish(QStringLiteral("stopped"), message);
+        finish(QStringLiteral("stopped"), QStringLiteral("%1 page not read: eBay showed %2").arg(sourceName(m_source), pageText(reply)));
         return;
     } else {
         finish(QStringLiteral("stopped"), QStringLiteral("%1 page not read: %2")

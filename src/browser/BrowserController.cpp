@@ -205,6 +205,7 @@ bool BrowserController::start(QString *error)
     }
 
     m_cdp = new CdpConnection(this);
+    m_cdp->setErrorFile(m_options.browserErrorFile);
     connect(m_cdp, &CdpConnection::connected, this, [this]() {
         if (!m_stopping && !m_failed)
             attachToFirstPage(100);
@@ -275,11 +276,32 @@ void BrowserController::attachToFirstPage(int attemptsLeft)
     command(QStringLiteral("Target.getTargets"), {}, [this, attemptsLeft](const QJsonObject &result, const QJsonObject &) {
         if (m_stopping || m_failed)
             return;
+        // The browser restores the tabs of its previous session in this
+        // profile and adds the command-line about:blank (recon 2026-10-19,
+        // phase 4: 4 tabs at start). The app keeps exactly one tab: the first
+        // about:blank, else the first tab; the others - pages the app's own
+        // profile kept from earlier sessions - are closed.
+        QStringList pages;
+        QString keep;
         for (const QJsonValue &value : result.value(QStringLiteral("targetInfos")).toArray()) {
             const QJsonObject target = value.toObject();
             if (target.value(QStringLiteral("type")).toString() != QLatin1String("page"))
                 continue;
-            m_targetId = target.value(QStringLiteral("targetId")).toString();
+            const QString id = target.value(QStringLiteral("targetId")).toString();
+            pages.append(id);
+            m_startTabs.insert(id);
+            if (keep.isEmpty() && target.value(QStringLiteral("url")).toString() == QLatin1String("about:blank"))
+                keep = id;
+        }
+        if (!pages.isEmpty()) {
+            if (keep.isEmpty())
+                keep = pages.first();
+            for (const QString &id : std::as_const(pages)) {
+                if (id != keep)
+                    command(QStringLiteral("Target.closeTarget"), {{QStringLiteral("targetId"), id}}, nullptr, false);
+            }
+            qCInfo(lcBrowser) << "browser tabs at start:" << pages.size() << "- kept 1, closed" << pages.size() - 1;
+            m_targetId = keep;
             const QJsonObject params{{QStringLiteral("targetId"), m_targetId}, {QStringLiteral("flatten"), true}};
             command(QStringLiteral("Target.attachToTarget"), params, [this](const QJsonObject &attached, const QJsonObject &error) {
                 m_sessionId = attached.value(QStringLiteral("sessionId")).toString();
@@ -289,6 +311,9 @@ void BrowserController::attachToFirstPage(int attemptsLeft)
                 }
                 command(QStringLiteral("Page.enable"), {}, nullptr);
                 command(QStringLiteral("Network.enable"), {}, nullptr);
+                command(QStringLiteral("Target.activateTarget"), {{QStringLiteral("targetId"), m_targetId}}, nullptr, false);
+                // Tabs that pages open later are reported (Target.targetCreated).
+                command(QStringLiteral("Target.setDiscoverTargets"), {{QStringLiteral("discover"), true}}, nullptr, false);
                 command(QStringLiteral("Page.getFrameTree"), {}, [this](const QJsonObject &tree, const QJsonObject &) {
                     m_mainFrameId = tree.value(QStringLiteral("frameTree")).toObject().value(QStringLiteral("frame")).toObject().value(QStringLiteral("id")).toString();
                     command(QStringLiteral("Browser.getWindowForTarget"), {{QStringLiteral("targetId"), m_targetId}},
@@ -305,8 +330,9 @@ void BrowserController::attachToFirstPage(int attemptsLeft)
                             }, false);
                 });
             }, false);
-            return;
         }
+        if (!m_targetId.isEmpty())
+            return;
         if (attemptsLeft <= 0) {
             fail(QStringLiteral("the browser opened no tab"));
             return;
@@ -332,6 +358,23 @@ void BrowserController::onEvent(const QString &method, const QJsonObject &params
         && params.value(QStringLiteral("sessionId")).toString() == m_sessionId && !m_sessionId.isEmpty()) {
         if (!m_stopping)
             fail(QStringLiteral("the app's browser tab was closed"));
+        return;
+    }
+    if (method == QLatin1String("Target.targetCreated")) {
+        // A new tab or window (discovery also reports the tabs that existed
+        // at start once; those are not new). The app ignores it and keeps its
+        // own tab in front - except while the user acts in the window (a
+        // sign-in may need the new window).
+        const QJsonObject info = params.value(QStringLiteral("targetInfo")).toObject();
+        const QString id = info.value(QStringLiteral("targetId")).toString();
+        if (info.value(QStringLiteral("type")).toString() == QLatin1String("page") && id != m_targetId
+            && !m_startTabs.contains(id)) {
+            m_startTabs.insert(id);
+            const bool userActs = m_waitingForUser || m_op == Op::SignInWaiting;
+            qCInfo(lcBrowser) << "a page opened another tab;" << (userActs ? "left to the user" : "the app's tab stays in front");
+            if (!userActs)
+                command(QStringLiteral("Target.activateTarget"), {{QStringLiteral("targetId"), m_targetId}}, nullptr, false);
+        }
         return;
     }
     if (sessionId.isEmpty() || sessionId != m_sessionId)

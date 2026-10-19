@@ -9,6 +9,7 @@
 #include <QTest>
 
 using app::Settings;
+using app::ValueSettings;
 
 class TestSettings : public QObject {
     Q_OBJECT
@@ -27,6 +28,7 @@ private slots:
     void pageDelay();
     void dailyPageCap();
     void searchDepths();
+    void valueSettings();
 };
 
 // Synthetic names, so the native settings store checked below belongs to this
@@ -243,6 +245,46 @@ void TestSettings::searchDepths()
     QCOMPARE(edited.soldDepth(), 240);
     QCOMPARE(edited.activeDepth(), 240);
     QCOMPARE(edited.researchDepth(), 200);
+}
+
+void TestSettings::valueSettings()
+{
+    QTemporaryDir tmp;
+    QVERIFY(tmp.isValid());
+    const QString path = tmp.path() + QStringLiteral("/settings.ini");
+    {
+        Settings settings(path);
+        const ValueSettings defaults = settings.valueSettings();
+        QCOMPARE(defaults.outlierIqrFactor, 1.5);
+        QCOMPARE(defaults.confidenceHigh, 10);
+        QCOMPARE(defaults.confidenceMedium, 5);
+        QCOMPARE(defaults.confidenceLow, 2);
+        QCOMPARE(defaults.shippingFlagRatio, 2.0);
+        QCOMPARE(defaults.shippingFlagMinAboveCents, qint64(1000));
+        ValueSettings bad = defaults;
+        bad.confidenceMedium = 20; // above high
+        QVERIFY(!settings.setValueSettings(bad));
+        bad = defaults;
+        bad.outlierIqrFactor = 0;
+        QVERIFY(!settings.setValueSettings(bad));
+        ValueSettings changed = defaults;
+        changed.outlierIqrFactor = 3.0;
+        changed.confidenceHigh = 12;
+        changed.shippingFlagMinAboveCents = 500;
+        QVERIFY(settings.setValueSettings(changed));
+        QVERIFY(settings.sync());
+    }
+    const ValueSettings again = Settings(path).valueSettings();
+    QCOMPARE(again.outlierIqrFactor, 3.0);
+    QCOMPARE(again.confidenceHigh, 12);
+    QCOMPARE(again.shippingFlagMinAboveCents, qint64(500));
+    // Hand-edited out of order: the three confidence numbers read as defaults.
+    const QString edit = tmp.path() + QStringLiteral("/edited.ini");
+    QVERIFY(writeTestFile(edit, "[value]\nconfidenceHigh=3\nconfidenceMedium=5\noutlierIqrFactor=-1\n"));
+    const ValueSettings edited = Settings(edit).valueSettings();
+    QCOMPARE(edited.confidenceHigh, 10);
+    QCOMPARE(edited.confidenceMedium, 5);
+    QCOMPARE(edited.outlierIqrFactor, 1.5);
 }
 
 QTEST_GUILESS_MAIN(TestSettings)

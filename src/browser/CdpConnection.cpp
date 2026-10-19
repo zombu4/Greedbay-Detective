@@ -97,9 +97,9 @@ bool CdpConnection::start(const QString &program, const QStringList &arguments, 
 
     m_process = new QProcess(this);
     // The browser's own output is not the app's business and may contain
-    // page details; it is discarded.
+    // page details; it is discarded (tests may keep its error output).
     m_process->setStandardOutputFile(QProcess::nullDevice());
-    m_process->setStandardErrorFile(QProcess::nullDevice());
+    m_process->setStandardErrorFile(m_errorFile.isEmpty() ? QProcess::nullDevice() : m_errorFile);
     m_process->setProgram(program);
     m_process->setArguments(arguments + QStringList{QStringLiteral("--remote-debugging-port=%1").arg(m_port)});
     connect(m_process, &QProcess::finished, this, [this](int exitCode, QProcess::ExitStatus status) {

@@ -6,8 +6,9 @@
 // from the URL before this script runs.
 // Key elements: result rows (tr with td.research-table-row__product-info).
 // Without rows the page is not (yet) a result page, even when summary labels
-// are there: the rows may still be loading, and a search without sold
-// listings is shown to the user instead of being read as "no sales".
+// are there (the rows may still be loading) - unless it shows eBay's notice
+// "Your search didn't return any results.": then it is the expected page
+// with no rows (emptyResult true).
 //
 // One row is one LISTING, aggregated over all its sales (multi-quantity
 // listings sum several sales); avgSoldPrice is the price actually paid,
@@ -169,7 +170,11 @@ function extract(input) {
     const rows = Array.prototype.filter.call(document.querySelectorAll('tr'), function (row) {
         return cell(row, 'product-info') !== null;
     });
-    if (rows.length === 0)
+    // eBay's empty result (recon "2026-10-19 phase 4"): a normal outcome with
+    // no rows, owner rule 6.
+    const empty = Array.prototype.some.call(document.querySelectorAll('.research__generic-error .page-notice__title'),
+        function (element) { return /^Your search didn't return any results\./.test(textOf(element)); });
+    if (rows.length === 0 && !empty)
         return notExpected('unexpected', 'no research result rows');
 
     const offsetText = url.searchParams.get('offset');
@@ -182,6 +187,7 @@ function extract(input) {
         summary: readSummary(),
         rows: records,
         rowCount: records.length,
-        morePossible: limit !== null ? records.length === limit : null,
+        emptyResult: rows.length === 0,
+        morePossible: rows.length === 0 ? false : (limit !== null ? records.length === limit : null),
     });
 }

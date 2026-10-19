@@ -1,0 +1,53 @@
+{
+    "format": 1,
+    "about": "Words the matcher uses, as data. Phrases are matched as whole words, without regard to case. Each list names where its words come from: the project owner's matching rules and cases (docs: rule N / case N) or the design (DESIGN 3.3).",
+    "specUnits": {
+        "source": "owner rule 24 and case 7 (DC-600 KHZ, 0-1500V, 50kv, 10Hz-50 MHz, 100:1, 15 MEG, 4 channels)",
+        "words": ["Hz", "kHz", "MHz", "V", "kV", "W", "MEG", "%", "channels"]
+    },
+    "specPrefixes": {
+        "source": "owner rule 24 (DC-600)",
+        "words": ["DC"]
+    },
+    "lot": {
+        "source": "owner rule 4 (\"lot of\", quantities), case 1 (LOT OF 13 ...); DESIGN 3.3 (2x)",
+        "words": ["lot", "lot of", "lots", "2x", "3x", "4x", "5x"]
+    },
+    "documentation": {
+        "source": "owner rule 4 (manual, schematic, booklet), cases 1, 3, 7",
+        "words": ["manual", "manuals", "schematic", "schematics", "booklet"]
+    },
+    "partFits": {
+        "source": "owner rule 4 (fits, replacement), case 1 (P/N), case 3 (compatible)",
+        "words": ["fits", "replacement", "compatible", "p/n"]
+    },
+    "partWords": {
+        "source": "owner rule 14 (several model codes + part words: knobs, feet, cover, cord) and case 4; alone they do not make a part (live 2026-10-19: \"IM-13 VTVM (NEEDS CORD!)\" is the item)",
+        "words": ["knob", "knobs", "foot", "feet", "cover", "cord", "cord wrap"]
+    },
+    "accessory": {
+        "source": "owner rule 4 (probe, leads, case), case 5 (holster)",
+        "words": ["probe", "probes", "leads", "case", "holster", "holsters"]
+    },
+    "withItem": {
+        "source": "owner case 1: the real comp \"... w/ Leads\" is the item with its leads, not an accessory",
+        "words": ["w/", "with", "includes", "including", "and", "&", "+"]
+    },
+    "companion": {
+        "source": "owner rule 13 (\"<other model> ... for <model>\")",
+        "words": ["for"]
+    },
+    "conditions": {
+        "source": "owner rules 5, 18 and 22, cases 1, 5, 6, 8; the level of \"powered on\" (untested) is a placement for the owner to confirm",
+        "nonWorking": ["for parts", "parts", "parts only", "repair", "parts repair", "not working", "non working", "non-working", "broken", "roached", "baked", "burnt", "heat damage", "needs work", "needs restoration", "project", "for restoration"],
+        "untested": ["untested", "as is", "as-is", "powered on"],
+        "new": ["new", "nib", "new in box", "nos", "new old stock", "sealed", "never used", "never opened"],
+        "working": ["working", "tested", "tested working", "restored", "recapped", "calibrated"]
+    },
+    "ebayConditions": {
+        "source": "condition texts seen on eBay pages (recon: search card subtitles \"Pre-Owned\", \"Brand New\"; item JSON-LD UsedCondition; live 2026-10-19 card subtitles \"New (Other)\", \"Parts Only\")",
+        "new": ["Brand New", "New (Other)"],
+        "nonWorking": ["Parts Only"],
+        "used": ["Pre-Owned", "Used", "UsedCondition"]
+    }
+}

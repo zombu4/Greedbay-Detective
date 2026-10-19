@@ -1,5 +1,7 @@
 #pragma once
 
+#include "lookup/KnownModels.h"
+#include "lookup/MatchWords.h"
 #include "lookup/Records.h"
 
 #include <QString>
@@ -7,41 +9,66 @@
 
 namespace app::lookup {
 
-// What a listing is, for building searches (DESIGN 3.2, PLAN 5 step 4), in
-// the rough form of phase 3b; the matching rules and word lists of phase 4
-// are not part of it.
+// What a listing is (owner rules 1, 7, 21-28; DESIGN 3.2).
 //
-// brand: the item specific "Brand" exactly as the seller entered it (no
-//   dictionary yet: the brand dictionary ships with the phase-4 matcher).
-// modelTokens: canonical model tokens, first the ones from the item specifics
-//   "Model" and "MPN" (in that order), then from the title. A model token is
-//   a word with at least one digit; from the title it must also have a
-//   letter, because bare numbers there are mostly quantities and years.
-//   Words are split at white space and at , ; / ( ) [ ] | + : & ! ? " and
-//   quotes. A number directly followed by a single capital letter as its own
-//   word ("87 V") is joined to it first ("87V"). Canonical form: upper case,
-//   hyphens and dots removed ("87-V" -> "87V"). Accessory words never have a
-//   digit, so they are never model tokens.
+// Brand: the item specific "Brand" when it names a known brand (any of its
+// names) or, failing that, contains one as whole words; an unknown "Brand"
+// value is taken as written (a new brand with that one name). Without a
+// "Brand" specific, the known brand whose name appears first in the title.
+//
+// Model: first a known model (or family member) of that brand appearing as a
+// whole word in the "Model" or "MPN" specific or the title. Otherwise the
+// model-like words: a word with a letter and a digit (numbers-only never),
+// that is no specification (isSpecification) and no brand name, in upper
+// case with its hyphens kept as written (AA-100, IM-13, LC53, 8904A). Words
+// are never joined ("53 Z Meter" never gives 53Z). The model is confident
+// when the "Model" specific has exactly one such word, else the "MPN"
+// specific, else the title (each: exactly one distinct normalized code).
+// Anything else - no brand, no model word, or several - is not confident:
+// the app asks the user (rule 26) and suggests the candidates and the known
+// models of the brand.
 struct Identity {
-    QString brand;
-    QStringList modelTokens;
+    QString brandId;           // empty when no brand is known
+    QString brandName;         // shown: the name found, or the first name
+    QStringList matchNames;    // every name of the brand
+    QStringList searchNames;   // the names used in queries
+    QString model;             // manufacturer's spelling; empty when unknown
+    QStringList family;        // codes that count as the same item
+    QString productName;
+    QStringList notes;         // known-issue notes of the model
+    bool confident = false;
+    // Where it came from: "saved" (the user confirmed it for this listing),
+    // "user", "known model", "item specifics", "title".
+    QString source;
+    QString reason;            // why it is not confident
+    QStringList candidates;    // suggestions for the user
+
+    bool canSearch() const { return confident && !searchNames.isEmpty() && !model.isEmpty(); }
 };
 
-Identity identify(const ItemRecord &item);
+// The identity of a listing. A confirmed identity saved for its item number
+// comes first.
+Identity identify(const ItemRecord &item, const KnownModels &known, const MatchWords &words);
 
-// The canonical form of one model token: upper case, without "-" and ".".
-QString canonicalModel(const QString &token);
+// The identity the user entered (rule 7): a known brand by any of its names,
+// else a new brand with this one name; the known model's spelling, family,
+// product name and notes when the brand has that model.
+Identity identityFromUser(const ConfirmedIdentity &entered, const KnownModels &known, const QString &source);
 
-// Model tokens of `text` in order, canonical and without repeats.
-// `requireLetter`: skip tokens that are digits only.
-QStringList modelTokens(const QString &text, bool requireLetter);
+// One query per search name of the brand: "<name> <model>" (rules 21, 23).
+// No model-only queries and no spelling variants. Empty when the identity
+// cannot be searched.
+QStringList buildQueries(const Identity &identity);
 
-// 1 to 3 search queries (DESIGN 3.2), without repeats (case ignored):
-//   1. brand + first model token   (when both exist)
-//   2. first model token alone
-//   3. brand + second model token  (when a second one exists; the brand is
-//      left out when there is none)
-// With no model token at all: the title alone, for the user to edit.
-QStringList buildQueries(const Identity &identity, const QString &title);
+// True when words[index] is a specification, not a model (rule 24): a
+// number with one of the spec units glued on ("1500V", "50kv", "600kHz",
+// "45%"), a range of such numbers ("10kHz-1000MHz", "0-1500V"), a spec
+// prefix with a number ("DC-600"), or a word ending in a digit that is
+// followed by a unit word ("600 KHZ", "15 MEG", "4 channels").
+bool isSpecification(const QStringList &words, qsizetype index, const MatchWords &matchWords);
+
+// The model-like words of `text` (see above), upper case, without repeats
+// by normalized code; `brand` names are skipped.
+QStringList modelCandidates(const QString &text, const QStringList &brandNames, const MatchWords &matchWords);
 
 } // namespace app::lookup
