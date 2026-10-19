@@ -1,5 +1,5 @@
-// A flag card (ui-spec 2): a word label (SHIPPING, CHEAPER RIGHT NOW) and
-// its lines; "warn" or "info" colors, never color alone.
+// A flag card (ui-spec 2): a word label (SHIPPING, CHEAPER RIGHT NOW, LIKELY
+// BROKEN) and its lines; "warn", "info" or "danger" colors, never color alone.
 import QtQuick
 import QtQuick.Controls.Basic
 import QtQuick.Layouts
@@ -11,8 +11,8 @@ Card {
     property var lines: []
     property string linkText
     signal linkActivated()
-    fill: kind === "warn" ? Theme.warnBackground : Theme.infoBackground
-    line: kind === "warn" ? Theme.warnBorder : Theme.infoBorder
+    fill: kind === "warn" ? Theme.warnBackground : kind === "danger" ? Theme.dangerBackground : Theme.infoBackground
+    line: kind === "warn" ? Theme.warnBorder : kind === "danger" ? Theme.dangerBorder : Theme.infoBorder
 
     ColumnLayout {
         anchors.fill: parent
@@ -23,7 +23,7 @@ Card {
             font.pixelSize: Theme.labelSize
             font.weight: Font.DemiBold
             font.letterSpacing: 1
-            color: flag.kind === "warn" ? Theme.warnLabel : Theme.infoLabel
+            color: flag.kind === "warn" ? Theme.warnLabel : flag.kind === "danger" ? Theme.dangerLabel : Theme.infoLabel
         }
         Repeater {
             model: flag.lines

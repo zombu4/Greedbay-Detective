@@ -59,6 +59,7 @@ private slots:
     void valueOverAllRows();
     void partsKitIsNotCheapest();
     void heathZenithFamily();
+    void likelyBroken();
     void shippingCheck();
 };
 
@@ -533,6 +534,24 @@ void TestMatching::heathZenithFamily()
     const Identity radio = identify(zenith, m_known, m_words);
     QVERIFY(radio.brandId != QStringLiteral("heathkit"));
     QCOMPARE(radio.brandName, QStringLiteral("Zenith"));
+}
+
+// Owner decision 2026-10-19: a red "likely broken" warning from eBay's parts
+// condition or the owner's words; nothing else is guessed.
+void TestMatching::likelyBroken()
+{
+    QCOMPARE(likelyBrokenReason(QStringLiteral("Heathkit IM-13 VTVM"), QStringLiteral("For parts or not working"), m_words),
+             QStringLiteral("eBay says 'For parts or not working'"));
+    QCOMPARE(likelyBrokenReason(QStringLiteral("Heathkit IM-13 VTVM"), QStringLiteral("Parts Only"), m_words),
+             QStringLiteral("eBay says 'Parts Only'"));
+    QCOMPARE(likelyBrokenReason(QStringLiteral("Heathkit IM-13 VTVM Powers On - Untested"), QStringLiteral("Used"), m_words),
+             QStringLiteral("the title says 'untested'"));
+    QCOMPARE(likelyBrokenReason(QStringLiteral("Heathkit IM-13 VTVM parts/repair"), QStringLiteral("Used"), m_words),
+             QStringLiteral("the title says 'parts/repair'"));
+    QCOMPARE(likelyBrokenReason(QStringLiteral("Heathkit IM-13 VTVM sold AS-IS"), QString(), m_words),
+             QStringLiteral("the title says 'as-is'"));
+    QCOMPARE(likelyBrokenReason(QStringLiteral("Heathkit IM-13 VTVM Tested Working"), QStringLiteral("Used"), m_words), QString());
+    QCOMPARE(likelyBrokenReason(QStringLiteral("Heathkit IM-13 VTVM"), QStringLiteral("Pre-Owned"), m_words), QString());
 }
 
 void TestMatching::shippingCheck()

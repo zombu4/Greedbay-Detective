@@ -1,5 +1,6 @@
 #include "ui/RecentModel.h"
 
+#include "lookup/Matcher.h"
 #include "ui/Format.h"
 
 namespace app::ui {
@@ -20,8 +21,9 @@ QString nameOf(const lookup::LookupSummary &item)
 
 RecentModel::RecentModel(QObject *parent) : QAbstractListModel(parent) {}
 
-bool RecentModel::refresh(const lookup::LookupStore &store, QString *error)
+bool RecentModel::refresh(const lookup::LookupStore &store, const lookup::MatchWords *words, QString *error)
 {
+    m_words = words;
     const std::optional<QList<lookup::LookupSummary>> items = store.recent(kLimit, error);
     if (!items)
         return false;
@@ -74,6 +76,10 @@ QVariant RecentModel::data(const QModelIndex &index, int role) const
         return moneyText(item.listingTotalCents);
     case SoldMedianRole:
         return moneyText(item.soldMedianCents);
+    case BrokenRole:
+        return m_words && !lookup::likelyBrokenReason(item.title, item.conditionText, *m_words).isEmpty()
+                   ? QStringLiteral("Likely broken")
+                   : QString();
     default:
         return {};
     }
@@ -83,7 +89,7 @@ QHash<int, QByteArray> RecentModel::roleNames() const
 {
     return {{LookupIdRole, "lookupId"},   {NameRole, "name"},           {CheckedRole, "checked"},
             {FlagTextRole, "flagText"},   {FlagKindRole, "flagKind"},   {ListingTotalRole, "listingTotal"},
-            {SoldMedianRole, "soldMedian"}};
+            {SoldMedianRole, "soldMedian"}, {BrokenRole, "broken"}};
 }
 
 } // namespace app::ui

@@ -274,6 +274,21 @@ void TestUi::savedLookupReopens()
     QCOMPARE(marks.count(QStringLiteral("this")), 1);
     QCOMPARE(marks.count(QStringLiteral("cheapest")), 2);
     QVERIFY(results->notThisItem()->index(0).data(app::ui::RowsModel::ReasonRole).toString().contains(QLatin1String("manual")));
+    // Likely broken (owner decision 2026-10-19): the "For parts or not
+    // working" sale carries the badge and stays counted; the listing itself
+    // ("Used", a clean title) has no flag; the numbers above already include
+    // that sale ($106.00 median).
+    QVERIFY(!results->brokenFlag());
+    int broken = 0;
+    for (int i = 0; i < results->sameItem()->count(); ++i) {
+        const QModelIndex index = results->sameItem()->index(i);
+        if (!index.data(app::ui::RowsModel::BrokenRole).toString().isEmpty()) {
+            ++broken;
+            QCOMPARE(index.data(app::ui::RowsModel::BrokenRole).toString(), QStringLiteral("eBay says 'For parts or not working'"));
+            QVERIFY(index.data(app::ui::RowsModel::IncludedRole).toBool());
+        }
+    }
+    QCOMPARE(broken, 1);
 
     // Unticking the $90.00 sale: median of $100, $112, $120 = $112.00, at once
     // and in the database.
@@ -401,6 +416,7 @@ void TestUi::nothingFoundIsSaid()
     result.status = QStringLiteral("complete");
     result.item.itemId = QStringLiteral("100000000095");
     result.item.title = QStringLiteral("Acme Z9 supply");
+    result.item.condition = QStringLiteral("For parts or not working");
     result.identity.brandName = QStringLiteral("Acme");
     result.identity.model = QStringLiteral("Z9");
     result.identity.confident = true;
@@ -415,6 +431,19 @@ void TestUi::nothingFoundIsSaid()
     QCOMPARE(backend.results()->emptyMessage(),
              QStringLiteral("eBay found nothing for \"Acme Z9\", \"Acme Corp Z9\" - check the brand and model "
                             "(Wrong item? Correct it)"));
+    // The listing itself is flagged, on Results and on its Home card.
+    QVERIFY(backend.results()->brokenFlag());
+    QCOMPARE(backend.results()->brokenLine(),
+             QStringLiteral("Likely broken: eBay says 'For parts or not working'. Sellers often don't test or don't say. "
+                            "Assume it does not work."));
+    app::ui::RecentModel *recent = backend.recent();
+    bool cardFlagged = false;
+    for (int i = 0; i < recent->count(); ++i) {
+        const QModelIndex index = recent->index(i);
+        if (index.data(app::ui::RecentModel::LookupIdRole).toLongLong() == *id)
+            cardFlagged = index.data(app::ui::RecentModel::BrokenRole).toString() == QLatin1String("Likely broken");
+    }
+    QVERIFY(cardFlagged);
     QVERIFY(backend.openSaved(m_lookupId));
     QCOMPARE(backend.results()->emptyMessage(), QString());
 }

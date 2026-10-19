@@ -33,7 +33,7 @@ Backend::Backend(WorkFolder folder, const QString &connectionName, QObject *pare
 
     const QString settingsPath = m_folder.settingsPath();
     m_results = new ResultsController(
-        m_store, [settingsPath]() { return Settings(settingsPath).valueSettings(); },
+        m_store, m_words ? &*m_words : nullptr, [settingsPath]() { return Settings(settingsPath).valueSettings(); },
         [this](const QString &itemId) { return photoSourceOf(itemId); }, this);
     // The Home cards show the numbers stored with each lookup.
     connect(m_results, &ResultsController::stored, this, &Backend::refreshRecent);
@@ -82,7 +82,7 @@ PhotoProvider *Backend::takePhotoProvider()
 void Backend::refreshRecent()
 {
     QString error;
-    if (!m_recent->refresh(m_store, &error)) {
+    if (!m_recent->refresh(m_store, m_words ? &*m_words : nullptr, &error)) {
         m_notice = QStringLiteral("The recent lookups cannot be read: %1").arg(error);
         emit noticeChanged();
     }

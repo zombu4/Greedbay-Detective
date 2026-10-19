@@ -185,8 +185,16 @@ Item {
             // Flag cards, only the ones that apply.
             RowLayout {
                 Layout.fillWidth: true
-                visible: screen.results.shippingFlag || screen.results.cheaperFlag
+                visible: screen.results.brokenFlag || screen.results.shippingFlag || screen.results.cheaperFlag
                 spacing: Theme.gap
+                FlagCard {
+                    Layout.fillWidth: true
+                    Layout.preferredWidth: 1
+                    visible: screen.results.brokenFlag
+                    kind: "danger"
+                    label: "LIKELY BROKEN"
+                    lines: [screen.results.brokenLine]
+                }
                 FlagCard {
                     Layout.fillWidth: true
                     Layout.preferredWidth: 1

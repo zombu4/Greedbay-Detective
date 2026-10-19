@@ -227,6 +227,23 @@ Match matchRow(const QString &title, const Identity &identity, const MatchWords 
     return done(Bucket::SameItem);
 }
 
+QString likelyBrokenReason(const QString &title, const QString &ebayCondition, const MatchWords &words)
+{
+    const QString condition = ebayCondition.simplified();
+    for (const QString &parts : words.partsConditions) {
+        if (condition.compare(parts, Qt::CaseInsensitive) == 0)
+            return QStringLiteral("eBay says '%1'").arg(condition);
+    }
+    // Both word forms: "parts/repair" is one word before the split at "/".
+    const QStringList list = listWords(title);
+    const QStringList whole = titleWords(title.toLower());
+    for (const QString &phrase : words.likelyBroken) {
+        if (!phrasePositions(list, phrase).isEmpty() || !phrasePositions(whole, phrase).isEmpty())
+            return QStringLiteral("the title says '%1'").arg(phrase);
+    }
+    return {};
+}
+
 QString bucketName(Bucket bucket)
 {
     switch (bucket) {

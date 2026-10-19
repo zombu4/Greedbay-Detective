@@ -126,6 +126,7 @@ Item {
                 required property string flagKind
                 required property string listingTotal
                 required property string soldMedian
+                required property string broken
                 width: grid.cellWidth
                 height: grid.cellHeight
                 Card {
@@ -152,6 +153,11 @@ Item {
                                 font.pixelSize: 16
                                 font.weight: Font.DemiBold
                                 color: Theme.text
+                            }
+                            Pill {
+                                visible: cell.broken.length > 0
+                                text: cell.broken
+                                kind: "danger"
                             }
                             Pill {
                                 visible: cell.flagText.length > 0

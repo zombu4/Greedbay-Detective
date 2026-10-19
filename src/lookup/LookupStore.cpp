@@ -452,7 +452,7 @@ std::optional<QList<LookupSummary>> LookupStore::recent(int limit, QString *erro
     query.prepare(QStringLiteral(
         "SELECT id, created_at, item_id, title, brand, model, status, listing_total_cents, sold_count, "
         "sold_median_cents, sold_confidence, shipping_flagged, shipping_flag_ratio, for_sale_count, cheaper_for_sale, "
-        "cheapest_for_sale_cents FROM lookups ORDER BY created_at DESC, id DESC LIMIT ?"));
+        "cheapest_for_sale_cents, condition_text FROM lookups ORDER BY created_at DESC, id DESC LIMIT ?"));
     query.addBindValue(limit);
     if (!run(query, error))
         return std::nullopt;
@@ -476,6 +476,7 @@ std::optional<QList<LookupSummary>> LookupStore::recent(int limit, QString *erro
         summary.forSaleCount = query.value(13).toInt();
         summary.cheaperForSale = query.value(14).toInt();
         summary.cheapestForSaleCents = optionalCents(query.value(15));
+        summary.conditionText = query.value(16).toString();
         list.append(summary);
     }
     return list;

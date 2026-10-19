@@ -61,4 +61,11 @@ Match matchRow(const QString &title, const Identity &identity, const MatchWords 
 
 QString bucketName(Bucket bucket);
 
+// Owner decision 2026-10-19 ("red flag likely broken"): a WARNING, not
+// grading - the numbers do not change. The reason when eBay's condition is
+// one of partsConditions ("eBay says 'For parts or not working'") or the
+// title holds a likelyBroken phrase ("the title says 'untested'"); empty
+// otherwise. Nothing else is guessed (no flag from returns or a low price).
+QString likelyBrokenReason(const QString &title, const QString &ebayCondition, const MatchWords &words);
+
 } // namespace app::lookup

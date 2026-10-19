@@ -24,6 +24,8 @@ struct MatchWords {
     QStringList kitParts;     // with a kit word: a parts or repair kit
     QStringList kitFor;       // "kit for": a kit for something
     QStringList completeKit;  // with a kit word: the brand's complete kit, the item
+    QStringList likelyBroken;    // title words: likely broken (warning only)
+    QStringList partsConditions; // eBay conditions: likely broken
     QStringList accessory;
     QStringList withItem;     // an accessory word after one of these is part of the item
     QStringList companion;    // "for": "<other model> ... for <model>"

@@ -1,5 +1,6 @@
 // A small label with words (color is never the only signal): "warn"
-// (amber badge), "info" (blue badge) or "accent" (THIS LISTING).
+// (amber badge), "info" (blue badge), "danger" (red badge, LIKELY BROKEN) or
+// "accent" (THIS LISTING).
 import QtQuick
 
 Rectangle {
@@ -9,7 +10,8 @@ Rectangle {
     implicitWidth: label.implicitWidth + 20
     implicitHeight: label.implicitHeight + 8
     radius: 999
-    color: kind === "warn" ? Theme.warnBadgeBackground : kind === "accent" ? Theme.accent : Theme.infoBadgeBackground
+    color: kind === "warn" ? Theme.warnBadgeBackground : kind === "danger" ? Theme.dangerBadgeBackground
+         : kind === "accent" ? Theme.accent : Theme.infoBadgeBackground
     Text {
         id: label
         anchors.centerIn: parent
@@ -17,6 +19,7 @@ Rectangle {
         font.family: Theme.sans
         font.pixelSize: 12
         font.weight: Font.DemiBold
-        color: pill.kind === "warn" ? Theme.warnBadgeText : pill.kind === "accent" ? Theme.accentText : Theme.infoBadgeText
+        color: pill.kind === "warn" ? Theme.warnBadgeText : pill.kind === "danger" ? Theme.dangerBadgeText
+             : pill.kind === "accent" ? Theme.accentText : Theme.infoBadgeText
     }
 }

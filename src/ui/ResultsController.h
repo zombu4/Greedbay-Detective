@@ -34,6 +34,7 @@ public:
         ItemIdRole,
         ReasonRole,     // why it is not counted by default (the not-this-item tab)
         MarkRole,       // "this" (THIS LISTING), "cheapest" (CHEAPEST) or ""
+        BrokenRole,     // why it is likely broken (a LIKELY BROKEN badge), or ""
     };
 
     struct Entry {
@@ -47,6 +48,7 @@ public:
         QString itemId;
         QString reason;
         QString mark;
+        QString broken;
     };
 
     explicit RowsModel(QObject *parent = nullptr);
@@ -107,6 +109,10 @@ class ResultsController : public QObject {
     Q_PROPERTY(bool cheaperFlag READ cheaperFlag NOTIFY changed)
     Q_PROPERTY(QString cheaperLine READ cheaperLine NOTIFY changed)
     Q_PROPERTY(QString cheapestItemId READ cheapestItemId NOTIFY changed)
+    // LIKELY BROKEN (owner decision 2026-10-19): a warning about this listing,
+    // the numbers do not change.
+    Q_PROPERTY(bool brokenFlag READ brokenFlag NOTIFY changed)
+    Q_PROPERTY(QString brokenLine READ brokenLine NOTIFY changed)
     // "What the same item really sold for".
     Q_PROPERTY(QString soldLine READ soldLine NOTIFY changed)
     Q_PROPERTY(bool hasSoldNumbers READ hasSoldNumbers NOTIFY changed)
@@ -145,7 +151,9 @@ class ResultsController : public QObject {
 public:
     // `photoSourceOf` gives the image source of a listing's saved photo, or
     // an empty string when there is none.
-    ResultsController(lookup::LookupStore store, std::function<ValueSettings()> valueSettings,
+    // `words` must outlive the controller.
+    ResultsController(lookup::LookupStore store, const lookup::MatchWords *words,
+                      std::function<ValueSettings()> valueSettings,
                       std::function<QString(const QString &itemId)> photoSourceOf, QObject *parent = nullptr);
 
     // Shows a saved lookup; false (and *error) when it cannot be read.
@@ -183,6 +191,8 @@ public:
     bool cheaperFlag() const;
     QString cheaperLine() const;
     QString cheapestItemId() const { return m_cheapestItemId; }
+    bool brokenFlag() const { return !brokenReason().isEmpty(); }
+    QString brokenLine() const;
     QString soldLine() const;
     bool hasSoldNumbers() const { return m_valuation.sold.medianCents.has_value(); }
     QString medianText() const;
@@ -221,7 +231,11 @@ private:
     // "last 3 years", "last 2 years", "last 90 days".
     QString periodText() const;
 
+    // Why this listing is likely broken, or "".
+    QString brokenReason() const;
+
     lookup::LookupStore m_store;
+    const lookup::MatchWords *m_words;
     std::function<ValueSettings()> m_valueSettings;
     std::function<QString(const QString &)> m_photoSourceOf;
     lookup::SavedLookup m_saved;

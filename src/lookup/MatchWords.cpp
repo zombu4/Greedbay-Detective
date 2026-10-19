@@ -51,6 +51,8 @@ std::optional<MatchWords> MatchWords::fromJson(const QByteArray &json, QString *
         {wordsOf("kitParts"), &words.kitParts, "kitParts"},
         {wordsOf("kitFor"), &words.kitFor, "kitFor"},
         {wordsOf("completeKit"), &words.completeKit, "completeKit"},
+        {wordsOf("likelyBroken"), &words.likelyBroken, "likelyBroken"},
+        {wordsOf("partsConditions"), &words.partsConditions, "partsConditions"},
         {wordsOf("accessory"), &words.accessory, "accessory"},
         {wordsOf("withItem"), &words.withItem, "withItem"},
         {wordsOf("companion"), &words.companion, "companion"},

@@ -100,6 +100,8 @@ QVariant RowsModel::data(const QModelIndex &index, int role) const
         return entry.reason;
     case MarkRole:
         return entry.mark;
+    case BrokenRole:
+        return entry.broken;
     default:
         return {};
     }
@@ -109,12 +111,13 @@ QHash<int, QByteArray> RowsModel::roleNames() const
 {
     return {{RowRole, "row"},         {IncludedRole, "included"}, {WhereRole, "where"},   {TotalRole, "total"},
             {ConditionRole, "condition"}, {DateRole, "date"},     {TitleRole, "title"},   {ItemIdRole, "itemId"},
-            {ReasonRole, "reason"},   {MarkRole, "mark"}};
+            {ReasonRole, "reason"},   {MarkRole, "mark"},       {BrokenRole, "broken"}};
 }
 
-ResultsController::ResultsController(lookup::LookupStore store, std::function<ValueSettings()> valueSettings,
+ResultsController::ResultsController(lookup::LookupStore store, const lookup::MatchWords *words,
+                                     std::function<ValueSettings()> valueSettings,
                                      std::function<QString(const QString &)> photoSourceOf, QObject *parent)
-    : QObject(parent), m_store(std::move(store)), m_valueSettings(std::move(valueSettings)),
+    : QObject(parent), m_store(std::move(store)), m_words(words), m_valueSettings(std::move(valueSettings)),
       m_photoSourceOf(std::move(photoSourceOf)), m_sameItem(new RowsModel(this)), m_notThisItem(new RowsModel(this))
 {
 }
@@ -240,6 +243,8 @@ QList<RowsModel::Entry> ResultsController::entries(bool sameItem) const
         entry.total = moneyText(lookup::rowTotal(result, row));
         entry.condition = lookup::rowCondition(result, row);
         entry.title = lookup::rowTitle(result, row);
+        if (m_words)
+            entry.broken = lookup::likelyBrokenReason(entry.title, entry.condition, *m_words);
         if (row.source == Row::Source::Research) {
             const lookup::ResearchRecord &record = result.research.at(row.index);
             entry.where = QStringLiteral("research");
@@ -352,6 +357,22 @@ QStringList ResultsController::shippingLines() const
         lines.append(QStringLiteral("Shipping is %1% of this listing's total")
                          .arg(QString::number(100.0 * static_cast<double>(*shipping.listingCents) / static_cast<double>(*total), 'f', 0)));
     return lines;
+}
+
+QString ResultsController::brokenReason() const
+{
+    if (!m_words || !hasLookup())
+        return {};
+    const lookup::ItemRecord &item = m_saved.result.item;
+    return lookup::likelyBrokenReason(item.title, item.condition, *m_words);
+}
+
+QString ResultsController::brokenLine() const
+{
+    const QString reason = brokenReason();
+    if (reason.isEmpty())
+        return {};
+    return QStringLiteral("Likely broken: %1. Sellers often don't test or don't say. Assume it does not work.").arg(reason);
 }
 
 bool ResultsController::cheaperFlag() const

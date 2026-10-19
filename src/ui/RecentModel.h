@@ -10,7 +10,8 @@ namespace app::ui {
 // The recent lookups on the Home screen (ui-spec 1): one card per saved
 // lookup, newest first, with the item name, when it was checked, one flag
 // pill (warn: shipping flagged; info: cheaper listings for sale; warn: the
-// lookup did not complete), the listing total and the sold median.
+// lookup did not complete), a "Likely broken" pill when that applies (owner
+// decision 2026-10-19), the listing total and the sold median.
 class RecentModel : public QAbstractListModel {
     Q_OBJECT
     QML_ELEMENT
@@ -28,12 +29,14 @@ public:
         FlagKindRole, // "warn", "info" or ""
         ListingTotalRole,
         SoldMedianRole,
+        BrokenRole, // "Likely broken" or ""
     };
 
     explicit RecentModel(QObject *parent = nullptr);
 
     // Reads the list again; *error when the database cannot be read.
-    bool refresh(const lookup::LookupStore &store, QString *error);
+    // `words` (may be null: no "Likely broken" pill) must outlive the model.
+    bool refresh(const lookup::LookupStore &store, const lookup::MatchWords *words, QString *error);
 
     int count() const { return static_cast<int>(m_items.size()); }
     int rowCount(const QModelIndex &parent = QModelIndex()) const override;
@@ -45,6 +48,7 @@ signals:
 
 private:
     QList<lookup::LookupSummary> m_items;
+    const lookup::MatchWords *m_words = nullptr;
 };
 
 } // namespace app::ui

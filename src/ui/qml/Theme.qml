@@ -27,6 +27,13 @@ QtObject {
     readonly property color infoBadgeBackground: "#1c3350"
     readonly property color infoBadgeText: "#b9d3ff"
     readonly property color band: "#4a5563"
+    // Red for "likely broken" (owner decision 2026-10-19). Not in the
+    // approved mockups: chosen in the style of the warn and info tokens.
+    readonly property color dangerBackground: "#2d1517"
+    readonly property color dangerBorder: "#6e2a2e"
+    readonly property color dangerLabel: "#ff9b9b"
+    readonly property color dangerBadgeBackground: "#55191d"
+    readonly property color dangerBadgeText: "#ffb3b3"
 
     // Bundled IBM Plex (src/ui/Fonts.cpp): Sans for text, Mono for every
     // price, number, date and item id.

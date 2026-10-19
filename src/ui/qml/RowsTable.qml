@@ -75,6 +75,7 @@ ColumnLayout {
             required property string itemId
             required property string reason
             required property string mark
+            required property string broken
             width: list.width
             implicitHeight: Math.max(Theme.target, content.implicitHeight + 12)
             color: mark === "this" ? Theme.warnBackground : "transparent"
@@ -142,6 +143,16 @@ ColumnLayout {
                             visible: line.mark === "cheapest"
                             text: "CHEAPEST"
                             kind: "info"
+                        }
+                        Pill {
+                            id: brokenPill
+                            visible: line.broken.length > 0
+                            text: "LIKELY BROKEN"
+                            kind: "danger"
+                            Accessible.name: "Likely broken: " + line.broken
+                            HoverHandler { id: brokenHover }
+                            ToolTip.visible: brokenHover.hovered
+                            ToolTip.text: "Likely broken: " + line.broken
                         }
                         LinkText {
                             Layout.fillWidth: true

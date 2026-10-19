@@ -34,6 +34,7 @@ struct LookupSummary {
     QDateTime createdAt; // UTC
     QString itemId;
     QString title;
+    QString conditionText; // eBay's condition text of the listing
     QString brand;
     QString model;
     QString status; // "complete", "partial" or "failed"
