@@ -1,0 +1,13 @@
+<!DOCTYPE html>
+<!-- Synthetic page for tst_extractors: its own script writes the result count
+     "1 results" when navigator.webdriver is false and "2 results" when it is
+     true, so the search extractor reports what the page saw. -->
+<html lang="en">
+<head><meta charset="utf-8"><title>webdriver check</title></head>
+<body>
+<div class="srp-controls"><h1 class="srp-controls__count-heading" id="count"></h1></div>
+<script>
+document.getElementById('count').textContent = (navigator.webdriver ? '2' : '1') + ' results';
+</script>
+</body>
+</html>

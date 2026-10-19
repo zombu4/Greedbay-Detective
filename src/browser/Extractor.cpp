@@ -5,8 +5,6 @@
 #include <QFile>
 #include <QJsonDocument>
 #include <QJsonParseError>
-#include <QWebEnginePage>
-#include <QWebEngineScript>
 
 namespace app::browser {
 
@@ -53,9 +51,9 @@ QString Extractor::script(ebay::PageKind kind, const QUrl &url)
            + QStringLiteral("\nreturn JSON.stringify(extract(input));\n})(") + inputLiteral + QStringLiteral(");");
 }
 
-QJsonObject Extractor::parseResult(const QVariant &value)
+QJsonObject Extractor::parseResult(const QJsonValue &value)
 {
-    if (value.typeId() != QMetaType::QString)
+    if (!value.isString())
         return outcome("invalid", QStringLiteral("the extractor returned no text"));
     QJsonParseError error;
     const QJsonDocument document = QJsonDocument::fromJson(value.toString().toUtf8(), &error);
@@ -74,27 +72,20 @@ QJsonObject Extractor::parseResult(const QVariant &value)
     return outcome("invalid", QStringLiteral("the extractor result names no known page type"));
 }
 
-void Extractor::run(QWebEnginePage *page, ebay::PageKind kind, std::function<void(const QJsonObject &)> done)
+std::optional<QJsonObject> Extractor::outcomeFromUrl(const QUrl &url, ebay::PageKind kind)
 {
-    const QUrl url = page->url();
     switch (ebay::classifyUrl(url)) {
     case ebay::UrlClass::SignIn:
-        done(outcome("sign_in", QStringLiteral("eBay showed its sign-in page")));
-        return;
+        return outcome("sign_in", QStringLiteral("eBay showed its sign-in page"));
     case ebay::UrlClass::ResearchLanding:
-        if (kind == ebay::PageKind::Research) {
-            done(outcome("no_access", QStringLiteral("eBay sent the Seller Hub start page instead of Product Research")));
-            return;
-        }
+        if (kind == ebay::PageKind::Research)
+            return outcome("no_access", QStringLiteral("eBay sent the Seller Hub start page instead of Product Research"));
         break;
     case ebay::UrlClass::AccountPage:
     case ebay::UrlClass::Other:
         break;
     }
-    // The isolated ApplicationWorld: page scripts cannot interfere with the
-    // extractor's functions; the DOM is shared.
-    page->runJavaScript(script(kind, url), QWebEngineScript::ApplicationWorld,
-                        [done = std::move(done)](const QVariant &value) { done(parseResult(value)); });
+    return std::nullopt;
 }
 
 } // namespace app::browser

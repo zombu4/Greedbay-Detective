@@ -16,9 +16,9 @@ namespace app {
 //   backups/                 database copies made before each schema upgrade
 //   logs/                    rotating log files
 //   settings.ini             settings in INI format
-//   webengine/storage/       browser profile storage (cookies, local storage)
-//   webengine/cache/         browser HTTP cache
-//   webengine/downloads/     browser download path
+//   browser/                 profiles of the installed browsers the app drives,
+//                            one subfolder per browser (browser/<id>/), plus
+//                            their lock files (browser/<id>.lock)
 //   tmp/                     temporary files of this process
 class WorkFolder {
 public:
@@ -65,9 +65,7 @@ public:
     QString backupsDir() const;
     QString logsDir() const;
     QString settingsPath() const;
-    QString webEngineStorageDir() const;
-    QString webEngineCacheDir() const;
-    QString webEngineDownloadsDir() const;
+    QString browserProfilesDir() const;
     QString tmpDir() const;
 
     static constexpr const char *kMarkerFileName = ".workfolder";

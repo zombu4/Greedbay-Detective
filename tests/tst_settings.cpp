@@ -23,6 +23,8 @@ private slots:
     void leavesNoOtherFiles();
     void fileNameIsGivenPath();
     void nativeStoreIsNotUsed();
+    void preferredBrowser();
+    void pageDelay();
 };
 
 // Synthetic names, so the native settings store checked below belongs to this
@@ -136,6 +138,52 @@ void TestSettings::nativeStoreIsNotUsed()
     // QSettings also reads (on macOS the global preferences domain).
     native.setFallbacksEnabled(false);
     QCOMPARE(native.allKeys().size(), 0);
+}
+
+void TestSettings::preferredBrowser()
+{
+    QTemporaryDir tmp;
+    QVERIFY(tmp.isValid());
+    const QString path = tmp.path() + QStringLiteral("/settings.ini");
+    {
+        Settings settings(path);
+        QCOMPARE(settings.preferredBrowser(), QString()); // automatic
+        QVERIFY(!settings.setPreferredBrowser(QStringLiteral("../x")));
+        QVERIFY(!settings.setPreferredBrowser(QStringLiteral("Chrome")));
+        QVERIFY(settings.setPreferredBrowser(QStringLiteral("edge")));
+        QVERIFY(settings.sync());
+    }
+    Settings again(path);
+    QCOMPARE(again.preferredBrowser(), QStringLiteral("edge"));
+    QVERIFY(again.setPreferredBrowser(QString()));
+    QCOMPARE(again.preferredBrowser(), QString());
+    // A hand-edited value that is not an id reads as automatic.
+    QVERIFY(writeTestFile(path, "[browser]\npreferred=C:/x\n"));
+    const Settings edited(path);
+    QCOMPARE(edited.preferredBrowser(), QString());
+}
+
+void TestSettings::pageDelay()
+{
+    QTemporaryDir tmp;
+    QVERIFY(tmp.isValid());
+    const QString path = tmp.path() + QStringLiteral("/settings.ini");
+    {
+        Settings settings(path);
+        QCOMPARE(settings.pageDelayMinMs(), 3000);
+        QCOMPARE(settings.pageDelayMaxMs(), 6000);
+        QVERIFY(!settings.setPageDelay(500, 2000));  // below 1 s
+        QVERIFY(!settings.setPageDelay(5000, 4000)); // max below min
+        QVERIFY(settings.setPageDelay(4000, 9000));
+        QVERIFY(settings.sync());
+    }
+    const Settings again(path);
+    QCOMPARE(again.pageDelayMinMs(), 4000);
+    QCOMPARE(again.pageDelayMaxMs(), 9000);
+    QVERIFY(writeTestFile(path, "[pace]\npageDelayMinMs=7000\npageDelayMaxMs=2000\n"));
+    const Settings edited(path);
+    QCOMPARE(edited.pageDelayMinMs(), 3000);
+    QCOMPARE(edited.pageDelayMaxMs(), 6000);
 }
 
 QTEST_GUILESS_MAIN(TestSettings)

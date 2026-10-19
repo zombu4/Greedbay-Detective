@@ -1,9 +1,9 @@
 // Helpers shared by every extractor.
 //
-// The extractors run inside the loaded page through
-// QWebEnginePage::runJavaScript in an isolated JavaScript world: the page's
-// own scripts can neither see nor change these functions, while the DOM is
-// the page's. Each extractor returns a plain object; the caller turns it into
+// The extractors run inside the loaded page through the browser's DevTools
+// protocol (Runtime.evaluate) in an isolated JavaScript world created for the
+// app (Page.createIsolatedWorld): the page's own scripts can neither see nor
+// change these functions, while the DOM is the page's. Each extractor returns a plain object; the caller turns it into
 // a JSON string, so no HTML ever leaves the page.
 //
 // Result envelope:

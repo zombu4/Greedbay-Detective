@@ -37,7 +37,7 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    DevWindow window(*folder, QStringLiteral(DEVWINDOW_WORKER_PATH));
+    DevWindow window(*folder);
     window.show();
     const int code = QApplication::exec();
     app::Logging::uninstall();

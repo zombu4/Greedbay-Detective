@@ -26,10 +26,7 @@ namespace {
 const char *const kSubfolders[] = {
     "backups",
     "logs",
-    "webengine",
-    "webengine/storage",
-    "webengine/cache",
-    "webengine/downloads",
+    "browser",
     "tmp",
 };
 
@@ -206,9 +203,7 @@ QString WorkFolder::databasePath() const { return m_path + QLatin1Char('/') + m_
 QString WorkFolder::backupsDir() const { return m_path + QStringLiteral("/backups"); }
 QString WorkFolder::logsDir() const { return m_path + QStringLiteral("/logs"); }
 QString WorkFolder::settingsPath() const { return m_path + QStringLiteral("/settings.ini"); }
-QString WorkFolder::webEngineStorageDir() const { return m_path + QStringLiteral("/webengine/storage"); }
-QString WorkFolder::webEngineCacheDir() const { return m_path + QStringLiteral("/webengine/cache"); }
-QString WorkFolder::webEngineDownloadsDir() const { return m_path + QStringLiteral("/webengine/downloads"); }
+QString WorkFolder::browserProfilesDir() const { return m_path + QStringLiteral("/browser"); }
 QString WorkFolder::tmpDir() const { return m_path + QStringLiteral("/tmp"); }
 
 } // namespace app

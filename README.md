@@ -34,9 +34,12 @@ yet.
 
 You need:
 - CMake 4.4.4 (the project requires 4.4 or newer)
-- Qt 6.12.0. The code uses Qt Core, Qt SQL and Qt Test. CI installs Qt 6.12.0
-  with Qt WebEngine 6.140.0, Qt Positioning and Qt WebChannel; the exact pinned
-  install is in [.github/workflows/ci.yml](.github/workflows/ci.yml).
+- Qt 6.12.0 with Qt WebSockets. The code uses Qt Core, Qt Network, Qt SQL,
+  Qt WebSockets, Qt Widgets and Qt Test; the exact pinned install is in
+  [.github/workflows/ci.yml](.github/workflows/ci.yml).
+- A Chromium-based browser for reading eBay pages: Brave, Google Chrome or
+  Microsoft Edge (on Linux also Chromium). The app starts it as a separate
+  instance with its own profile in the app's work folder.
 - macOS and Linux: Ninja (CI uses 1.13.2) and a C++20 compiler (macOS: Xcode)
 - Windows: Visual Studio 2026 with the C++ workload and the MSVC v143 (VS 2022)
   build tools; Qt 6.12.0 for Windows is built with MSVC 2022, and the `windows`

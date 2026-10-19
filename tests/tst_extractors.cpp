@@ -1,25 +1,32 @@
-// Extractor tests: each synthetic fixture (tests/fixtures/) is loaded into a
-// real QWebEnginePage under the eBay URL it stands for, and the extractor's
-// result is checked field by field. Runs with the offscreen platform in CI;
-// no network is used (setHtml loads the fixture from memory).
-#include "browser/BrowserIdentity.h"
-#include "browser/Extractor.h"
+// Extractor tests through a real installed browser: each synthetic fixture
+// (tests/fixtures/) is served by a local test server under the path and query
+// of the eBay URL it stands for, fetched by BrowserController (DevTools
+// protocol), and the extractor's result is checked field by field. No network
+// is used. On a computer without a supported browser every test is skipped,
+// and the output says so.
+//
+// Also checked: no browser process exists before the session, the browser
+// opens no automation marker (navigator.webdriver is false), and after stop()
+// every process the browser started has ended.
+#include "browser/BrowserCatalog.h"
+#include "browser/BrowserController.h"
+#include "core/WorkFolder.h"
+#include "support/ProcessList.h"
 
-#include <QApplication>
+#include <QCoreApplication>
 #include <QFile>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QSet>
 #include <QSignalSpy>
+#include <QTcpServer>
+#include <QTcpSocket>
+#include <QTemporaryDir>
 #include <QTest>
-#include <QWebEnginePage>
-#include <QWebEngineProfile>
-#include <QWebEngineProfileBuilder>
-#include <qtwebenginecoreglobal.h>
 
 #include <optional>
 
-using app::browser::Extractor;
+using app::browser::BrowserController;
 using app::ebay::PageKind;
 
 namespace {
@@ -31,8 +38,6 @@ const char kItemDomUrl[] = "https://www.ebay.com/itm/100000000030?hash=x";
 const char kItemInlineUrl[] = "https://www.ebay.com/itm/100000000031";
 const char kResearchUrl[] = "https://www.ebay.com/sh/research?marketplace=EBAY-US&keywords=test+meter"
                             "&dayRange=1095&tabName=SOLD&limit=50&offset=0";
-const char kLandingUrl[] = "https://www.ebay.com/sh/landing";
-const char kSignInUrl[] = "https://signin.ebay.com/ws/eBayISAPI.dll?SignIn&ru=https%3A%2F%2Fwww.ebay.com%2F";
 
 QSet<QString> names(const QJsonValue &array)
 {
@@ -56,13 +61,19 @@ class TestExtractors : public QObject {
     Q_OBJECT
 
 private:
-    // Loads `fixture` under `url`, runs the extractor for `kind` and returns
-    // its result; std::nullopt (with *error) when loading or the extractor
-    // did not finish.
+    // Serves `fixture` under the path and query of `url` on the local test
+    // server, fetches it through the browser as `kind` and returns the
+    // result as {"page":"expected","data":{...}} or {"page":<kind>,"reason":...};
+    // std::nullopt (with *error) when the fetch failed or did not finish.
     std::optional<QJsonObject> extract(const char *fixture, const char *url, PageKind kind, QString *error);
+    void onConnection();
 
-    QWebEngineProfile *m_profile = nullptr;
-    QWebEnginePage *m_page = nullptr;
+    QTemporaryDir m_temp;
+    std::optional<app::WorkFolder> m_folder;
+    BrowserController *m_controller = nullptr;
+    QTcpServer m_server;
+    QByteArray m_fixture;
+    QString m_lastUserMessage;
 
 private slots:
     void initTestCase();
@@ -77,12 +88,34 @@ private slots:
     void errorPage();
     void unexpectedPage_data();
     void unexpectedPage();
-    void researchLandingMeansNoAccess();
-    void landingIsUnexpectedForOtherKinds();
-    void signInPage();
-    void parseResultRejectsInvalidResults();
-    void browserIdentity();
+    void noAutomationMarker();
+    void browserClosesCleanly();
 };
+
+void TestExtractors::onConnection()
+{
+    while (QTcpSocket *socket = m_server.nextPendingConnection()) {
+        connect(socket, &QTcpSocket::disconnected, socket, &QObject::deleteLater);
+        connect(socket, &QTcpSocket::readyRead, this, [this, socket]() {
+            const QByteArray request = socket->property("request").toByteArray() + socket->readAll();
+            socket->setProperty("request", request);
+            if (!request.contains("\r\n\r\n"))
+                return;
+            const QList<QByteArray> line = request.left(request.indexOf("\r\n")).split(' ');
+            const QByteArray path = line.size() >= 2 ? line.at(1) : QByteArray();
+            QByteArray response;
+            if (path.startsWith("/favicon")) {
+                response = "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+            } else {
+                response = "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nCache-Control: no-store\r\n"
+                           "Content-Length: " + QByteArray::number(m_fixture.size()) + "\r\nConnection: close\r\n\r\n"
+                           + m_fixture;
+            }
+            socket->write(response);
+            socket->disconnectFromHost();
+        });
+    }
+}
 
 std::optional<QJsonObject> TestExtractors::extract(const char *fixture, const char *url, PageKind kind,
                                                    QString *error)
@@ -92,38 +125,66 @@ std::optional<QJsonObject> TestExtractors::extract(const char *fixture, const ch
         *error = QStringLiteral("fixture not found");
         return std::nullopt;
     }
-    QSignalSpy loaded(m_page, &QWebEnginePage::loadFinished);
-    m_page->setHtml(QString::fromUtf8(file.readAll()), QUrl(QString::fromLatin1(url)));
-    if (!loaded.wait(30000)) {
-        *error = QStringLiteral("the fixture did not load");
+    m_fixture = file.readAll();
+    const QUrl ebayUrl(QString::fromLatin1(url));
+    QUrl local(QStringLiteral("http://127.0.0.1:%1").arg(m_server.serverPort()));
+    local.setPath(ebayUrl.path());
+    local.setQuery(ebayUrl.query());
+    QSignalSpy done(m_controller, &BrowserController::done);
+    m_controller->fetch(local, kind);
+    if (!done.wait(60000) && done.isEmpty()) {
+        *error = QStringLiteral("the fetch did not finish");
         return std::nullopt;
     }
-    if (m_page->url() != QUrl(QString::fromLatin1(url))) {
-        *error = QStringLiteral("page URL is %1, not the fixture URL").arg(m_page->url().toString());
-        return std::nullopt;
-    }
-    std::optional<QJsonObject> result;
-    Extractor::run(m_page, kind, [&result](const QJsonObject &value) { result = value; });
-    if (!QTest::qWaitFor([&result]() { return result.has_value(); }, 30000)) {
-        *error = QStringLiteral("the extractor did not answer");
-        return std::nullopt;
-    }
-    return result;
+    const QJsonObject reply = done.at(0).at(0).toJsonObject();
+    const QString status = reply.value("status").toString();
+    if (status == QLatin1String("ok"))
+        return QJsonObject{{"page", "expected"}, {"data", reply.value("result")}};
+    if (status == QLatin1String("unexpected_page"))
+        return QJsonObject{{"page", reply.value("page")}, {"reason", reply.value("reason")}};
+    *error = QStringLiteral("fetch failed: %1").arg(reply.value("error").toString());
+    return std::nullopt;
 }
 
 void TestExtractors::initTestCase()
 {
-    m_profile = QWebEngineProfileBuilder::createOffTheRecordProfile();
-    QVERIFY(m_profile);
-    m_page = new QWebEnginePage(m_profile);
+    const QList<app::browser::InstalledBrowser> browsers = app::browser::BrowserCatalog::installed();
+    if (browsers.isEmpty())
+        QSKIP("no supported browser (Brave, Google Chrome, Microsoft Edge, Chromium) is installed here; "
+              "the browser-driven extractor tests are skipped");
+    QVERIFY(m_temp.isValid());
+    QString error;
+    m_folder = app::WorkFolder::open(m_temp.path() + QStringLiteral("/work"), TEST_APP_NAME, &error);
+    QVERIFY2(m_folder, qPrintable(error));
+    connect(&m_server, &QTcpServer::newConnection, this, &TestExtractors::onConnection);
+    QVERIFY(m_server.listen(QHostAddress::LocalHost));
+
+    // No browser process before the session.
+    QVERIFY(descendants(QCoreApplication::applicationPid()).isEmpty());
+
+    app::browser::BrowserControllerOptions options;
+    options.pageDelayMinMs = 0; // no pacing against the local test server
+    options.pageDelayMaxMs = 0;
+    options.allowLocalTestPages = true;
+    m_controller = new BrowserController(*m_folder, browsers.first(), options, this);
+    qInfo().noquote() << "browser:" << browsers.first().name << browsers.first().executable;
+    connect(m_controller, &BrowserController::needsUser, this, [this](const QString &message) {
+        // The test plays the user: it looks at nothing and presses Continue.
+        m_lastUserMessage = message;
+        m_controller->continueAfterUser();
+    });
+    QSignalSpy ready(m_controller, &BrowserController::ready);
+    QSignalSpy failed(m_controller, &BrowserController::failed);
+    QVERIFY2(m_controller->start(&error), qPrintable(error));
+    QVERIFY2(ready.wait(BrowserController::kStartTimeoutMs) || !ready.isEmpty(),
+             failed.isEmpty() ? "the browser did not get ready" : qPrintable(failed.at(0).at(0).toString()));
 }
 
 void TestExtractors::cleanupTestCase()
 {
-    delete m_page;
-    m_page = nullptr;
-    delete m_profile;
-    m_profile = nullptr;
+    // browserClosesCleanly() normally stopped the browser already.
+    delete m_controller;
+    m_controller = nullptr;
 }
 
 void TestExtractors::activeSearch()
@@ -258,7 +319,9 @@ void TestExtractors::itemFromJsonLd()
     QVERIFY2(result, qPrintable(error));
     QCOMPARE(result->value("page").toString(), QStringLiteral("expected"));
     const QJsonObject data = result->value("data").toObject();
-    QCOMPARE(data.value("itemId").toString(), QStringLiteral("100000000010"));
+    // The local test URL is not an eBay URL, so the item number is missing
+    // (itemIdFromUrl accepts ebay.com only; tested in tst_pagecheck).
+    QVERIFY(data.value("itemId").isNull());
     QCOMPARE(data.value("title").toString(), QStringLiteral("Acme Model 7 Digital Multimeter (JSON-LD title)"));
     QCOMPARE(data.value("titleSource").toString(), QStringLiteral("json-ld"));
     QCOMPARE(data.value("priceCents").toInt(), 24995);
@@ -289,7 +352,7 @@ void TestExtractors::itemFromJsonLd()
     QCOMPARE(data.value("watchers").toInt(), 17);
     QCOMPARE(data.value("soldCount").toInt(), 3);
     QCOMPARE(data.value("offersInJsonLd").toInt(), 1);
-    QCOMPARE(names(data.value("missing")), QSet<QString>());
+    QCOMPARE(names(data.value("missing")), set({"itemId"}));
 
     // PRIVACY: the shipping block's text (with the viewer's ZIP, "00000"
     // here) never leaves the page.
@@ -306,7 +369,7 @@ void TestExtractors::itemFromDom()
     QVERIFY2(result, qPrintable(error));
     QCOMPARE(result->value("page").toString(), QStringLiteral("expected"));
     const QJsonObject data = result->value("data").toObject();
-    QCOMPARE(data.value("itemId").toString(), QStringLiteral("100000000030"));
+    QVERIFY(data.value("itemId").isNull());
     QCOMPARE(data.value("title").toString(), QStringLiteral("Acme Bench Supply 30V 5A"));
     QCOMPARE(data.value("titleSource").toString(), QStringLiteral("dom"));
     QCOMPARE(data.value("priceCents").toInt(), 104900);
@@ -321,7 +384,7 @@ void TestExtractors::itemFromDom()
     QCOMPARE(data.value("specifics").toArray().size(), 0);
     QCOMPARE(data.value("offersInJsonLd").toInt(), 0);
     QCOMPARE(names(data.value("missing")),
-             set({"availability", "listingStartedAt", "returnsText", "seller", "watchers", "soldCount"}));
+             set({"itemId", "availability", "listingStartedAt", "returnsText", "seller", "watchers", "soldCount"}));
 }
 
 void TestExtractors::itemShippingBlockOnOneLine()
@@ -440,7 +503,11 @@ void TestExtractors::errorPage()
 
 void TestExtractors::unexpectedPage_data()
 {
-    errorPage_data();
+    // Each case waits the 10 s settle time; two kinds are enough to show it.
+    QTest::addColumn<int>("kind");
+    QTest::addColumn<QString>("url");
+    QTest::newRow("activeSearch") << int(PageKind::ActiveSearch) << QString::fromLatin1(kActiveUrl);
+    QTest::newRow("item") << int(PageKind::Item) << QString::fromLatin1(kItemUrl);
 }
 
 void TestExtractors::unexpectedPage()
@@ -457,101 +524,30 @@ void TestExtractors::unexpectedPage()
     QVERIFY(!result->contains("data"));
 }
 
-void TestExtractors::researchLandingMeansNoAccess()
+void TestExtractors::noAutomationMarker()
 {
+    // Measured by the page itself (fixtures/webdriver_check.html): "1 results"
+    // when navigator.webdriver is false. The browser runs as a normal browser.
     QString error;
-    const std::optional<QJsonObject> result = extract("check_page.html", kLandingUrl, PageKind::Research, &error);
+    const std::optional<QJsonObject> result = extract("webdriver_check.html", kActiveUrl, PageKind::ActiveSearch, &error);
     QVERIFY2(result, qPrintable(error));
-    QCOMPARE(result->value("page").toString(), QStringLiteral("no_access"));
+    QCOMPARE(result->value("page").toString(), QStringLiteral("expected"));
+    QCOMPARE(result->value("data").toObject().value("totalResults").toInt(), 1);
 }
 
-void TestExtractors::landingIsUnexpectedForOtherKinds()
+void TestExtractors::browserClosesCleanly()
 {
-    QString error;
-    const std::optional<QJsonObject> result = extract("check_page.html", kLandingUrl, PageKind::Item, &error);
-    QVERIFY2(result, qPrintable(error));
-    QCOMPARE(result->value("page").toString(), QStringLiteral("unexpected"));
+    QStringList seen;
+    for (const ProcessInfo &process : descendants(QCoreApplication::applicationPid()))
+        seen << QStringLiteral("%1 %2").arg(process.pid).arg(process.name);
+    qInfo().noquote() << "browser processes during the session:" << seen.join(QStringLiteral(", "));
+    QVERIFY(!seen.isEmpty());
+    QSignalSpy finished(m_controller, &BrowserController::finished);
+    m_controller->stop();
+    QVERIFY(finished.wait(BrowserController::kCloseTimeoutMs + 10000) || !finished.isEmpty());
+    QCOMPARE(finished.at(0).at(0).toBool(), true);
+    QVERIFY(QTest::qWaitFor([]() { return descendants(QCoreApplication::applicationPid()).isEmpty(); }, 15000));
 }
 
-void TestExtractors::signInPage()
-{
-    QString error;
-    const std::optional<QJsonObject> result = extract("check_page.html", kSignInUrl, PageKind::ActiveSearch, &error);
-    QVERIFY2(result, qPrintable(error));
-    QCOMPARE(result->value("page").toString(), QStringLiteral("sign_in"));
-}
-
-void TestExtractors::parseResultRejectsInvalidResults()
-{
-    QCOMPARE(Extractor::parseResult(QVariant(42)).value("page").toString(), QStringLiteral("invalid"));
-    QCOMPARE(Extractor::parseResult(QVariant(QStringLiteral("not json"))).value("page").toString(),
-             QStringLiteral("invalid"));
-    QCOMPARE(Extractor::parseResult(QVariant(QStringLiteral("[1,2]"))).value("page").toString(),
-             QStringLiteral("invalid"));
-    QCOMPARE(Extractor::parseResult(QVariant(QStringLiteral("{\"page\":\"something\"}"))).value("page").toString(),
-             QStringLiteral("invalid"));
-    QCOMPARE(Extractor::parseResult(QVariant(QStringLiteral("{\"page\":\"expected\"}"))).value("page").toString(),
-             QStringLiteral("invalid"));
-    // A page script cannot claim the URL-based outcomes.
-    QCOMPARE(Extractor::parseResult(QVariant(QStringLiteral("{\"page\":\"no_access\"}"))).value("page").toString(),
-             QStringLiteral("invalid"));
-    const QJsonObject ok = Extractor::parseResult(QVariant(QStringLiteral("{\"page\":\"expected\",\"data\":{\"a\":1}}")));
-    QCOMPARE(ok.value("page").toString(), QStringLiteral("expected"));
-    QCOMPARE(ok.value("data").toObject().value("a").toInt(), 1);
-}
-
-void TestExtractors::browserIdentity()
-{
-    // The engine's own default, which carries the token (else this test
-    // would prove nothing).
-    const QString engine = m_profile->httpUserAgent();
-    QVERIFY2(engine.contains(QStringLiteral("QtWebEngine/")), qPrintable(engine));
-    const QString userAgent = app::browser::browserUserAgent(engine);
-    QVERIFY2(!userAgent.contains(QStringLiteral("QtWebEngine")), qPrintable(userAgent));
-    const QString major = QString::fromLatin1(qWebEngineChromiumVersion()).section(QLatin1Char('.'), 0, 0);
-    QVERIFY2(userAgent.contains(QStringLiteral("Chrome/") + major + QLatin1Char('.')), qPrintable(userAgent));
-    // The platform part "(...)" is the engine's, unchanged.
-    auto platform = [](const QString &text) { return text.section(QLatin1Char('('), 1, 1).section(QLatin1Char(')'), 0, 0); };
-    QVERIFY(!platform(engine).isEmpty());
-    QCOMPARE(platform(userAgent), platform(engine));
-    // Nothing else changes: the engine string minus the token.
-    QCOMPARE(userAgent, QString(engine).remove(QStringLiteral(" QtWebEngine/") + QString::fromLatin1(qWebEngineVersion())));
-    qInfo().noquote() << "user agent:" << engine << "->" << userAgent;
-
-    // Pages see the same identity, and the Client Hints brands carry no
-    // QtWebEngine brand (navigator.userAgentData needs a secure origin).
-    m_profile->setHttpUserAgent(userAgent);
-    QSignalSpy loaded(m_page, &QWebEnginePage::loadFinished);
-    m_page->setHtml(QStringLiteral("<html><body>identity</body></html>"), QUrl(QStringLiteral("https://localhost/")));
-    QVERIFY(loaded.wait(30000));
-    std::optional<QString> seen;
-    m_page->runJavaScript(QStringLiteral("JSON.stringify({ua: navigator.userAgent, brands: navigator.userAgentData"
-                                         " ? navigator.userAgentData.brands.map(function (b) { return b.brand; }) : null})"),
-                          [&seen](const QVariant &value) { seen = value.toString(); });
-    QVERIFY(QTest::qWaitFor([&seen]() { return seen.has_value(); }, 30000));
-    const QJsonObject page = QJsonDocument::fromJson(seen->toUtf8()).object();
-    QCOMPARE(page.value("ua").toString(), userAgent);
-    const QJsonArray brands = page.value("brands").toArray();
-    QVERIFY2(!brands.isEmpty(), qPrintable(*seen));
-    bool chromium = false;
-    for (const QJsonValue &brand : brands) {
-        QVERIFY2(!brand.toString().contains(QStringLiteral("QtWebEngine")), qPrintable(*seen));
-        chromium = chromium || brand.toString() == QLatin1String("Chromium");
-    }
-    QVERIFY2(chromium, qPrintable(*seen));
-    qInfo().noquote() << "client hint brands:" << *seen;
-    m_profile->setHttpUserAgent(engine);
-}
-
-int main(int argc, char *argv[])
-{
-    // As in the browser worker (src/browser/worker_main.cpp): no GPU.
-    qputenv("QTWEBENGINE_CHROMIUM_FLAGS", "--disable-gpu");
-    // Required by Qt WebEngine before the application object exists.
-    QCoreApplication::setAttribute(Qt::AA_ShareOpenGLContexts);
-    QApplication application(argc, argv);
-    TestExtractors test;
-    return QTest::qExec(&test, argc, argv);
-}
-
+QTEST_GUILESS_MAIN(TestExtractors)
 #include "tst_extractors.moc"

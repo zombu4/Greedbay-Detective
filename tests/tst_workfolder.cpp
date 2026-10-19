@@ -58,8 +58,7 @@ void TestWorkFolder::createsLayoutAndMarker()
     const std::optional<WorkFolder> folder = WorkFolder::open(root, QStringLiteral(TEST_APP_NAME), &error);
     QVERIFY2(folder, qPrintable(error));
 
-    const QStringList dirs = {folder->backupsDir(), folder->logsDir(), folder->webEngineStorageDir(),
-                              folder->webEngineCacheDir(), folder->webEngineDownloadsDir(), folder->tmpDir()};
+    const QStringList dirs = {folder->backupsDir(), folder->logsDir(), folder->browserProfilesDir(), folder->tmpDir()};
     for (const QString &dir : dirs)
         QVERIFY2(QFileInfo(dir).isDir(), qPrintable(dir));
 

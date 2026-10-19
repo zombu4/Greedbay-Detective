@@ -26,7 +26,6 @@ concurrency:
 
 env:
   QT_VERSION: "6.12.0"
-  QT_WEBENGINE: "qtwebengine@6.140.0"
   CMAKE_VERSION: "4.4.4"
   NINJA_VERSION: "1.13.2"
   NSIS_VERSION: "3.13"
@@ -177,11 +176,13 @@ jobs:
           python -m pip check
           python -m aqt version
 
-      - name: Install Qt ${{ env.QT_VERSION }} with Qt WebEngine 6.140.0
+      # qtwebsockets: the DevTools connection to the browser the app drives.
+      # qttasktree: needed by Qt Quick's CMake package (the UI, phase 6).
+      - name: Install Qt ${{ env.QT_VERSION }} with Qt WebSockets
         run: |
           set -eu
           python -m aqt install-qt "${{ matrix.qt_os }}" desktop "$QT_VERSION" "${{ matrix.qt_arch }}" \
-            -m "$QT_WEBENGINE" qtpositioning qtwebchannel qttasktree \
+            -m qtwebsockets qttasktree \
             --base https://download.qt.io \
             --keep --archive-dest "$TOOLS_DIR/qt-archives" \
             -O "$TOOLS_DIR/Qt"
@@ -202,15 +203,17 @@ jobs:
 
       # Qt's requirement for building graphical programs on Ubuntu: "sudo
       # apt-get install build-essential libgl1-mesa-dev"
-      # (https://doc.qt.io/qt-6/linux.html). The package comes from the Ubuntu
-      # archive, checked by apt's signatures; its installed version is printed.
-      - name: Install the OpenGL development files (Linux)
+      # (https://doc.qt.io/qt-6/linux.html), and xvfb: a virtual display, so
+      # the browser the extractor test drives can open its window. Packages
+      # come from the Ubuntu archive, checked by apt's signatures; their
+      # installed versions are printed.
+      - name: Install the OpenGL development files and a virtual display (Linux)
         if: runner.os == 'Linux'
         run: |
           set -eu
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends libgl1-mesa-dev
-          dpkg-query -W libgl1-mesa-dev
+          sudo apt-get install -y --no-install-recommends libgl1-mesa-dev xvfb xauth
+          dpkg-query -W libgl1-mesa-dev xvfb xauth
 
       - name: Configure
         run: cmake --preset "${{ matrix.preset }}"
@@ -231,4 +234,10 @@ jobs:
         timeout-minutes: 40
         env:
           QT_FORCE_STDERR_LOGGING: "1"
-        run: ctest --preset "${{ matrix.preset }}-release" --verbose --timeout 120
+        run: |
+          set -eu
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            xvfb-run -a ctest --preset "${{ matrix.preset }}-release" --verbose --timeout 120
+          else
+            ctest --preset "${{ matrix.preset }}-release" --verbose --timeout 120
+          fi

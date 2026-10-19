@@ -1,11 +1,8 @@
 # appcore: work folder, settings, logging, single-instance lock, version, the
-# database layer, eBay URL rules and the client side of the browser worker.
-# appcore never links Qt WebEngine: the app process starts no browser.
+# database layer, browser profiles and the eBay URL rules.
 qt_add_library(appcore STATIC
-    core/BrowserProtocol.cpp
-    core/BrowserProtocol.h
-    core/BrowserWorker.cpp
-    core/BrowserWorker.h
+    core/BrowserProfiles.cpp
+    core/BrowserProfiles.h
     core/Logging.cpp
     core/Logging.h
     core/PathChecks.h
@@ -13,8 +10,6 @@ qt_add_library(appcore STATIC
     core/Settings.h
     core/SingleInstance.cpp
     core/SingleInstance.h
-    core/WebEngineData.cpp
-    core/WebEngineData.h
     core/WorkFolder.cpp
     core/WorkFolder.h
     db/Database.cpp
@@ -48,24 +43,24 @@ qt_add_resources(appcore "migrations"
         db/migrations/0001_init.sql
 )
 
-# appbrowser: the Qt WebEngine browser session and the page extractors. Linked
-# only into the browser worker and the tests that load pages.
+# appbrowser: drives the user's installed browser over the DevTools protocol
+# and holds the page extractors.
 qt_add_library(appbrowser STATIC
-    browser/BrowserIdentity.cpp
-    browser/BrowserIdentity.h
-    browser/BrowserPage.cpp
-    browser/BrowserPage.h
-    browser/BrowserSession.cpp
-    browser/BrowserSession.h
-    browser/BrowserWindow.cpp
-    browser/BrowserWindow.h
+    browser/BrowserCatalog.cpp
+    browser/BrowserCatalog.h
+    browser/BrowserController.cpp
+    browser/BrowserController.h
+    browser/CdpConnection.cpp
+    browser/CdpConnection.h
     browser/Extractor.cpp
     browser/Extractor.h
-    browser/WorkerHost.cpp
-    browser/WorkerHost.h
 )
 
-target_link_libraries(appbrowser PUBLIC appcore Qt6::Widgets Qt6::WebEngineCore Qt6::WebEngineWidgets)
+target_link_libraries(appbrowser PUBLIC appcore Qt6::Network Qt6::WebSockets)
+if(APPLE)
+    # Launch Services finds installed browsers by bundle identifier.
+    target_link_libraries(appbrowser PRIVATE "-framework CoreServices" "-framework CoreFoundation")
+endif()
 
 app_enable_warnings(appbrowser)
 
@@ -79,28 +74,3 @@ qt_add_resources(appbrowser "extractors"
         browser/extractors/research.js
         browser/extractors/search.js
 )
-
-# The browser worker process (<APP_NAME>Browser). WIN32: a Windows GUI program,
-# so starting it opens no console window. Not a macOS bundle.
-function(app_add_browser_worker target output_name)
-    qt_add_executable(${target} WIN32 browser/worker_main.cpp)
-    # QT_WINDOWS_APP_PROJECT_IDENTIFIER: the identity in the Windows manifest
-    # Qt generates (that manifest also declares Windows 10/11 support, so the
-    # browser reports the real Windows version in its user agent).
-    set_target_properties(${target} PROPERTIES
-        OUTPUT_NAME "${output_name}"
-        QT_WINDOWS_APP_PROJECT_IDENTIFIER "${APP_BUNDLE_ID}.${output_name}")
-    target_link_libraries(${target} PRIVATE appbrowser)
-    if(WIN32)
-        # CommandLineToArgvW (the Unicode command line) is in shell32.
-        target_link_libraries(${target} PRIVATE shell32)
-    endif()
-    app_enable_warnings(${target})
-endfunction()
-
-app_add_browser_worker(browserworker "${APP_NAME}Browser")
-
-# The same worker built for tests only: it may also open local fixture pages
-# (file: URLs and http://127.0.0.1). Never installed or shipped.
-app_add_browser_worker(browserworker_test "${APP_NAME}BrowserTest")
-target_compile_definitions(browserworker_test PRIVATE APP_BROWSER_ALLOW_LOCAL_TEST_PAGES)
