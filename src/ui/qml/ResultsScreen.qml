@@ -207,9 +207,19 @@ Item {
                 }
             }
 
+            // Every search found nothing: say so instead of empty tables.
+            FlagCard {
+                Layout.fillWidth: true
+                visible: screen.results.emptyMessage.length > 0
+                kind: "warn"
+                label: "NOTHING FOUND"
+                lines: [screen.results.emptyMessage]
+            }
+
             // What the same item sold for.
             Card {
                 Layout.fillWidth: true
+                visible: screen.results.emptyMessage.length === 0
                 ColumnLayout {
                     anchors.fill: parent
                     spacing: 12
@@ -283,6 +293,7 @@ Item {
 
             // Tabs.
             RowLayout {
+                visible: screen.results.emptyMessage.length === 0
                 spacing: 8
                 Repeater {
                     model: [
@@ -326,6 +337,7 @@ Item {
 
             Card {
                 Layout.fillWidth: true
+                visible: screen.results.emptyMessage.length === 0
                 ColumnLayout {
                     anchors.fill: parent
                     spacing: 8

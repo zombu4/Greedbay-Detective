@@ -462,6 +462,18 @@ QString ResultsController::barSource() const
     return {};
 }
 
+QString ResultsController::emptyMessage() const
+{
+    const lookup::LookupResult &result = m_saved.result;
+    if (result.status != QLatin1String("complete") || result.queries.isEmpty() || !m_saved.rows.isEmpty())
+        return {};
+    QStringList quoted;
+    for (const QString &query : result.queries)
+        quoted.append(QLatin1Char('"') + query + QLatin1Char('"'));
+    return QStringLiteral("eBay found nothing for %1 - check the brand and model (Wrong item? Correct it)")
+        .arg(quoted.join(QStringLiteral(", ")));
+}
+
 QStringList ResultsController::sideLines() const
 {
     const lookup::LookupResult &result = m_saved.result;

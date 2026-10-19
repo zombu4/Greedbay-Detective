@@ -99,6 +99,7 @@ private slots:
     void everyScreenLoads();
     void savedLookupReopens();
     void panelsLoad();
+    void nothingFoundIsSaid();
 };
 
 void TestUi::initTestCase()
@@ -390,6 +391,32 @@ void TestUi::panelsLoad()
         QVERIFY(popup);
     }
     QVERIFY2(g_warnings.isEmpty(), qPrintable(g_warnings.join(QLatin1Char('\n'))));
+}
+
+// Owner case 10: every search came back empty -> a plain sentence instead of
+// empty tables (and none while rows exist, see savedLookupReopens).
+void TestUi::nothingFoundIsSaid()
+{
+    LookupResult result;
+    result.status = QStringLiteral("complete");
+    result.item.itemId = QStringLiteral("100000000095");
+    result.item.title = QStringLiteral("Acme Z9 supply");
+    result.identity.brandName = QStringLiteral("Acme");
+    result.identity.model = QStringLiteral("Z9");
+    result.identity.confident = true;
+    result.queries = {QStringLiteral("Acme Z9"), QStringLiteral("Acme Corp Z9")};
+    QString error;
+    const std::optional<qint64> id = LookupStore(QStringLiteral("app")).save(
+        QStringLiteral("100000000095"), result, {}, Valuation(), app::lookup::Depths{240, 240, 200}, 1095, &error);
+    QVERIFY2(id, qPrintable(error));
+    app::ui::Backend backend(*m_folder, QStringLiteral("app"));
+    std::unique_ptr<app::ui::PhotoProvider> photos(backend.takePhotoProvider());
+    QVERIFY(backend.openSaved(*id));
+    QCOMPARE(backend.results()->emptyMessage(),
+             QStringLiteral("eBay found nothing for \"Acme Z9\", \"Acme Corp Z9\" - check the brand and model "
+                            "(Wrong item? Correct it)"));
+    QVERIFY(backend.openSaved(m_lookupId));
+    QCOMPARE(backend.results()->emptyMessage(), QString());
 }
 
 int main(int argc, char *argv[])

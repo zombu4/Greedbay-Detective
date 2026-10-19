@@ -38,6 +38,7 @@ struct Identity {
     QList<BrandName> allNames; // every name of the brand, with its scope
     QString model;             // manufacturer's spelling; empty when unknown
     QStringList family;        // codes that count as the same item
+    bool searchFamily = false; // the family members are searched too
     QString productName;
     QString category;          // of a known model; empty otherwise
     QStringList notes;         // known-issue notes of the model
@@ -60,9 +61,10 @@ Identity identify(const ItemRecord &item, const KnownModels &known, const MatchW
 // product name and notes when the brand has that model.
 Identity identityFromUser(const ConfirmedIdentity &entered, const KnownModels &known, const QString &source);
 
-// One query per search name of the brand: "<name> <model>" (rules 21, 23).
-// No model-only queries and no spelling variants. Empty when the identity
-// cannot be searched.
+// One query per search name of the brand: "<name> <model>" (rules 21, 23),
+// and, for a known model whose data sets searchFamily, also "<name>
+// <member>" for every family member (owner case 10). No model-only queries
+// and no spelling variants. Empty when the identity cannot be searched.
 QStringList buildQueries(const Identity &identity);
 
 // True when words[index] is a specification, not a model (rule 24): a

@@ -73,6 +73,26 @@
                     "name": "Heathkit",
                     "search": true,
                     "source": "owner"
+                },
+                {
+                    "name": "Heath Company",
+                    "search": false,
+                    "source": "https://shop.heathkit.com/ (the company's own page: \"Heath Company - [About us]\")"
+                },
+                {
+                    "name": "Heath Co",
+                    "search": false,
+                    "source": "https://www.radiomuseum.org/dsp_hersteller_detail.cfm?company_id=2576 (reference site: \"Heathkit (Brand), Heath Co.; Benton Harbor (MI)\")"
+                },
+                {
+                    "name": "Heath",
+                    "search": false,
+                    "source": "https://en.wikipedia.org/wiki/Heathkit (Wikipedia: \"The Heath Company was founded as an aircraft company in 1911\")"
+                },
+                {
+                    "name": "Heath Zenith",
+                    "search": false,
+                    "source": "https://en.wikipedia.org/wiki/Heathkit (Wikipedia: Zenith bought Heath Company in 1979; \"Heath/Zenith Computers & Electronics Centers\"); as sellers' item specifics write it: owner case 10"
                 }
             ]
         },
@@ -206,6 +226,38 @@
                 "source": "https://www.scribd.com/document/583843570/Sencore-VG-91-Operators-Manual"
             },
             "family": [],
+            "notes": []
+        },
+        {
+            "brand": "heathkit",
+            "model": "IP-2717A",
+            "source": "owner (matching-cases.md case 10: the item specifics of listing 237132663160)",
+            "category": {
+                "name": "test equipment",
+                "source": "owner (case 10: high voltage power supply)"
+            },
+            "family": [
+                {
+                    "model": "IP-17",
+                    "source": "owner decision 2026-10-19, case 10: IP-17, IP-2717, IP-2717A, SP-2717, SP-2717A are one item; PS-4 and IP-32 are not"
+                },
+                {
+                    "model": "IP-2717",
+                    "source": "owner decision 2026-10-19, case 10: IP-17, IP-2717, IP-2717A, SP-2717, SP-2717A are one item; PS-4 and IP-32 are not"
+                },
+                {
+                    "model": "SP-2717",
+                    "source": "owner decision 2026-10-19, case 10: IP-17, IP-2717, IP-2717A, SP-2717, SP-2717A are one item; PS-4 and IP-32 are not"
+                },
+                {
+                    "model": "SP-2717A",
+                    "source": "owner decision 2026-10-19, case 10: IP-17, IP-2717, IP-2717A, SP-2717, SP-2717A are one item; PS-4 and IP-32 are not"
+                }
+            ],
+            "searchFamily": {
+                "value": true,
+                "source": "owner decision 2026-10-19, case 10 (search the family; eBay's website help documents no \"(a,b)\" form, so one query per member)"
+            },
             "notes": []
         }
     ]

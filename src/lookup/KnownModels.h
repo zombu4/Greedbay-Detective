@@ -42,6 +42,9 @@ struct KnownModel {
     QString productName;
     QString category; // e.g. "test equipment"; empty when not recorded
     QStringList family;
+    // The family members are searched too (one query each), not only
+    // matched; off unless the data says so (owner rule 21, case 10).
+    bool searchFamily = false;
     QStringList notes;
 };
 

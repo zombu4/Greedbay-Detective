@@ -71,6 +71,7 @@ void setKnownModel(Identity *identity, const KnownModel &model)
 {
     identity->model = model.model;
     identity->family = model.family;
+    identity->searchFamily = model.searchFamily;
     identity->productName = model.productName;
     identity->category = model.category;
     identity->notes = model.notes;
@@ -274,10 +275,19 @@ QStringList buildQueries(const Identity &identity)
     QStringList queries;
     if (!identity.canSearch())
         return queries;
+    // The model, then (when the data says so) each family member: eBay's
+    // website help documents "(a OR b)" but not the "(a,b)" form for the
+    // search box (it is documented only for eBay's developer API, KB 2190),
+    // so every member is its own query, each a page load of its own.
+    QStringList codes{identity.model};
+    if (identity.searchFamily)
+        codes.append(identity.family);
     for (const QString &name : identity.searchNames) {
-        const QString query = name + QLatin1Char(' ') + identity.model;
-        if (!queries.contains(query, Qt::CaseInsensitive))
-            queries.append(query);
+        for (const QString &code : std::as_const(codes)) {
+            const QString query = name + QLatin1Char(' ') + code;
+            if (!queries.contains(query, Qt::CaseInsensitive))
+                queries.append(query);
+        }
     }
     return queries;
 }

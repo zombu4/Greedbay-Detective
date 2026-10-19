@@ -58,6 +58,7 @@ private slots:
     void rows();
     void valueOverAllRows();
     void partsKitIsNotCheapest();
+    void heathZenithFamily();
     void shippingCheck();
 };
 
@@ -500,6 +501,38 @@ void TestMatching::partsKitIsNotCheapest()
     const Valuation valuation = valuate(result, rows, app::ValueSettings());
     QCOMPARE(valuation.forSale, QList<qint64>({9500, 12000}));
     QCOMPARE(valuation.cheaperForSale, 1);
+}
+
+// Case 10: "Brand: Heath Zenith" is Heathkit; IP-17, IP-2717, IP-2717A,
+// SP-2717, SP-2717A are one item and each is searched; "Zenith" alone is
+// its own brand; PS-4 and IP-32 are other items.
+void TestMatching::heathZenithFamily()
+{
+    ItemRecord item;
+    item.itemId = QStringLiteral("100000000097");
+    item.title = QStringLiteral("Heathkit Zenith SP-2717A High Voltage Power Supply Military Radio & Tube-Tested");
+    item.specifics = {{QStringLiteral("Brand"), QStringLiteral("Heath Zenith")}, {QStringLiteral("Model"), QStringLiteral("IP-2717A")}};
+    const Identity identity = identify(item, m_known, m_words);
+    QVERIFY2(identity.confident, qPrintable(identity.reason));
+    QCOMPARE(identity.brandId, QStringLiteral("heathkit"));
+    QCOMPARE(identity.model, QStringLiteral("IP-2717A"));
+    QCOMPARE(buildQueries(identity), QStringList({"Heathkit IP-2717A", "Heathkit IP-17", "Heathkit IP-2717", "Heathkit SP-2717",
+                                                  "Heathkit SP-2717A"}));
+    for (const char *title : {"Heath Zenith SP-2717 high voltage power supply", "Heathkit IP-17 high voltage supply",
+                              "Heath IP-2717A power supply", "Heath/Zenith IP-2717 supply"}) {
+        const Match match = matchRow(QString::fromLatin1(title), identity, m_words);
+        QVERIFY2(match.bucket == Bucket::SameItem, title);
+    }
+    for (const char *title : {"Heathkit PS-4 regulated power supply", "Heathkit IP-32 power supply"})
+        QCOMPARE(matchRow(QString::fromLatin1(title), identity, m_words).bucket, Bucket::NoMatch);
+
+    ItemRecord zenith;
+    zenith.itemId = QStringLiteral("100000000098");
+    zenith.title = QStringLiteral("Zenith Trans-Oceanic H500 radio");
+    zenith.specifics = {{QStringLiteral("Brand"), QStringLiteral("Zenith")}, {QStringLiteral("Model"), QStringLiteral("H500")}};
+    const Identity radio = identify(zenith, m_known, m_words);
+    QVERIFY(radio.brandId != QStringLiteral("heathkit"));
+    QCOMPARE(radio.brandName, QStringLiteral("Zenith"));
 }
 
 void TestMatching::shippingCheck()

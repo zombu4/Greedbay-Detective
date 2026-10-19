@@ -361,7 +361,7 @@ void TestExtractors::itemFromJsonLd()
     // The local test URL is not an eBay URL, so the item number is missing
     // (itemIdFromUrl accepts ebay.com only; tested in tst_pagecheck).
     QVERIFY(data.value("itemId").isNull());
-    QCOMPARE(data.value("title").toString(), QStringLiteral("Acme Model 7 Digital Multimeter (JSON-LD title)"));
+    QCOMPARE(data.value("title").toString(), QStringLiteral("Acme Model 7 Digital Multimeter & Case 'Pro' &lt; (JSON-LD title)"));
     QCOMPARE(data.value("titleSource").toString(), QStringLiteral("json-ld"));
     QCOMPARE(data.value("imageUrl").toString(), QStringLiteral("https://images.example.com/acme-model-7-front.jpg"));
     QCOMPARE(data.value("priceCents").toInt(), 24995);

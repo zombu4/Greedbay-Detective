@@ -118,6 +118,14 @@ std::optional<KnownModels> KnownModels::fromJson(const QByteArray &json, bool re
                 return fail(QStringLiteral("the category of %1 has no source").arg(model.model));
             model.category = category.value(QStringLiteral("name")).toString().simplified();
         }
+        // "searchFamily": {"value": true, "source": ...}: every family member
+        // is searched too, not only matched (owner case 10).
+        const QJsonObject searchFamily = object.value(QStringLiteral("searchFamily")).toObject();
+        if (!searchFamily.isEmpty()) {
+            if (requireSources && !hasSource(searchFamily))
+                return fail(QStringLiteral("searchFamily of %1 has no source").arg(model.model));
+            model.searchFamily = searchFamily.value(QStringLiteral("value")).toBool();
+        }
         for (const QJsonValue &memberValue : object.value(QStringLiteral("family")).toArray()) {
             const QJsonObject member = memberValue.toObject();
             if (requireSources && !hasSource(member))

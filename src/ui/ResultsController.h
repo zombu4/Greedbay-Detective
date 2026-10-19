@@ -134,6 +134,9 @@ class ResultsController : public QObject {
     Q_PROPERTY(double thisValue READ thisValue NOTIFY changed)
     Q_PROPERTY(double cheapestValue READ cheapestValue NOTIFY changed)
     Q_PROPERTY(QString cheapestLabel READ cheapestLabel NOTIFY changed)
+    // Owner case 10: every search found nothing (no sold, no for sale, no
+    // research row) -> this sentence instead of empty tables; else empty.
+    Q_PROPERTY(QString emptyMessage READ emptyMessage NOTIFY changed)
     // Side lines.
     Q_PROPERTY(QStringList sideLines READ sideLines NOTIFY changed)
     // Tabs.
@@ -201,6 +204,7 @@ public:
     double cheapestValue() const { return m_bar.cheapest; }
     QString cheapestLabel() const;
     QStringList sideLines() const;
+    QString emptyMessage() const;
     RowsModel *sameItem() const { return m_sameItem; }
     RowsModel *notThisItem() const { return m_notThisItem; }
 

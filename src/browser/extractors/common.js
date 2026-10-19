@@ -118,8 +118,38 @@ function missingKeyElements(reason) {
                                : notExpected('unexpected', reason);
 }
 
+// HTML character references left in text (JSON-LD strings carry them, e.g.
+// "Radio &amp; Tube-Tested", owner case 10): &amp; &quot; &#39; &apos;
+// &lt; &gt; and numeric ones (&#38; &#x26;), decoded in one pass, so
+// "&amp;lt;" becomes "&lt;". Anything else is left as it is.
+const NAMED_ENTITIES = {amp: '&', quot: '"', apos: "'", lt: '<', gt: '>'};
+function decodeEntities(text) {
+    return text.replace(/&(?:#(\d{1,7})|#[xX]([0-9A-Fa-f]{1,6})|(amp|quot|apos|lt|gt));/g, function (all, dec, hex, name) {
+        if (name)
+            return NAMED_ENTITIES[name];
+        const code = dec ? parseInt(dec, 10) : parseInt(hex, 16);
+        return code > 0 && code <= 0x10FFFF && !(code >= 0xD800 && code <= 0xDFFF) ? String.fromCodePoint(code) : all;
+    });
+}
+
+// Every string in `value` (objects and arrays included) decoded.
+function decodeAll(value) {
+    if (typeof value === 'string')
+        return value.indexOf('&') >= 0 ? decodeEntities(value) : value;
+    if (Array.isArray(value))
+        return value.map(decodeAll);
+    if (value !== null && typeof value === 'object') {
+        const out = {};
+        for (const key of Object.keys(value))
+            out[key] = decodeAll(value[key]);
+        return out;
+    }
+    return value;
+}
+
+// Every text field an extractor returns goes through decodeAll.
 function expected(data) {
-    return {page: 'expected', data: data};
+    return {page: 'expected', data: decodeAll(data)};
 }
 
 function notExpected(page, reason) {
