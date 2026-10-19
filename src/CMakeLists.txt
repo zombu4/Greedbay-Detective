@@ -51,6 +51,8 @@ qt_add_resources(appcore "migrations"
 # appbrowser: the Qt WebEngine browser session and the page extractors. Linked
 # only into the browser worker and the tests that load pages.
 qt_add_library(appbrowser STATIC
+    browser/BrowserIdentity.cpp
+    browser/BrowserIdentity.h
     browser/BrowserPage.cpp
     browser/BrowserPage.h
     browser/BrowserSession.cpp
@@ -82,7 +84,12 @@ qt_add_resources(appbrowser "extractors"
 # so starting it opens no console window. Not a macOS bundle.
 function(app_add_browser_worker target output_name)
     qt_add_executable(${target} WIN32 browser/worker_main.cpp)
-    set_target_properties(${target} PROPERTIES OUTPUT_NAME "${output_name}")
+    # QT_WINDOWS_APP_PROJECT_IDENTIFIER: the identity in the Windows manifest
+    # Qt generates (that manifest also declares Windows 10/11 support, so the
+    # browser reports the real Windows version in its user agent).
+    set_target_properties(${target} PROPERTIES
+        OUTPUT_NAME "${output_name}"
+        QT_WINDOWS_APP_PROJECT_IDENTIFIER "${APP_BUNDLE_ID}.${output_name}")
     target_link_libraries(${target} PRIVATE appbrowser)
     if(WIN32)
         # CommandLineToArgvW (the Unicode command line) is in shell32.

@@ -1,5 +1,6 @@
 #include "browser/BrowserSession.h"
 
+#include "browser/BrowserIdentity.h"
 #include "browser/BrowserPage.h"
 #include "browser/BrowserWindow.h"
 #include "browser/Extractor.h"
@@ -158,6 +159,10 @@ bool BrowserSession::init(QString *error)
     if (QDir::cleanPath(m_profile->persistentStoragePath()) != QDir::cleanPath(m_folder.webEngineStorageDir())
         || QDir::cleanPath(m_profile->cachePath()) != QDir::cleanPath(m_folder.webEngineCacheDir()))
         return fail(QStringLiteral("Qt WebEngine did not accept the work folder paths"));
+    // A normal Chrome identity without the QtWebEngine token, for every page
+    // of the profile, the sign-in window included (see BrowserIdentity.h).
+    m_profile->setHttpUserAgent(browserUserAgent(m_profile->httpUserAgent()));
+    qCInfo(lcSession).noquote() << "user agent:" << m_profile->httpUserAgent();
     m_profile->setDownloadPath(m_folder.webEngineDownloadsDir());
     m_profile->setSpellCheckEnabled(false);
     m_profile->setPushServiceEnabled(false);

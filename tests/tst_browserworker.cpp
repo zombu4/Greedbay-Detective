@@ -95,6 +95,7 @@ private:
     QTcpServer m_server;
     QByteArray m_page;
     int m_requests = 0;
+    QString m_userAgent;
     QMap<qint64, QString> m_seen;
     QStringList m_sandbox;
 
@@ -115,6 +116,11 @@ void TestBrowserWorker::onConnection()
             if (!request.contains("\r\n\r\n"))
                 return;
             ++m_requests;
+            // The identity the worker's browser announces.
+            for (const QByteArray &header : request.split('\n')) {
+                if (header.toLower().startsWith("user-agent:"))
+                    m_userAgent = QString::fromLatin1(header.mid(11).trimmed());
+            }
             const QList<QByteArray> requestLine = request.left(request.indexOf("\r\n")).split(' ');
             const QByteArray path = requestLine.size() >= 2 ? requestLine.at(1) : QByteArray();
             QByteArray response;
@@ -203,6 +209,16 @@ void TestBrowserWorker::fetchThroughTheWorker()
     QCOMPARE(items.at(0).toObject().value(QStringLiteral("itemId")).toString(), QStringLiteral("100000000040"));
     QCOMPARE(items.at(0).toObject().value(QStringLiteral("price")).toObject().value(QStringLiteral("minCents")).toInt(), 999);
     QVERIFY(m_requests >= 1);
+    // A normal Chrome identity: no QtWebEngine token, the engine's Chrome
+    // version, and on Windows the real Windows version (Qt's manifest
+    // declares Windows 10/11 support; without it Windows reports "NT 6.2").
+    qInfo().noquote() << "user agent sent by the worker:" << m_userAgent;
+    QVERIFY2(!m_userAgent.isEmpty(), "no User-Agent header received");
+    QVERIFY2(!m_userAgent.contains(QStringLiteral("QtWebEngine")), qPrintable(m_userAgent));
+    QVERIFY2(m_userAgent.contains(QStringLiteral("Chrome/")), qPrintable(m_userAgent));
+#if defined(Q_OS_WIN)
+    QVERIFY2(m_userAgent.contains(QStringLiteral("Windows NT 10.0")), qPrintable(m_userAgent));
+#endif
 
     // The session holds the lock: sign-out refuses and deletes nothing.
     QVERIFY(!WebEngineData::clear(*m_folder, &error));

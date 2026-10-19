@@ -2,6 +2,7 @@
 // real QWebEnginePage under the eBay URL it stands for, and the extractor's
 // result is checked field by field. Runs with the offscreen platform in CI;
 // no network is used (setHtml loads the fixture from memory).
+#include "browser/BrowserIdentity.h"
 #include "browser/Extractor.h"
 
 #include <QApplication>
@@ -14,6 +15,7 @@
 #include <QWebEnginePage>
 #include <QWebEngineProfile>
 #include <QWebEngineProfileBuilder>
+#include <qtwebenginecoreglobal.h>
 
 #include <optional>
 
@@ -79,6 +81,7 @@ private slots:
     void landingIsUnexpectedForOtherKinds();
     void signInPage();
     void parseResultRejectsInvalidResults();
+    void browserIdentity();
 };
 
 std::optional<QJsonObject> TestExtractors::extract(const char *fixture, const char *url, PageKind kind,
@@ -495,6 +498,49 @@ void TestExtractors::parseResultRejectsInvalidResults()
     const QJsonObject ok = Extractor::parseResult(QVariant(QStringLiteral("{\"page\":\"expected\",\"data\":{\"a\":1}}")));
     QCOMPARE(ok.value("page").toString(), QStringLiteral("expected"));
     QCOMPARE(ok.value("data").toObject().value("a").toInt(), 1);
+}
+
+void TestExtractors::browserIdentity()
+{
+    // The engine's own default, which carries the token (else this test
+    // would prove nothing).
+    const QString engine = m_profile->httpUserAgent();
+    QVERIFY2(engine.contains(QStringLiteral("QtWebEngine/")), qPrintable(engine));
+    const QString userAgent = app::browser::browserUserAgent(engine);
+    QVERIFY2(!userAgent.contains(QStringLiteral("QtWebEngine")), qPrintable(userAgent));
+    const QString major = QString::fromLatin1(qWebEngineChromiumVersion()).section(QLatin1Char('.'), 0, 0);
+    QVERIFY2(userAgent.contains(QStringLiteral("Chrome/") + major + QLatin1Char('.')), qPrintable(userAgent));
+    // The platform part "(...)" is the engine's, unchanged.
+    auto platform = [](const QString &text) { return text.section(QLatin1Char('('), 1, 1).section(QLatin1Char(')'), 0, 0); };
+    QVERIFY(!platform(engine).isEmpty());
+    QCOMPARE(platform(userAgent), platform(engine));
+    // Nothing else changes: the engine string minus the token.
+    QCOMPARE(userAgent, QString(engine).remove(QStringLiteral(" QtWebEngine/") + QString::fromLatin1(qWebEngineVersion())));
+    qInfo().noquote() << "user agent:" << engine << "->" << userAgent;
+
+    // Pages see the same identity, and the Client Hints brands carry no
+    // QtWebEngine brand (navigator.userAgentData needs a secure origin).
+    m_profile->setHttpUserAgent(userAgent);
+    QSignalSpy loaded(m_page, &QWebEnginePage::loadFinished);
+    m_page->setHtml(QStringLiteral("<html><body>identity</body></html>"), QUrl(QStringLiteral("https://localhost/")));
+    QVERIFY(loaded.wait(30000));
+    std::optional<QString> seen;
+    m_page->runJavaScript(QStringLiteral("JSON.stringify({ua: navigator.userAgent, brands: navigator.userAgentData"
+                                         " ? navigator.userAgentData.brands.map(function (b) { return b.brand; }) : null})"),
+                          [&seen](const QVariant &value) { seen = value.toString(); });
+    QVERIFY(QTest::qWaitFor([&seen]() { return seen.has_value(); }, 30000));
+    const QJsonObject page = QJsonDocument::fromJson(seen->toUtf8()).object();
+    QCOMPARE(page.value("ua").toString(), userAgent);
+    const QJsonArray brands = page.value("brands").toArray();
+    QVERIFY2(!brands.isEmpty(), qPrintable(*seen));
+    bool chromium = false;
+    for (const QJsonValue &brand : brands) {
+        QVERIFY2(!brand.toString().contains(QStringLiteral("QtWebEngine")), qPrintable(*seen));
+        chromium = chromium || brand.toString() == QLatin1String("Chromium");
+    }
+    QVERIFY2(chromium, qPrintable(*seen));
+    qInfo().noquote() << "client hint brands:" << *seen;
+    m_profile->setHttpUserAgent(engine);
 }
 
 int main(int argc, char *argv[])
