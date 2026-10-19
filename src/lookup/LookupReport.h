@@ -9,10 +9,11 @@
 namespace app::lookup {
 
 // The numbers of a lookup, phase-3b form (no matching, no verdict words):
-// every sold record found counts; matching comes in phase 4.
+// every confirmed sold-search record found counts (matching comes in phase
+// 4); Product Research rows, averages per listing, are not in them.
 struct LookupNumbers {
-    // Confirmed sold records (sold search, no "Best offer accepted") with a
-    // known total (price + shipping).
+    // Confirmed sold records (sold search, no "Best offer accepted", and
+    // Product Research not refused) with a known total (price + shipping).
     int confirmedWithTotal = 0;
     std::optional<qint64> medianCents;
     std::optional<qint64> p25Cents;

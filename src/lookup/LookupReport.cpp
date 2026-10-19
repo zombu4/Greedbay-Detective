@@ -107,7 +107,8 @@ QString reportText(const LookupResult &result)
         (record.confirmed ? confirmed : unconfirmed).append(record);
     soldTable(&out, QStringLiteral("SOLD, CONFIRMED (price shown is the price paid)"), confirmed);
     out.append(QString());
-    soldTable(&out, QStringLiteral("SOLD, UNCONFIRMED (Best offer accepted: the price paid is not shown)"), unconfirmed);
+    soldTable(&out, QStringLiteral("SOLD, UNCONFIRMED (the price paid is not shown: Best offer accepted, an offer row the "
+                                   "app does not know, or no Product Research access)"), unconfirmed);
     out.append(QString());
 
     const QList<int> activeWidths{11, 21, 9, 12, 13};
@@ -141,7 +142,8 @@ QString reportText(const LookupResult &result)
     out.append(QString());
 
     const LookupNumbers numbers = computeNumbers(result);
-    out.append(QStringLiteral("NUMBERS (every sold record found counts; no matching yet)"));
+    out.append(QStringLiteral("NUMBERS (confirmed sold-search records only, every one found: no matching yet; Product "
+                              "Research rows are not in these numbers)"));
     out.append(QStringLiteral("  confirmed sold totals: %1").arg(numbers.confirmedWithTotal));
     if (numbers.medianCents) {
         out.append(QStringLiteral("  median %1, P25 %2, P75 %3")

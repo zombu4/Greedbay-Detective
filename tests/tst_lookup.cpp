@@ -110,6 +110,9 @@ private slots:
     void fullLookup();
     void researchWithoutAccess();
     void stopsOnUnexpectedPage();
+    void repeatsAcrossPagesAreSkipped();
+    void unknownPageCountStopsPaging();
+    void itemNumberIsNotFilledIn();
     void stopsAtDailyCap();
     void cancelStopsAfterCurrentPage();
     void cancelWhileWaitingForQueries();
@@ -140,15 +143,15 @@ LookupRunner *TestLookup::runnerWithItem()
 
 void TestLookup::modelTokens()
 {
-    QCOMPARE(app::lookup::modelTokens(QStringLiteral("Fluke 87 V True RMS"), true), QStringList({"87V"}));
-    QCOMPARE(app::lookup::modelTokens(QStringLiteral("Fluke 87-V and 87V"), true), QStringList({"87V"}));
-    QCOMPARE(app::lookup::modelTokens(QStringLiteral("HP 8904a (Opt 001)"), true), QStringList({"8904A"}));
+    QCOMPARE(app::lookup::modelTokens(QStringLiteral("Acme 42 V True RMS"), true), QStringList({"42V"}));
+    QCOMPARE(app::lookup::modelTokens(QStringLiteral("Acme 42-V and 42V"), true), QStringList({"42V"}));
+    QCOMPARE(app::lookup::modelTokens(QStringLiteral("Acme 7904a (Opt 001)"), true), QStringList({"7904A"}));
     // Bare numbers count only where no letter is required.
     QCOMPARE(app::lookup::modelTokens(QStringLiteral("Model 465 6000 counts"), true), QStringList());
     QCOMPARE(app::lookup::modelTokens(QStringLiteral("465"), false), QStringList({"465"}));
-    // A lower-case single letter is not joined ("87 a" stays apart).
-    QCOMPARE(app::lookup::modelTokens(QStringLiteral("87 a"), false), QStringList({"87"}));
-    QCOMPARE(app::lookup::modelTokens(QStringLiteral("U1241AN, U1242C/B"), true), QStringList({"U1241AN", "U1242C"}));
+    // A lower-case single letter is not joined ("42 a" stays apart).
+    QCOMPARE(app::lookup::modelTokens(QStringLiteral("42 a"), false), QStringList({"42"}));
+    QCOMPARE(app::lookup::modelTokens(QStringLiteral("Q1241AN, Q1242C/B"), true), QStringList({"Q1241AN", "Q1242C"}));
     QCOMPARE(canonicalModel(QStringLiteral("m7-x.2")), QStringLiteral("M7X2"));
 }
 
@@ -182,7 +185,7 @@ void TestLookup::itemInput_data()
     QTest::newRow("http") << "http://www.ebay.com/itm/100000000050" << "";
     QTest::newRow("other site") << "https://www.example.com/itm/100000000050" << "";
     QTest::newRow("search page") << "https://www.ebay.com/sch/i.html?_nkw=x" << "";
-    QTest::newRow("text") << "fluke 87v" << "";
+    QTest::newRow("text") << "acme m7x" << "";
 }
 
 void TestLookup::itemInput()
@@ -330,12 +333,21 @@ void TestLookup::researchWithoutAccess()
     QVERIFY(runner);
     QSignalSpy finished(runner, &LookupRunner::finished);
     QString error;
-    QVERIFY(runner->startComps({QStringLiteral("M7X"), QStringLiteral("B2")}, Depths{0, 0, 200}, 90, &error));
-    QCOMPARE(m_requests.size(), 2);
-    QCOMPARE(m_requests.at(1).kind, PageKind::Research);
+    QVERIFY(runner->startComps({QStringLiteral("M7X"), QStringLiteral("B2")}, Depths{240, 0, 200}, 90, &error));
+    runner->onReply(okReply(searchPage(1, 3, false)));
+    runner->onReply(okReply(searchPage(4, 2, false)));
+    QCOMPARE(runner->result().sold.size(), 5);
+    QVERIFY(runner->result().sold.at(0).confirmed);
+    QCOMPARE(m_requests.size(), 4);
+    QCOMPARE(m_requests.at(3).kind, PageKind::Research);
     runner->onReply(QJsonObject{{"status", "unexpected_page"}, {"page", "no_access"}, {"reason", "Seller Hub start page"}});
-    // Research is skipped for every query; the lookup still completes.
-    QCOMPARE(m_requests.size(), 2);
+    // Research is skipped for every query; the lookup still completes, and
+    // (owner decision Q22) every sold price is now unconfirmed.
+    QCOMPARE(m_requests.size(), 4);
+    for (const SearchRecord &record : runner->result().sold)
+        QVERIFY(!record.confirmed);
+    QCOMPARE(computeNumbers(runner->result()).confirmedWithTotal, 0);
+    QCOMPARE(computeNumbers(runner->result()).medianCents, std::nullopt);
     QCOMPARE(finished.size(), 1);
     QCOMPARE(runner->result().status, QStringLiteral("complete"));
     QVERIFY(runner->result().researchUnavailable);
@@ -358,6 +370,58 @@ void TestLookup::stopsOnUnexpectedPage()
              qPrintable(runner->result().message));
     // What was collected before stays.
     QCOMPARE(runner->result().sold.size(), 3);
+}
+
+void TestLookup::repeatsAcrossPagesAreSkipped()
+{
+    LookupRunner *runner = runnerWithItem();
+    QVERIFY(runner);
+    QString error;
+    QVERIFY(runner->startComps({QStringLiteral("M7X")}, Depths{480, 0, 0}, 90, &error));
+    // Page 2 starts with the last 2 cards of page 1 (the pages shifted).
+    runner->onReply(okReply(searchPage(1, 240, true)));
+    runner->onReply(okReply(searchPage(239, 10, false)));
+    QCOMPARE(runner->result().sold.size(), 248);
+    // The same listing twice on one page is kept (separate sales possible).
+    LookupRunner *again = runnerWithItem();
+    QVERIFY(again);
+    QVERIFY(again->startComps({QStringLiteral("M7X")}, Depths{480, 0, 0}, 90, &error));
+    QJsonObject page = searchPage(1, 2, false);
+    QJsonArray items = page.value("items").toArray();
+    items.append(items.at(0));
+    page.insert("items", items);
+    again->onReply(okReply(page));
+    QCOMPARE(again->result().sold.size(), 3);
+}
+
+void TestLookup::unknownPageCountStopsPaging()
+{
+    LookupRunner *runner = runnerWithItem();
+    QVERIFY(runner);
+    QString error;
+    QVERIFY(runner->startComps({QStringLiteral("M7X"), QStringLiteral("B2")}, Depths{480, 0, 0}, 90, &error));
+    QJsonObject page = searchPage(1, 240, true);
+    page.insert("hasMorePages", QJsonValue()); // the extractor could not tell
+    runner->onReply(okReply(page));
+    // Query 1 stops after this page with a note; query 2 comes next.
+    QCOMPARE(m_requests.size(), 3);
+    QCOMPARE(m_requests.at(2).url.toString(QUrl::FullyEncoded),
+             QStringLiteral("https://www.ebay.com/sch/i.html?_nkw=B2&LH_Sold=1&LH_Complete=1&_ipg=240"));
+    QCOMPARE(runner->result().notes.size(), 1);
+    QVERIFY(runner->result().notes.at(0).contains(QStringLiteral("does not tell whether more results exist")));
+}
+
+void TestLookup::itemNumberIsNotFilledIn()
+{
+    LookupRunner *runner = makeRunner();
+    QString error;
+    QVERIFY(runner->startItem(QStringLiteral("100000000050"), &error));
+    QJsonObject data = itemData();
+    data.insert("itemId", QJsonValue());
+    runner->onReply(okReply(data));
+    QVERIFY(runner->result().item.itemId.isEmpty());
+    QCOMPARE(runner->result().notes.size(), 1);
+    QVERIFY(runner->result().notes.at(0).contains(QStringLiteral("asked for 100000000050")));
 }
 
 void TestLookup::stopsAtDailyCap()
@@ -415,7 +479,7 @@ void TestLookup::refusesBadInput()
 {
     LookupRunner *runner = makeRunner();
     QString error;
-    QVERIFY(!runner->startItem(QStringLiteral("fluke 87v"), &error));
+    QVERIFY(!runner->startItem(QStringLiteral("acme m7x"), &error));
     QVERIFY(!error.isEmpty());
     QVERIFY(m_requests.isEmpty());
     // No queries before the listing is read.
@@ -464,7 +528,8 @@ void TestLookup::reportNumbers()
     QVERIFY2(text.contains(QStringLiteral("shipping: listing $15.00, median of 4 confirmed sold $5.00 (+$10.00)")),
              qPrintable(text));
     QVERIFY(text.contains(QStringLiteral("SOLD, CONFIRMED (price shown is the price paid) (5)")));
-    QVERIFY(text.contains(QStringLiteral("SOLD, UNCONFIRMED (Best offer accepted: the price paid is not shown) (1)")));
+    QVERIFY(text.contains(QStringLiteral("SOLD, UNCONFIRMED (the price paid is not shown: Best offer accepted, an offer "
+                                         "row the app does not know, or no Product Research access) (1)")));
 }
 
 QTEST_GUILESS_MAIN(TestLookup)

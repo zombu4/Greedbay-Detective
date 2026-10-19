@@ -343,16 +343,31 @@ void BrowserController::onEvent(const QString &method, const QJsonObject &params
     } else if (method == QLatin1String("Network.responseReceived")) {
         // A main document's response: its loader, status and final URL (after
         // redirects). Kept until Page.navigate has said which loader is ours.
-        if (m_loading && params.value(QStringLiteral("type")).toString() == QLatin1String("Document")
+        if (params.value(QStringLiteral("type")).toString() == QLatin1String("Document")
             && params.value(QStringLiteral("frameId")).toString() == m_mainFrameId) {
             const QJsonObject response = params.value(QStringLiteral("response")).toObject();
-            m_documents.insert(params.value(QStringLiteral("loaderId")).toString(),
-                               {response.value(QStringLiteral("status")).toInt(), QUrl(response.value(QStringLiteral("url")).toString())});
+            if (m_loading) {
+                m_documents.insert(params.value(QStringLiteral("loaderId")).toString(),
+                                   {response.value(QStringLiteral("status")).toInt(), QUrl(response.value(QStringLiteral("url")).toString())});
+            } else if (m_waitingForUser) {
+                // A page the user opened while the app waits: its status
+                // decides whether it may be read after Continue.
+                m_userDocumentStatus = response.value(QStringLiteral("status")).toInt();
+                m_userDocumentLoaded = false;
+            }
         }
     } else if (method == QLatin1String("Page.loadEventFired")) {
-        // Only the load of the app's own navigation counts: its loader's
+        // A page load the app did not make (the user's, in the shown window)
+        // also counts for the pace: the next load of the app waits from its
+        // end.
+        if (!m_loading) {
+            m_sinceLastLoad.start();
+            if (m_waitingForUser && m_userDocumentStatus != 0)
+                m_userDocumentLoaded = true;
+        }
+        // Only the load of the app's own navigation ends a fetch: its loader's
         // document response must have arrived. A load event of a page the user
-        // opened, or of the page before, is ignored.
+        // opened, or of the page before, does not.
         if (m_loading && !m_loaderId.isEmpty() && m_documents.contains(m_loaderId)) {
             const Document document = m_documents.value(m_loaderId);
             m_httpStatus = document.status;
@@ -549,7 +564,9 @@ void BrowserController::evaluateExtractor(const QUrl &pageUrl, std::function<voi
             [this, serial, pageUrl, handle, changed](const QJsonObject &created, const QJsonObject &error) {
         if (serial != m_serial || m_op != Op::Fetch)
             return;
-        if (!error.isEmpty()) {
+        // Without the isolated world's id the script would run in the page's
+        // own world: never.
+        if (!error.isEmpty() || !created.value(QStringLiteral("executionContextId")).isDouble()) {
             // The page changed under the extractor (for example a script
             // redirect): look again or show it, as for any unexpected page.
             m_scriptTimer->stop();
@@ -591,6 +608,19 @@ void BrowserController::rereadAfterUser()
         const QUrl current = error.isEmpty() && index >= 0 && index < entries.size()
                                  ? QUrl(entries.at(index).toObject().value(QStringLiteral("url")).toString())
                                  : QUrl();
+        // The document shown must have loaded successfully: the app's own
+        // load when the user opened no page, else the user's last page
+        // (completely loaded, HTTP status below 400). A failed load is never
+        // read as the expected page.
+        const bool documentOk = m_userDocumentStatus == 0
+                                    ? m_lastLoadOk
+                                    : m_userDocumentLoaded && m_userDocumentStatus >= 200 && m_userDocumentStatus < 400;
+        if (!documentOk) {
+            qCInfo(lcBrowser).noquote() << "fetch" << ebay::pageKindName(m_kind)
+                                        << "after Continue: the page shown did not load successfully";
+            finish(m_replyAfterUser);
+            return;
+        }
         if (!isRequestedPage(current, m_url) || Extractor::outcomeFromUrl(current, m_kind)) {
             qCInfo(lcBrowser).noquote() << "fetch" << ebay::pageKindName(m_kind)
                                         << "after Continue: still not the requested page, at" << ebay::urlForLog(current);
@@ -698,6 +728,8 @@ void BrowserController::waitForUser(const QJsonObject &reply, const QString &mes
 {
     m_replyAfterUser = reply;
     m_waitingForUser = true;
+    m_userDocumentStatus = 0;
+    m_userDocumentLoaded = false;
     setWindowState("normal");
     emit needsUser(message);
 }

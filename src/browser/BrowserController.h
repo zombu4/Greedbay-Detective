@@ -59,8 +59,11 @@ struct BrowserControllerOptions {
 // page is read once more, as it is at that moment: when the user's action has
 // brought the requested page (for example eBay returns to it after a
 // sign-in), and the extractor finds the expected page there, the reply is
-// "ok" with what it read; otherwise it is the unexpected_page reply. Nothing
-// is reloaded or retried, and no check is ever solved or skipped by the app.
+// "ok" with what it read; otherwise it is the unexpected_page reply. A page
+// whose load failed (the app's own, when the user opened no other page, or
+// the user's last one: not completely loaded or HTTP status 400 or more) is
+// never read. Nothing is reloaded or retried, and no check is ever solved or
+// skipped by the app.
 //
 // signIn(): opens the eBay homepage in the shown window; the user clicks
 // "Sign in" there himself and signs in on eBay's own page, then calls
@@ -71,7 +74,8 @@ struct BrowserControllerOptions {
 //
 // Pacing: one page at a time, and a random wait in [pageDelayMinMs,
 // pageDelayMaxMs] before every page load the app makes, counted from the end
-// of the previous load (or from the session's start for the first one).
+// of the previous load (or from the session's start for the first one); a
+// load the user made in the shown window counts as a previous load too.
 // Every page load the app makes (fetch, sign-in homepage, My eBay check) is
 // counted against the daily cap when it starts; at the cap the load is not
 // made and the operation ends with limit_reached.
@@ -196,6 +200,10 @@ private:
     QUrl m_documentUrl;
     bool m_lastLoadOk = false;
     bool m_waitingForUser = false;
+    // While waiting for the user: HTTP status of the last main-frame page the
+    // user opened (0 = none) and whether it has finished loading.
+    int m_userDocumentStatus = 0;
+    bool m_userDocumentLoaded = false;
     QJsonObject m_replyAfterUser;
     QElapsedTimer m_sinceLastLoad;
     QElapsedTimer m_loadClock;

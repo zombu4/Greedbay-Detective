@@ -122,7 +122,8 @@ void LookupRunner::onItemReply(const QJsonObject &reply)
     }
     m_result.item = ItemRecord::fromJson(reply.value(QStringLiteral("result")).toObject());
     if (m_result.item.itemId.isEmpty())
-        m_result.item.itemId = m_itemId;
+        m_result.notes.append(QStringLiteral("the item page that was read has no item number in its address (asked for %1)")
+                                  .arg(m_itemId));
     m_result.identity = identify(m_result.item);
     m_result.queries = buildQueries(m_result.identity, m_result.item.title);
     if (m_cancelRequested) {
@@ -143,15 +144,23 @@ void LookupRunner::onCompsReply(const QJsonObject &reply)
     } else if (status == QLatin1String("unexpected_page") && m_source == Source::Research
                && reply.value(QStringLiteral("page")).toString() == QLatin1String("no_access")) {
         m_result.researchUnavailable = true;
+        // Owner decision Q22: without Product Research access every price is
+        // unconfirmed.
+        for (SearchRecord &record : m_result.sold)
+            record.confirmed = false;
         m_result.notes.append(QStringLiteral("Product Research: eBay sent the Seller Hub start page (no access on this "
-                                             "account); research rows skipped, sold prices only from the sold search"));
+                                             "account); research rows skipped and every sold price marked unconfirmed"));
         emit progress(m_result.notes.last());
         nextSource();
     } else if (status == QLatin1String("failed") && reply.value(QStringLiteral("error")).toString() == QLatin1String("stopped")) {
         finish(QStringLiteral("cancelled"), QStringLiteral("cancelled by the user"));
         return;
     } else if (status == QLatin1String("unexpected_page")) {
-        finish(QStringLiteral("stopped"), QStringLiteral("%1 page not read: eBay showed %2").arg(sourceName(m_source), pageText(reply)));
+        QString message = QStringLiteral("%1 page not read: eBay showed %2").arg(sourceName(m_source), pageText(reply));
+        if (m_source == Source::Research && reply.value(QStringLiteral("page")).toString() == QLatin1String("unexpected"))
+            message += QStringLiteral("; for Product Research this can also be a query without sales in the period "
+                                      "(eBay's page for that case has not been recorded yet)");
+        finish(QStringLiteral("stopped"), message);
         return;
     } else {
         finish(QStringLiteral("stopped"), QStringLiteral("%1 page not read: %2")
@@ -180,46 +189,56 @@ bool LookupRunner::takePage(const QJsonObject &data)
     const int room = depthOf(m_source) - collectedOf(m_source);
     int read = 0;
     int added = 0;
-    bool more = false;
+    int repeated = 0;
+    QSet<QString> pageIds;
+    // A listing an earlier page already gave is skipped.
+    auto take = [&](const QString &itemId) {
+        ++read;
+        if (!itemId.isEmpty() && (m_seenBefore.contains(itemId) || m_seenNow.contains(itemId))) {
+            ++repeated;
+            return false;
+        }
+        if (added >= room)
+            return false;
+        if (!itemId.isEmpty())
+            pageIds.insert(itemId);
+        ++added;
+        return true;
+    };
+    QJsonValue more;
     if (m_source == Source::Research) {
-        const QJsonArray rows = data.value(QStringLiteral("rows")).toArray();
         if (m_result.researchSummary.isEmpty())
             m_result.researchSummary = data.value(QStringLiteral("summary")).toObject();
-        for (const QJsonValue &value : rows) {
-            ++read;
+        for (const QJsonValue &value : data.value(QStringLiteral("rows")).toArray()) {
             const ResearchRecord record = ResearchRecord::fromJson(value.toObject());
-            if (added >= room || (!record.itemId.isEmpty() && m_seenBefore.contains(record.itemId)))
-                continue;
-            m_seenNow.insert(record.itemId);
-            m_result.research.append(record);
-            ++added;
+            if (take(record.itemId))
+                m_result.research.append(record);
         }
-        more = read > 0 && data.value(QStringLiteral("morePossible")).toBool(false);
+        more = data.value(QStringLiteral("morePossible"));
     } else {
         const bool sold = m_source == Source::Sold;
         QList<SearchRecord> &list = sold ? m_result.sold : m_result.active;
         for (const QJsonValue &value : data.value(QStringLiteral("items")).toArray()) {
-            ++read;
             const SearchRecord record = SearchRecord::fromJson(value.toObject(), sold);
-            if (added >= room || (!record.itemId.isEmpty() && m_seenBefore.contains(record.itemId)))
-                continue;
-            m_seenNow.insert(record.itemId);
-            list.append(record);
-            ++added;
+            if (take(record.itemId))
+                list.append(record);
         }
-        more = read > 0 && data.value(QStringLiteral("hasMorePages")).toBool(false);
+        more = data.value(QStringLiteral("hasMorePages"));
     }
-    emit progress(QStringLiteral("%1, query %2 \"%3\", %4: %5 read, %6 added (%7 of up to %8)")
-                      .arg(sourceName(m_source))
-                      .arg(m_queryIndex + 1)
-                      .arg(m_result.queries.at(m_queryIndex),
-                           m_source == Source::Research ? QStringLiteral("rows from %1").arg(m_offset)
-                                                        : QStringLiteral("page %1").arg(m_page))
-                      .arg(read)
-                      .arg(added)
-                      .arg(collectedOf(m_source))
-                      .arg(depthOf(m_source)));
-    return more;
+    m_seenNow.unite(pageIds);
+    const QString where = m_source == Source::Research ? QStringLiteral("rows from %1").arg(m_offset)
+                                                       : QStringLiteral("page %1").arg(m_page);
+    emit progress(QStringLiteral("%1, query %2 \"%3\", %4: %5 read, %6 added, %7 already seen (%8 of up to %9)")
+                      .arg(sourceName(m_source), QString::number(m_queryIndex + 1), m_result.queries.at(m_queryIndex),
+                           where, QString::number(read), QString::number(added), QString::number(repeated),
+                           QString::number(collectedOf(m_source)), QString::number(depthOf(m_source))));
+    if (read > 0 && !more.isBool() && collectedOf(m_source) < depthOf(m_source)) {
+        m_result.notes.append(QStringLiteral("%1, query %2, %3: the page does not tell whether more results exist; "
+                                             "paging stopped there")
+                                  .arg(sourceName(m_source), QString::number(m_queryIndex + 1), where));
+        emit progress(m_result.notes.last());
+    }
+    return read > 0 && more.toBool(false);
 }
 
 void LookupRunner::nextQuery()

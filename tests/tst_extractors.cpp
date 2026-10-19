@@ -74,6 +74,8 @@ private:
     BrowserController *m_controller = nullptr;
     QTcpServer m_server;
     QByteArray m_fixture;
+    // The HTTP status line the test server answers with.
+    QByteArray m_statusLine = "HTTP/1.1 200 OK";
     QString m_lastUserMessage;
     // How long the test, playing the user, waits before pressing Continue.
     int m_continueDelayMs = 0;
@@ -93,6 +95,7 @@ private slots:
     void unexpectedPage();
     void noAutomationMarker();
     void pageReadAgainAfterContinue();
+    void failedLoadIsNotReadAfterContinue();
     void dailyCapStopsLoads();
     void browserClosesCleanly();
 };
@@ -112,7 +115,7 @@ void TestExtractors::onConnection()
             if (path.startsWith("/favicon")) {
                 response = "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
             } else {
-                response = "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nCache-Control: no-store\r\n"
+                response = m_statusLine + "\r\nContent-Type: text/html; charset=utf-8\r\nCache-Control: no-store\r\n"
                            "Content-Length: " + QByteArray::number(m_fixture.size()) + "\r\nConnection: close\r\n\r\n"
                            + m_fixture;
             }
@@ -580,15 +583,32 @@ void TestExtractors::pageReadAgainAfterContinue()
     // waits; the "user" presses Continue 3 s later, by when the page has
     // become the requested results page: it is read then, without a reload.
     m_continueDelayMs = 3000;
+    m_lastUserMessage.clear();
     QString error;
     const std::optional<QJsonObject> result = extract("late_page.html", kActiveUrl, PageKind::ActiveSearch, &error);
     m_continueDelayMs = 0;
     QVERIFY2(result, qPrintable(error));
+    // The page was shown to the "user" first: it was read after Continue.
+    QVERIFY(!m_lastUserMessage.isEmpty());
     QCOMPARE(result->value("page").toString(), QStringLiteral("expected"));
     const QJsonObject data = result->value("data").toObject();
     QCOMPARE(data.value("totalResults").toInt(), 7);
     QCOMPARE(data.value("items").toArray().size(), 1);
     QCOMPARE(data.value("items").toArray().at(0).toObject().value("itemId").toString(), QStringLiteral("100000000040"));
+}
+
+void TestExtractors::failedLoadIsNotReadAfterContinue()
+{
+    // A results page that came with HTTP 403: shown to the "user", and after
+    // Continue still not read, although its content looks right.
+    m_statusLine = "HTTP/1.1 403 Forbidden";
+    QString error;
+    const std::optional<QJsonObject> result = extract("active_search.html", kActiveUrl, PageKind::ActiveSearch, &error);
+    m_statusLine = "HTTP/1.1 200 OK";
+    QVERIFY2(result, qPrintable(error));
+    QCOMPARE(result->value("page").toString(), QStringLiteral("unexpected"));
+    QVERIFY2(result->value("reason").toString().contains(QStringLiteral("HTTP status 403")),
+             qPrintable(result->value("reason").toString()));
 }
 
 void TestExtractors::dailyCapStopsLoads()

@@ -57,9 +57,16 @@ struct LookupResult {
 //
 // Per source the queries are used in order: query 1 page by page while its
 // pages say more results exist and the depth is not reached, then query 2,
-// and so on. A record whose item number an earlier query of the same source
-// already gave is skipped (the same listing found again); records of one
-// query are all kept, and the last page is cut at the depth.
+// and so on. A record whose item number an earlier page (of this or an
+// earlier query of the same source) already gave is skipped: the same listing
+// found again, for example when new listings shift the pages. Repeats within
+// one page are kept (they may be separate sales of one listing; not observed
+// either way). The last page is cut at the depth. When a page cannot tell
+// whether more pages exist, paging stops there with a note.
+//
+// Owner decision Q22: without Product Research access every price is
+// unconfirmed, so when eBay sends the Seller Hub start page every sold
+// record is marked unconfirmed.
 //
 // Replies: "ok" -> records; "unexpected_page" with page "no_access" for
 // Product Research -> research is skipped (every price then comes from the
@@ -133,8 +140,8 @@ private:
     int m_queryIndex = 0;
     int m_page = 1;    // search pages, from 1
     int m_offset = 0;  // Product Research rows
-    // Item numbers given by earlier queries / by the current query of the
-    // current source.
+    // Item numbers given by earlier queries / by earlier pages of the current
+    // query, in the current source.
     QSet<QString> m_seenBefore;
     QSet<QString> m_seenNow;
 };
