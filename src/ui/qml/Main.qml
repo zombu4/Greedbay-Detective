@@ -19,7 +19,10 @@ ApplicationWindow {
             return false
         screen = 0
         home.setInput(listing)
-        return backend.check(listing)
+        if (backend.check(listing, home.reviewFirst))
+            return true
+        home.showError(backend.session.errorText)
+        return false
     }
 
     width: 1240

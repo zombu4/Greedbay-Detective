@@ -68,6 +68,18 @@ Rectangle {
                 onOpenListingRequested: overlay.backend.openOnEbay(overlay.session.askItemId)
                 onCancelRequested: overlay.session.cancel()
             }
+            ReviewSearchesPanel {
+                Layout.fillWidth: true
+                visible: overlay.sessionState === "reviewSearches"
+                queries: overlay.session.reviewQueries
+                soldDepth: overlay.session.reviewSoldDepth
+                activeDepth: overlay.session.reviewActiveDepth
+                researchDepth: overlay.session.reviewResearchDepth
+                error: overlay.session.errorText
+                onSearchRequested: (queries, sold, active, research) =>
+                    overlay.session.startReviewedSearches(queries, sold, active, research)
+                onCancelRequested: overlay.session.cancel()
+            }
         }
     }
 }

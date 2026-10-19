@@ -36,7 +36,17 @@ LookupSession::LookupSession(WorkFolder folder, lookup::KnownModels *known, cons
 {
 }
 
-LookupSession::~LookupSession() = default;
+// The app quits during a lookup: what was collected is saved as stopped
+// (the database is still open: the Backend deletes the session first).
+LookupSession::~LookupSession()
+{
+    if (m_runner && !m_savedOnce) {
+        lookup::LookupResult result = m_runner->result();
+        result.status = QStringLiteral("stopped");
+        result.message = QStringLiteral("the app was closed during the lookup");
+        saveLookup(result);
+    }
+}
 
 QStringList LookupSession::steps() const
 {
@@ -56,6 +66,8 @@ QString LookupSession::stateName() const
         return QStringLiteral("reading");
     case State::AskIdentity:
         return QStringLiteral("askIdentity");
+    case State::ReviewSearches:
+        return QStringLiteral("reviewSearches");
     case State::Searching:
         return QStringLiteral("searching");
     case State::WaitingForUser:
@@ -82,7 +94,7 @@ void LookupSession::setError(const QString &error)
     emit errorChanged();
 }
 
-bool LookupSession::start(const QString &input)
+bool LookupSession::start(const QString &input, bool reviewFirst)
 {
     if (isRunning()) {
         setError(QStringLiteral("A lookup is already running."));
@@ -92,7 +104,7 @@ bool LookupSession::start(const QString &input)
         setError(QStringLiteral("This is not an eBay listing link (https://www.ebay.com/itm/...) or a 12-digit item number."));
         return false;
     }
-    return startSession(input.trimmed(), std::nullopt);
+    return startSession(input.trimmed(), std::nullopt, reviewFirst);
 }
 
 bool LookupSession::startCorrected(const lookup::SavedLookup &saved, const QString &brand, const QString &model,
@@ -111,10 +123,10 @@ bool LookupSession::startCorrected(const lookup::SavedLookup &saved, const QStri
         setError(error);
         return false;
     }
-    return startSession(saved.input, saved.result.item);
+    return startSession(saved.input, saved.result.item, false);
 }
 
-bool LookupSession::startSession(const QString &input, const std::optional<lookup::ItemRecord> &item)
+bool LookupSession::startSession(const QString &input, const std::optional<lookup::ItemRecord> &item, bool reviewFirst)
 {
     const Settings settings(m_folder.settingsPath());
     const std::optional<browser::InstalledBrowser> chosen =
@@ -141,6 +153,7 @@ bool LookupSession::startSession(const QString &input, const std::optional<looku
     m_controller = controller;
     m_input = input;
     m_savedItem = item;
+    m_reviewFirst = reviewFirst;
     m_savedOnce = false;
     m_browserError.clear();
     m_browserName = chosen->name;
@@ -151,8 +164,15 @@ bool LookupSession::startSession(const QString &input, const std::optional<looku
     setError(QString());
     connect(m_controller, &browser::BrowserController::ready, this, &LookupSession::onReady);
     connect(m_controller, &browser::BrowserController::done, this, [this](const QJsonObject &reply) {
-        if (m_runner)
-            m_runner->onReply(reply);
+        if (!m_runner)
+            return;
+        m_runner->onReply(reply);
+        // Pages the browser loaded and answered for (a load the daily cap
+        // refused is not one).
+        if (m_runner && m_pages != m_runner->result().pagesLoaded) {
+            m_pages = m_runner->result().pagesLoaded;
+            emit progressChanged();
+        }
     });
     connect(m_controller, &browser::BrowserController::needsUser, this, [this](const QString &message) {
         qInfo().noquote() << "lookup: waiting for the user in the browser window:" << message;
@@ -177,7 +197,6 @@ void LookupSession::onReady()
 {
     m_runner = new lookup::LookupRunner(
         [this](const QUrl &url, ebay::PageKind kind) {
-            ++m_pages;
             switch (kind) {
             case ebay::PageKind::Item:
                 m_step = StepListing;
@@ -220,26 +239,63 @@ void LookupSession::onReady()
 
 void LookupSession::onItemReady()
 {
+    // From the event loop after startFromItem(): the session may be over.
+    if (!m_runner || m_state == State::Closing)
+        return;
     const lookup::LookupResult &result = m_runner->result();
     if (!m_savedItem)
         fetchPhoto(result.item);
     if (result.identity.canSearch()) {
-        startSearches();
+        searchOrReview();
         return;
     }
     // Rule 26: no confident model, no search; the user enters it.
     setState(State::AskIdentity);
 }
 
-void LookupSession::startSearches()
+void LookupSession::searchOrReview()
+{
+    if (m_reviewFirst)
+        setState(State::ReviewSearches);
+    else
+        startSearches(m_runner->result().queries);
+}
+
+void LookupSession::startSearches(const QStringList &queries)
 {
     QString error;
-    if (!m_runner->startComps(m_runner->result().queries, m_depths, m_historyDays, &error)) {
+    const State before = m_state;
+    if (!m_runner->startComps(queries, m_depths, m_historyDays, &error)) {
         setError(error);
-        setState(State::AskIdentity);
+        setState(before == State::ReviewSearches ? State::ReviewSearches : State::AskIdentity);
         return;
     }
-    setState(State::Searching);
+    // With every depth 0 the lookup is already finished (and Closing) here.
+    if (m_state == before)
+        setState(State::Searching);
+}
+
+bool LookupSession::startReviewedSearches(const QString &queries, int soldDepth, int activeDepth, int researchDepth)
+{
+    if (m_state != State::ReviewSearches || !m_runner)
+        return false;
+    if (soldDepth < 0 || activeDepth < 0 || researchDepth < 0) {
+        setError(QStringLiteral("A depth cannot be negative (0 skips that source)."));
+        return false;
+    }
+    QStringList lines;
+    for (const QString &line : queries.split(QLatin1Char('\n'))) {
+        if (!line.simplified().isEmpty())
+            lines.append(line.simplified());
+    }
+    if (lines.isEmpty()) {
+        setError(QStringLiteral("Enter at least one search, one per line."));
+        return false;
+    }
+    m_depths = {soldDepth, activeDepth, researchDepth};
+    setError(QString());
+    startSearches(lines);
+    return m_state != State::ReviewSearches;
 }
 
 bool LookupSession::saveIdentity(const QString &itemId, const lookup::ConfirmedIdentity &identity,
@@ -272,7 +328,7 @@ bool LookupSession::submitIdentity(const QString &brand, const QString &model, c
         return false;
     }
     setError(QString());
-    startSearches();
+    searchOrReview();
     return true;
 }
 
@@ -361,12 +417,18 @@ void LookupSession::onBrowserFinished(bool normal)
 void LookupSession::fetchPhoto(const lookup::ItemRecord &item)
 {
     const QUrl url(item.imageUrl, QUrl::StrictMode);
-    if (item.itemId.isEmpty() || !url.isValid() || url.scheme() != QLatin1String("https") || !m_store->photo(item.itemId).isEmpty())
+    if (item.itemId.isEmpty() || !m_store->photo(item.itemId).isEmpty())
         return;
+    // Only eBay's image host (the one the item pages gave, seen 2026-10-19):
+    // the app asks no other server for anything.
+    if (!url.isValid() || url.scheme() != QLatin1String("https") || url.host() != QLatin1String("i.ebayimg.com")) {
+        qWarning().noquote() << "lookup: listing photo not loaded: its address is not on i.ebayimg.com";
+        return;
+    }
     if (!m_network) {
         m_network = new QNetworkAccessManager(this);
-        // Never from https to http.
-        m_network->setRedirectPolicy(QNetworkRequest::NoLessSafeRedirectPolicy);
+        // Redirects only within the same scheme, host and port.
+        m_network->setRedirectPolicy(QNetworkRequest::SameOriginRedirectPolicy);
     }
     QNetworkRequest request(url);
     // No cookies sent or kept, no cache.
@@ -412,6 +474,11 @@ void LookupSession::onPhotoReply(QNetworkReply *reply, const QString &itemId, co
         return;
     }
     emit photoSaved(itemId);
+}
+
+QStringList LookupSession::reviewQueries() const
+{
+    return m_runner ? m_runner->result().queries : QStringList();
 }
 
 QString LookupSession::askTitle() const { return m_runner ? m_runner->result().item.title : QString(); }

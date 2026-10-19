@@ -8,6 +8,8 @@ Item {
     id: home
     required property Backend backend
     property string error
+    // Let the user check the searches and depths before they run.
+    property alias reviewFirst: review.checked
 
     function setInput(text) {
         input.text = text
@@ -18,7 +20,7 @@ Item {
     }
     function check() {
         error = ""
-        if (!backend.check(input.text))
+        if (!backend.check(input.text, reviewFirst))
             error = backend.session.errorText
     }
 
@@ -53,6 +55,12 @@ Item {
                 onClicked: home.check()
             }
         }
+        CheckBox {
+            id: review
+            text: "Let me check the searches and how deep they go before they run"
+            font.family: Theme.sans
+            font.pixelSize: Theme.labelSize + 1
+        }
         Text {
             Layout.fillWidth: true
             text: "Paste or drop a listing link anywhere in this window. The app opens your browser in its own profile, "
@@ -85,7 +93,7 @@ Item {
             Item { Layout.fillWidth: true }
             Text {
                 text: home.backend.pagesTodayText
-                font.family: Theme.sans
+                font.family: Theme.mono
                 font.pixelSize: Theme.labelSize
                 color: Theme.mutedText
             }
@@ -153,7 +161,7 @@ Item {
                         }
                         Text {
                             text: cell.checked
-                            font.family: Theme.sans
+                            font.family: Theme.mono
                             font.pixelSize: Theme.labelSize
                             color: Theme.mutedText
                         }
@@ -180,5 +188,12 @@ Item {
                 }
             }
         }
+    }
+
+    // A problem after the lookup started (the browser stopped, the save
+    // failed) is shown here; the overlay is gone by then.
+    Connections {
+        target: home.backend
+        function onSessionFailed(message) { home.error = message }
     }
 }

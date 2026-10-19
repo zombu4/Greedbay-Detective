@@ -165,7 +165,8 @@ Item {
 
             Section {
                 heading: "Search depth"
-                note: "How many rows a lookup reads at most from each source. 0 skips a source."
+                note: "How many rows a lookup reads at most from each source. 0 skips a source. To change it for one "
+                      + "lookup, tick \"Let me check the searches\" on the Lookups screen."
                 RadioButton {
                     id: standard
                     text: screen.settings.standardPresetText
@@ -273,8 +274,9 @@ Item {
                 AppButton {
                     text: "Sign out of eBay"
                     onClicked: {
-                        signOutResult.ok = true
-                        signOutResult.message = screen.settings.signOut()
+                        const result = screen.settings.signOut()
+                        signOutResult.ok = result.ok
+                        signOutResult.message = result.message
                     }
                 }
                 Result { id: signOutResult }

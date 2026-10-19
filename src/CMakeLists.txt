@@ -171,6 +171,7 @@ set(app_qml_files
     ui/qml/ProgressPanel.qml
     ui/qml/RangeBar.qml
     ui/qml/ResultsScreen.qml
+    ui/qml/ReviewSearchesPanel.qml
     ui/qml/RowsTable.qml
     ui/qml/SessionOverlay.qml
     ui/qml/SettingsScreen.qml

@@ -172,21 +172,23 @@ QString SettingsController::setNumbers(double outlierFactor, int high, int mediu
                   QStringLiteral("The outlier factor and the shipping ratio must be numbers above 0."));
 }
 
-QString SettingsController::signOut()
+QVariantMap SettingsController::signOut()
 {
+    auto reply = [](bool ok, const QString &message) {
+        return QVariantMap{{QStringLiteral("ok"), ok}, {QStringLiteral("message"), message}};
+    };
     if (m_sessionRunning && m_sessionRunning())
-        return QStringLiteral("A lookup is running: sign out after it has finished.");
-    const QList<browser::InstalledBrowser> installed = browser::BrowserCatalog::installed();
-    const std::optional<browser::InstalledBrowser> chosen =
-        browser::BrowserCatalog::choose(installed, Settings(m_folder.settingsPath()).preferredBrowser());
-    if (!chosen)
-        return QStringLiteral("No supported browser is installed, so there is nothing to sign out of.");
-    QString error;
-    if (!BrowserProfiles::clear(m_folder, chosen->id, &error))
-        return QStringLiteral("Sign out failed: %1").arg(error);
-    return QStringLiteral("Signed out: the app's %1 profile (eBay sign-in, cookies, cache) was deleted from the work "
-                          "folder. Your own %1 profile was not touched.")
-        .arg(chosen->name);
+        return reply(false, QStringLiteral("A lookup is running: sign out after it has finished."));
+    QStringList failed;
+    for (const QString &id : browser::BrowserCatalog::preferenceOrder()) {
+        QString error;
+        if (!BrowserProfiles::clear(m_folder, id, &error))
+            failed.append(QStringLiteral("%1: %2").arg(id, error));
+    }
+    if (!failed.isEmpty())
+        return reply(false, QStringLiteral("Sign out failed for %1").arg(failed.join(QStringLiteral("; "))));
+    return reply(true, QStringLiteral("Signed out: the app's browser profiles (eBay sign-in, cookies, cache) were deleted "
+                                      "from the work folder. Your own browser profiles were not touched."));
 }
 
 } // namespace app::ui

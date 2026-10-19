@@ -35,6 +35,8 @@ Backend::Backend(WorkFolder folder, const QString &connectionName, QObject *pare
     m_results = new ResultsController(
         m_store, [settingsPath]() { return Settings(settingsPath).valueSettings(); },
         [this](const QString &itemId) { return photoSourceOf(itemId); }, this);
+    // The Home cards show the numbers stored with each lookup.
+    connect(m_results, &ResultsController::stored, this, &Backend::refreshRecent);
     m_settings = new SettingsController(m_folder, [this]() { return m_session && m_session->isRunning(); }, this);
 
     if (m_session) {
@@ -47,6 +49,11 @@ Backend::Backend(WorkFolder folder, const QString &connectionName, QObject *pare
                 m_results->photoChanged();
         });
         connect(m_session, &LookupSession::ended, this, &Backend::pagesChanged);
+        // A failure after the start (the browser stopped, the save failed).
+        connect(m_session, &LookupSession::errorChanged, this, [this]() {
+            if (!m_session->errorText().isEmpty())
+                emit sessionFailed(m_session->errorText());
+        });
         connect(m_session, &LookupSession::progressChanged, this, &Backend::pagesChanged);
     }
     refreshRecent();
@@ -54,6 +61,14 @@ Backend::Backend(WorkFolder folder, const QString &connectionName, QObject *pare
 
 Backend::~Backend()
 {
+    // The session first, while the store and the database are still there:
+    // it saves a lookup that is still running. Its signals no longer reach
+    // this object.
+    if (m_session) {
+        disconnect(m_session, nullptr, this, nullptr);
+        delete m_session;
+        m_session = nullptr;
+    }
     if (!m_photosTaken)
         delete m_photos;
 }
@@ -93,11 +108,11 @@ QString Backend::tagline() const
     return QStringLiteral("fight greedy garbage sellers with knowledge");
 }
 
-bool Backend::check(const QString &input)
+bool Backend::check(const QString &input, bool reviewFirst)
 {
     if (!m_session)
         return false;
-    return m_session->start(input);
+    return m_session->start(input, reviewFirst);
 }
 
 bool Backend::openSaved(qint64 lookupId)

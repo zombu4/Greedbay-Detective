@@ -53,7 +53,7 @@ struct LookupResult {
 // its depth is reached or the queries have no more results -> records. When
 // the identity is not confident nothing is searched: the user enters it
 // (setIdentity()) first (rule 26). Matching and value are computed from the
-// records (LookupReport); no records are saved to the database (phase 6).
+// records (LookupReport); saving is LookupStore's (src/lookup/LookupStore.h).
 //
 // The runner does not drive the browser itself: it calls `fetcher` with the
 // page to load and its kind, and gets the browser's reply through onReply()

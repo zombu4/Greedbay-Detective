@@ -338,6 +338,11 @@ void TestUi::panelsLoad()
                                   {"cheapest", 10300.0},
                                   {"cheapestLabel", "cheapest for sale $103.00"}}));
     QVERIFY(loadItem("FlagCard", {{"kind", "warn"}, {"label", "SHIPPING"}, {"lines", QStringList{"$45.00 is 4.5x", "36%"}}}));
+    QVERIFY(loadItem("ReviewSearchesPanel", {{"queries", QStringList{"Acme Q9", "Acme Corp Q9"}},
+                                             {"soldDepth", 240},
+                                             {"activeDepth", 240},
+                                             {"researchDepth", 0},
+                                             {"error", "Enter at least one search, one per line."}}));
     QVERIFY(loadItem("PriceHistoryScreen", {}));
     // The editor and the startup window are windows / popups of their own.
     {

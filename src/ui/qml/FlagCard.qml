@@ -15,6 +15,7 @@ Card {
     line: kind === "warn" ? Theme.warnBorder : Theme.infoBorder
 
     ColumnLayout {
+        anchors.fill: parent
         spacing: 6
         Text {
             text: flag.label
@@ -31,7 +32,8 @@ Card {
                 Layout.fillWidth: true
                 text: modelData
                 wrapMode: Text.WordWrap
-                font.family: Theme.sans
+                // Amounts and ratios: mono (ui-spec "Look").
+                font.family: Theme.mono
                 font.pixelSize: Theme.bodySize
                 color: Theme.text
             }

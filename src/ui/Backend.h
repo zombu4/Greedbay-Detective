@@ -60,8 +60,9 @@ public:
     QString appName() const;
     QString tagline() const;
 
-    // Starts a lookup for a pasted link or item number.
-    Q_INVOKABLE bool check(const QString &input);
+    // Starts a lookup for a pasted link or item number; `reviewFirst`: let
+    // the user check the searches and depths before they run.
+    Q_INVOKABLE bool check(const QString &input, bool reviewFirst = false);
     // Shows a saved lookup on the Results screen (showResults()).
     Q_INVOKABLE bool openSaved(qint64 lookupId);
     // "Wrong item? Correct it": saves the identity for the shown listing and
@@ -83,6 +84,8 @@ signals:
     void showResults();
     // openSaved() failed; `message` says why.
     void openFailed(const QString &message);
+    // The lookup session reported a problem (also after it started).
+    void sessionFailed(const QString &message);
 
 private:
     QString photoSourceOf(const QString &itemId);

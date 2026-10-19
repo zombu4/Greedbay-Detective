@@ -36,7 +36,10 @@ namespace app::ui {
 //                      not loaded again
 // With a confident identity the searches start at once with the queries
 // built from it (one per brand search name, owner rules 21, 23) and the
-// depths and period from Settings. Without one nothing is searched: state
+// depths and period from Settings - or, when the user asked to review them
+// (start(input, true)), state ReviewSearches shows the queries (editable, one
+// per line) and this lookup's depths first (owner decisions Q14 "editable
+// before the search" and answer 4 "depth ... per lookup"). Without one nothing is searched: state
 // AskIdentity shows the listing's title, item specifics and a link to it,
 // and the user enters brand, model and product name (submitIdentity(), rule
 // 26). Every identity the user enters is saved to the known models in the
@@ -52,12 +55,13 @@ namespace app::ui {
 // The lookup is saved when it ends - complete, cancelled (partial) or
 // stopped (failed), with what was collected - in one transaction
 // (LookupStore::save), then saved(id) is emitted and the browser is closed.
-// When the browser ends the session itself (closed, crashed), what was
-// collected is saved as stopped. Only a session whose browser never got
-// ready saves nothing.
+// When the browser ends the session itself (closed, crashed), or the app
+// quits during a lookup, what was collected is saved as stopped. Only a
+// session whose browser never got ready saves nothing.
 //
 // The listing's photo: after the item page is read, its JSON-LD photo
-// address (https only) is downloaded once by the app itself (not through the
+// address (https, host i.ebayimg.com only: the host the item pages gave,
+// seen 2026-10-19) is downloaded once by the app itself (not through the
 // browser; it is no eBay page load and not counted in the daily cap): no
 // cookies are sent or kept, nothing is written to disk but the scaled JPEG
 // in the database (LookupStore::savePhoto). Any failure leaves the lookup
@@ -74,6 +78,7 @@ class LookupSession : public QObject {
     // The step being done (an index into `steps`).
     Q_PROPERTY(int step READ step NOTIFY progressChanged)
     Q_PROPERTY(QStringList steps READ steps CONSTANT)
+    // eBay pages loaded and answered for this lookup.
     Q_PROPERTY(int pagesThisLookup READ pagesThisLookup NOTIFY progressChanged)
     Q_PROPERTY(QString lastLine READ lastLine NOTIFY progressChanged)
     Q_PROPERTY(QString browserName READ browserName NOTIFY stateChanged)
@@ -91,12 +96,17 @@ class LookupSession : public QObject {
     Q_PROPERTY(QString askBrand READ askBrand NOTIFY stateChanged)
     Q_PROPERTY(QString askModel READ askModel NOTIFY stateChanged)
     Q_PROPERTY(QString askProductName READ askProductName NOTIFY stateChanged)
+    // ReviewSearches: the queries and this lookup's depths (from Settings).
+    Q_PROPERTY(QStringList reviewQueries READ reviewQueries NOTIFY stateChanged)
+    Q_PROPERTY(int reviewSoldDepth READ reviewSoldDepth NOTIFY stateChanged)
+    Q_PROPERTY(int reviewActiveDepth READ reviewActiveDepth NOTIFY stateChanged)
+    Q_PROPERTY(int reviewResearchDepth READ reviewResearchDepth NOTIFY stateChanged)
 public:
     // Idle: no lookup. Starting: the browser starts. Reading: the listing
-    // page. AskIdentity: the user enters the identity. Searching: the
-    // comparison pages. WaitingForUser: the user acts in the browser window.
+    // page. AskIdentity: the user enters the identity. ReviewSearches: the
+    // user checks the queries and depths. Searching: the comparison pages. WaitingForUser: the user acts in the browser window.
     // Closing: saved, the browser closes.
-    enum class State { Idle, Starting, Reading, AskIdentity, Searching, WaitingForUser, Closing };
+    enum class State { Idle, Starting, Reading, AskIdentity, ReviewSearches, Searching, WaitingForUser, Closing };
 
     // `known`, `words` and `store` must outlive the session.
     LookupSession(WorkFolder folder, lookup::KnownModels *known, const lookup::MatchWords *words,
@@ -106,7 +116,8 @@ public:
     // False (and errorText) when a lookup runs, the input is not an eBay
     // item address or number (nothing is saved, owner decision Q21), no
     // supported browser is installed, or the browser cannot be started.
-    bool start(const QString &input);
+    // `reviewFirst`: stop at ReviewSearches before searching.
+    bool start(const QString &input, bool reviewFirst = false);
     // False (and errorText) when a lookup runs, the identity is incomplete or
     // cannot be saved, or the browser cannot be started.
     bool startCorrected(const lookup::SavedLookup &saved, const QString &brand, const QString &model,
@@ -115,6 +126,10 @@ public:
     // AskIdentity: the identity the user entered; the searches start. False
     // (and errorText) when brand or model is empty or it cannot be saved.
     Q_INVOKABLE bool submitIdentity(const QString &brand, const QString &model, const QString &productName);
+    // ReviewSearches: searches `queries` (one per line, empty lines dropped)
+    // with these depths for this lookup. False (and errorText) when no query
+    // is left or a depth is negative.
+    Q_INVOKABLE bool startReviewedSearches(const QString &queries, int soldDepth, int activeDepth, int researchDepth);
     // WaitingForUser: the user has done what userMessage asked for.
     Q_INVOKABLE void continueAfterUser();
     // Stops the lookup: after the page being loaded, at once while waiting
@@ -139,6 +154,10 @@ public:
     QString askBrand() const;
     QString askModel() const;
     QString askProductName() const;
+    QStringList reviewQueries() const;
+    int reviewSoldDepth() const { return m_depths.sold; }
+    int reviewActiveDepth() const { return m_depths.active; }
+    int reviewResearchDepth() const { return m_depths.research; }
 
 signals:
     void stateChanged();
@@ -152,12 +171,15 @@ signals:
     void ended();
 
 private:
-    bool startSession(const QString &input, const std::optional<lookup::ItemRecord> &item);
+    bool startSession(const QString &input, const std::optional<lookup::ItemRecord> &item, bool reviewFirst);
     void setState(State state);
     void setError(const QString &error);
     void onReady();
     void onItemReady();
-    void startSearches();
+    // The searches with the built queries and m_depths, or ReviewSearches
+    // first.
+    void searchOrReview();
+    void startSearches(const QStringList &queries);
     void onRunnerFinished();
     void onBrowserFinished(bool normal);
     // `lookupId`: the saved lookup being corrected, if any.
@@ -181,6 +203,7 @@ private:
     lookup::Depths m_depths;
     int m_historyDays = 0;
     bool m_savedOnce = false;
+    bool m_reviewFirst = false;
     QString m_browserError;
     int m_step = 0;
     int m_pages = 0;

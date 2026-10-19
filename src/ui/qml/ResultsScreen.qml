@@ -44,6 +44,7 @@ Item {
 
             Muted {
                 Layout.fillWidth: true
+                font.family: Theme.mono
                 text: screen.results.statusText
                 color: screen.results.statusKind === "complete" ? Theme.mutedText : Theme.warnLabel
             }
@@ -221,6 +222,7 @@ Item {
                     }
                     Muted {
                         Layout.fillWidth: true
+                        font.family: Theme.mono
                         text: screen.results.soldLine
                     }
                     RangeBar {
@@ -250,6 +252,7 @@ Item {
                         Muted {
                             required property string modelData
                             Layout.fillWidth: true
+                            font.family: Theme.mono
                             text: modelData
                         }
                     }

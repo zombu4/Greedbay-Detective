@@ -153,6 +153,8 @@ void ResultsController::setIncluded(int row, bool included)
     m_sameItem->update(entries(true));
     m_notThisItem->update(entries(false));
     emit changed();
+    if (m_storeError.isEmpty())
+        emit stored();
 }
 
 void ResultsController::recompute()
@@ -271,10 +273,13 @@ QString ResultsController::statusText() const
         status = QStringLiteral("Cancelled before the end - the numbers use what was read until then. ");
     else if (result.status == QLatin1String("stopped"))
         status = QStringLiteral("Stopped before the end: %1. The numbers use what was read until then. ").arg(result.message);
+    const QString saved = whenText(m_saved.createdAt, QDateTime::currentDateTime());
+    // Version 1 recorded neither the pages nor the time of a lookup.
+    if (result.identity.source == QLatin1String("older version"))
+        return status + QStringLiteral("Saved %1 by an older version of the app · not loaded again from eBay").arg(saved);
     return status
            + QStringLiteral("Saved %1 · %2 · %3 · not loaded again from eBay")
-                 .arg(whenText(m_saved.createdAt, QDateTime::currentDateTime()),
-                      countText(result.pagesLoaded, QStringLiteral("eBay page"), QStringLiteral("eBay pages")),
+                 .arg(saved, countText(result.pagesLoaded, QStringLiteral("eBay page"), QStringLiteral("eBay pages")),
                       QStringLiteral("%1 s").arg(QString::number(static_cast<double>(result.elapsedMs) / 1000.0, 'f', 0)));
 }
 

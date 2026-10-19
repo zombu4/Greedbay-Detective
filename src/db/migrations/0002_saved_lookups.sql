@@ -15,11 +15,18 @@
 --   listing_photos   the listing's first photo, scaled down, once per item
 --                    number, so a saved lookup shows it without loading
 --                    anything from eBay
--- Version-1 rows are copied over (see the INSERT statements); their rows
--- were never matched, so they get the bucket "to_check" with a reason that
--- says so, and stay counted unless version 1 had excluded them.
+-- Every version-1 value is copied (see the INSERT statements): into its
+-- version-2 column where there is one; where there is none, as text the
+-- screens show - the lookup's notes (valuation: algo_version, basis,
+-- sample_total, shipping_verdict, typical_shipping_cents,
+-- subject_shipping_cents) or the row's reasons (excluded_listing.reason,
+-- total_sales_cents, the price in a currency other than USD, url when there
+-- is no item number). Version-1 rows were never matched, so they get the
+-- bucket "to_check" and stay counted unless version 1 had excluded them or
+-- their price is not in USD.
 --
--- Never stored: page HTML, the user's ZIP code, cookies, account names.
+-- Never stored: page HTML, the user's ZIP code, cookies, the user's own eBay
+-- account name (seller names of listings are public listing data).
 -- Money is integer cents (USD). Times are UTC ISO-8601 text. Lists are JSON
 -- arrays as text. This file is never edited after release; changes go in a
 -- new migration.
@@ -140,16 +147,25 @@ CREATE TABLE listing_photos (
 -- Version-1 lookups. The subject listing (role 'subject', the lowest id when
 -- there were several) gives the listing columns; research_summary becomes
 -- the summary block in the extractor's key names; valuation gives the
--- numbers (value = median, low/high = P25/P75, sample_kept = count).
+-- numbers (value = median, low/high = P25/P75, sample_kept = count) and,
+-- as notes, what version 2 has no column for.
 INSERT INTO lookups (
     id, created_at, input, item_id, marketplace, status, message, app_version, note,
     title, price_cents, shipping_cents, currency, condition_text,
-    identity_source, queries, research_summary,
+    identity_source, queries, notes, research_summary,
     listing_total_cents, sold_count, sold_median_cents, sold_p25_cents, sold_p75_cents, sold_confidence)
 SELECT
     l.id, l.created_at, l.input, l.item_id, l.marketplace, l.status, l.error, l.app_version, l.note,
     s.title, s.price_cents, s.shipping_cents, s.currency, s.condition,
     'older version', json_array(l.query),
+    CASE WHEN v.lookup_id IS NULL THEN '[]' ELSE json_array(
+        printf('version 1 value math (algorithm %d): basis %s, %d of %d sales kept', v.algo_version, v.basis,
+               v.sample_kept, v.sample_total),
+        printf('version 1 shipping check: %s (listing %s, typical %s)', COALESCE(v.shipping_verdict, 'not recorded'),
+               CASE WHEN v.subject_shipping_cents IS NULL THEN 'not recorded'
+                    ELSE printf('$%d.%02d', v.subject_shipping_cents / 100, v.subject_shipping_cents % 100) END,
+               CASE WHEN v.typical_shipping_cents IS NULL THEN 'not recorded'
+                    ELSE printf('$%d.%02d', v.typical_shipping_cents / 100, v.typical_shipping_cents % 100) END)) END,
     COALESCE((SELECT json_object(
                   'avgSoldPriceCents', r.avg_sold_cents,
                   'soldPriceRange', json(CASE WHEN r.min_sold_cents IS NOT NULL AND r.max_sold_cents IS NOT NULL
@@ -169,29 +185,54 @@ LEFT JOIN valuation v ON v.lookup_id = l.id;
 
 -- Version-1 comparison rows (every role but 'subject'). The source follows
 -- the page it came from; a row whose source was the item page follows its
--- role. Formats: 'auction' stays, 'fixed' and 'best_offer' (fixed price with
--- Best Offer) become 'fixed_price', 'unknown' becomes NULL. The v1 row id
--- keeps the order. Counted unless excluded_listing listed it.
+-- role. position numbers the rows of one lookup and source 0, 1, 2, ... in
+-- the order of their version-1 ids (the order the app reads them back in).
+-- Formats: 'auction' stays, 'fixed' and 'best_offer' (fixed price with Best
+-- Offer) become 'fixed_price', 'unknown' becomes NULL. A price in another
+-- currency than USD is not taken as cents of a dollar: price and shipping
+-- stay empty, the amount is in the reasons, and the row is not counted.
+-- Counted unless excluded_listing listed it (its reason is in the reasons).
 INSERT INTO lookup_rows (
     lookup_id, source, position, item_id, title, condition_text, price_cents, shipping_cents, format, bids,
     sold_date, confirmed, total_sold, last_sold_date, bucket, reasons, included)
 SELECT
-    x.lookup_id,
-    CASE x.source WHEN 'sold_search' THEN 'sold' WHEN 'active_search' THEN 'active'
-                  WHEN 'product_research' THEN 'research' ELSE x.role END,
-    x.id, x.item_id, x.title, x.condition, x.price_cents, x.shipping_cents,
-    CASE x.format WHEN 'auction' THEN 'auction' WHEN 'fixed' THEN 'fixed_price' WHEN 'best_offer' THEN 'fixed_price' END,
-    x.bids,
-    CASE WHEN x.source <> 'product_research' AND x.role = 'sold' THEN substr(x.ended_at, 1, 10) END,
-    CASE WHEN x.price_status = 'confirmed' THEN 1 ELSE 0 END,
-    CASE WHEN x.source = 'product_research' THEN x.quantity_sold END,
-    CASE WHEN x.source = 'product_research' THEN substr(x.ended_at, 1, 10) END,
-    'to_check',
-    json_array('saved by an older version of the app: not matched'),
-    CASE WHEN EXISTS (SELECT 1 FROM excluded_listing e WHERE e.listing_id = x.id) THEN 0 ELSE 1 END
-FROM listing x
-WHERE x.role <> 'subject'
-ORDER BY x.id;
+    lookup_id, source, ROW_NUMBER() OVER (PARTITION BY lookup_id, source ORDER BY v1_id) - 1, item_id, title,
+    condition_text, price_cents, shipping_cents, format, bids, sold_date, confirmed, total_sold, last_sold_date,
+    'to_check', reasons, included
+FROM (
+    SELECT
+        x.id AS v1_id,
+        x.lookup_id,
+        CASE x.source WHEN 'sold_search' THEN 'sold' WHEN 'active_search' THEN 'active'
+                      WHEN 'product_research' THEN 'research' ELSE x.role END AS source,
+        x.item_id, x.title, x.condition AS condition_text,
+        CASE WHEN COALESCE(x.currency, 'USD') = 'USD' THEN x.price_cents END AS price_cents,
+        CASE WHEN COALESCE(x.currency, 'USD') = 'USD' THEN x.shipping_cents END AS shipping_cents,
+        CASE x.format WHEN 'auction' THEN 'auction' WHEN 'fixed' THEN 'fixed_price' WHEN 'best_offer' THEN 'fixed_price' END
+            AS format,
+        x.bids,
+        CASE WHEN x.source <> 'product_research' AND x.role = 'sold' THEN substr(x.ended_at, 1, 10) END AS sold_date,
+        CASE WHEN x.price_status = 'confirmed' THEN 1 ELSE 0 END AS confirmed,
+        CASE WHEN x.source = 'product_research' THEN x.quantity_sold END AS total_sold,
+        CASE WHEN x.source = 'product_research' THEN substr(x.ended_at, 1, 10) END AS last_sold_date,
+        (SELECT json_group_array(reason) FROM (
+             SELECT 1 AS k, 'saved by an older version of the app: not matched' AS reason
+             UNION ALL SELECT 2, 'version 1 left it out: ' || e.reason FROM excluded_listing e WHERE e.listing_id = x.id
+             UNION ALL SELECT 3, printf('price in %s: %s + %s shipping (hundredths)', x.currency, COALESCE(x.price_cents, 'no'),
+                                        COALESCE(x.shipping_cents, 'no'))
+                 WHERE COALESCE(x.currency, 'USD') <> 'USD'
+             UNION ALL SELECT 4, printf('version 1 price status of a sale: %s', x.price_status)
+                 WHERE x.price_status = 'asking' AND x.role = 'sold'
+             UNION ALL SELECT 5, printf('version 1 total sales: %d hundredths', x.total_sales_cents)
+                 WHERE x.total_sales_cents IS NOT NULL
+             UNION ALL SELECT 6, 'address: ' || x.url WHERE x.url IS NOT NULL AND x.item_id IS NULL
+             ORDER BY k)) AS reasons,
+        CASE WHEN EXISTS (SELECT 1 FROM excluded_listing e WHERE e.listing_id = x.id)
+                  OR COALESCE(x.currency, 'USD') <> 'USD' THEN 0 ELSE 1 END AS included
+    FROM listing x
+    WHERE x.role <> 'subject'
+)
+ORDER BY lookup_id, source, v1_id;
 
 DROP TABLE excluded_listing;
 

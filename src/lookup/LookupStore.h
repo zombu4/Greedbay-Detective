@@ -56,8 +56,9 @@ struct LookupSummary {
 // "partial", "stopped" as "failed" (PLAN 5: cancel saves partial, an error
 // saves failed with what was collected); reading maps them back.
 //
-// Never stored: page HTML, the user's ZIP code, cookies, account names (the
-// records hold none of them).
+// Never stored: page HTML, the user's ZIP code, cookies, the user's own eBay
+// account name (the records hold none of them; seller names of listings are
+// public listing data and are stored).
 class LookupStore {
 public:
     explicit LookupStore(QString connectionName);

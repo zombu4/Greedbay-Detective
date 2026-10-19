@@ -425,14 +425,20 @@ void TestLookupStore::upgradesVersion1()
                                     "'unknown', 11000, 'USD', 0, NULL, NULL, 'asking'), "
                                     "(5, 7, 'sold', 'product_research', '300000000021', 'Acme Q9 research', NULL, NULL, "
                                     "8800, 'USD', 700, NULL, '2026-09-02T00:00:00Z', 'confirmed')")));
-    QVERIFY(exec(v1, QStringLiteral("UPDATE listing SET quantity_sold = 3 WHERE id = 5")));
+    QVERIFY(exec(v1, QStringLiteral("UPDATE listing SET quantity_sold = 3, total_sales_cents = 26400 WHERE id = 5")));
+    // A sale priced in another currency: never read as US cents.
+    QVERIFY(exec(v1, QStringLiteral("INSERT INTO listing (id, lookup_id, role, source, item_id, title, price_cents, "
+                                    "currency, shipping_cents, ended_at, price_status) VALUES (6, 7, 'sold', "
+                                    "'sold_search', '200000000024', 'Acme Q9 abroad', 7700, 'EUR', 900, "
+                                    "'2026-09-22T18:00:00Z', 'confirmed')")));
     QVERIFY(exec(v1, QStringLiteral("INSERT INTO excluded_listing (listing_id, reason) VALUES (3, 'unconfirmed_not_used')")));
     QVERIFY(exec(v1, QStringLiteral("INSERT INTO research_summary (lookup_id, avg_sold_cents, min_sold_cents, max_sold_cents, "
                                     "free_shipping_pct, avg_shipping_cents, sellers_count, currency) VALUES "
                                     "(7, 9100, 7000, 12000, 25.5, 800, 6, 'USD')")));
     QVERIFY(exec(v1, QStringLiteral("INSERT INTO valuation (lookup_id, algo_version, sample_total, sample_kept, basis, "
-                                    "value_cents, low_cents, high_cents, confidence, currency) VALUES "
-                                    "(7, 1, 3, 2, 'confirmed', 9500, 9000, 10000, 'low', 'USD')")));
+                                    "value_cents, low_cents, high_cents, typical_shipping_cents, subject_shipping_cents, shipping_verdict, "
+                                    "confidence, currency) VALUES "
+                                    "(7, 1, 3, 2, 'confirmed', 9500, 9000, 10000, 1000, 1500, 'above', 'low', 'USD')")));
     Database::close(v1);
 
     const Database::Result upgraded =
@@ -474,7 +480,9 @@ void TestLookupStore::upgradesVersion1()
     QCOMPARE(result.researchSummary.value("soldPriceRange").toObject().value("minCents").toInt(), 7000);
     QCOMPARE(result.researchSummary.value("soldPriceRange").toObject().value("maxCents").toInt(), 12000);
 
-    QCOMPARE(result.sold.size(), 2);
+    QCOMPARE(result.notes, (QStringList{QStringLiteral("version 1 value math (algorithm 1): basis confirmed, 2 of 3 sales kept"),
+                                        QStringLiteral("version 1 shipping check: above (listing $15.00, typical $10.00)")}));
+    QCOMPARE(result.sold.size(), 3);
     QCOMPARE(result.active.size(), 1);
     QCOMPARE(result.research.size(), 1);
     QCOMPARE(result.sold.at(0).format, QStringLiteral("auction"));
@@ -483,36 +491,66 @@ void TestLookupStore::upgradesVersion1()
     QCOMPARE(result.sold.at(0).confirmed, true);
     QCOMPARE(result.sold.at(1).format, QStringLiteral("fixed_price"));
     QCOMPARE(result.sold.at(1).confirmed, false);
+    QCOMPARE(result.sold.at(2).priceCents, std::optional<qint64>());
+    QCOMPARE(result.sold.at(2).shippingCents, std::optional<qint64>());
     QCOMPARE(result.active.at(0).format, QString());
     QCOMPARE(result.active.at(0).soldDate, QString());
     QCOMPARE(result.research.at(0).avgSoldPriceCents, std::optional<qint64>(8800));
     QCOMPARE(result.research.at(0).avgShippingCents, std::optional<qint64>(700));
     QCOMPARE(result.research.at(0).totalSold, std::optional<int>(3));
     QCOMPARE(result.research.at(0).lastSoldDate, QStringLiteral("2026-09-02"));
-    QCOMPARE(saved->rows.size(), 4);
+    QCOMPARE(saved->rows.size(), 5);
+    const QString notMatched = QStringLiteral("saved by an older version of the app: not matched");
     for (const Row &row : saved->rows) {
         QCOMPARE(row.match.bucket, Bucket::ToCheck);
-        QCOMPARE(row.match.reasons, QStringList{QStringLiteral("saved by an older version of the app: not matched")});
-        // Only the excluded version-1 row (id 3, the unconfirmed offer) is unticked.
-        const bool excludedOne = row.source == Row::Source::Sold && row.index == 1;
-        QCOMPARE(row.included, !excludedOne);
+        QCOMPARE(row.match.reasons.first(), notMatched);
+        const bool excluded = row.source == Row::Source::Sold && row.index == 1;
+        const bool foreign = row.source == Row::Source::Sold && row.index == 2;
+        QCOMPARE(row.included, !excluded && !foreign);
+        if (excluded)
+            QCOMPARE(row.match.reasons, (QStringList{notMatched, QStringLiteral("version 1 left it out: unconfirmed_not_used")}));
+        else if (foreign)
+            QCOMPARE(row.match.reasons, (QStringList{notMatched, QStringLiteral("price in EUR: 7700 + 900 shipping (hundredths)")}));
+        else if (row.source == Row::Source::Research)
+            QCOMPARE(row.match.reasons, (QStringList{notMatched, QStringLiteral("version 1 total sales: 26400 hundredths")}));
+        else
+            QCOMPARE(row.match.reasons, QStringList{notMatched});
     }
+
+    // The card numbers as version 1 had them.
+    const std::optional<QList<LookupSummary>> copied = store.recent(10, &error);
+    QVERIFY2(copied, qPrintable(error));
+    QCOMPARE(copied->first().soldCount, 2);
+    QCOMPARE(copied->first().soldMedianCents, std::optional<qint64>(9500));
+    QCOMPARE(copied->first().soldConfidence, QStringLiteral("Low"));
+
+    // The user's checkbox on a migrated lookup is saved (positions 0, 1, ...
+    // per source, as load() numbers them).
+    QList<Row> rows = saved->rows;
+    rows[0].included = false;
+    const Valuation changed = valuate(result, rows, app::ValueSettings());
+    QVERIFY2(store.updateIncluded(7, result, rows, changed, &error), qPrintable(error));
+    QCOMPARE(store.load(7, &error)->rows.at(0).included, false);
+    rows[0].included = true;
+    QVERIFY2(store.updateIncluded(7, result, rows, valuate(result, rows, app::ValueSettings()), &error), qPrintable(error));
 
     const std::optional<QList<LookupSummary>> recent = store.recent(10, &error);
     QVERIFY2(recent, qPrintable(error));
     QCOMPARE(recent->size(), 1);
     QCOMPARE(recent->first().status, QStringLiteral("partial"));
     QCOMPARE(recent->first().listingTotalCents, std::optional<qint64>(13500));
-    QCOMPARE(recent->first().soldCount, 2);
-    QCOMPARE(recent->first().soldMedianCents, std::optional<qint64>(9500));
-    QCOMPARE(recent->first().soldConfidence, QStringLiteral("Low"));
+    // Recomputed from the rows when the checkboxes were saved: one counted
+    // US-dollar sale ($90.00 + $10.00).
+    QCOMPARE(recent->first().soldCount, 1);
+    QCOMPARE(recent->first().soldMedianCents, std::optional<qint64>(10000));
+    QCOMPARE(recent->first().soldConfidence, QStringLiteral("Not enough data"));
 
     // The backup is the version-1 file.
     QSqlDatabase backup = QSqlDatabase::addDatabase(QStringLiteral("QSQLITE"), QStringLiteral("backup"));
     backup.setDatabaseName(upgraded.backupPath);
     QVERIFY(backup.open());
     QCOMPARE(scalar(QStringLiteral("backup"), QStringLiteral("PRAGMA user_version")).toInt(), 1);
-    QCOMPARE(scalar(QStringLiteral("backup"), QStringLiteral("SELECT count(*) FROM listing")).toInt(), 5);
+    QCOMPARE(scalar(QStringLiteral("backup"), QStringLiteral("SELECT count(*) FROM listing")).toInt(), 6);
     backup.close();
 }
 

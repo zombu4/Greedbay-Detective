@@ -4,6 +4,7 @@
 
 #include <QObject>
 #include <QVariantList>
+#include <QVariantMap>
 #include <QtQmlIntegration/qqmlintegration.h>
 
 #include <functional>
@@ -86,10 +87,11 @@ public:
     Q_INVOKABLE QString setUpdateCheck(bool enabled);
     Q_INVOKABLE QString setNumbers(double outlierFactor, int high, int medium, int low, double shippingRatio,
                                    double shippingMinAboveDollars);
-    // Deletes the profile folder of the browser a lookup would use (core/
-    // BrowserProfiles::clear): the eBay sign-in, cookies and cache of the
-    // app's browser. Returns what happened, in plain words.
-    Q_INVOKABLE QString signOut();
+    // Deletes the app's profile folder of every supported browser (core/
+    // BrowserProfiles::clear; a browser chosen earlier may have one too): the
+    // eBay sign-in, cookies and cache of the app's browsers. Returns
+    // {ok: bool, message: what happened, in plain words}.
+    Q_INVOKABLE QVariantMap signOut();
 
     // Reads the installed browsers again.
     Q_INVOKABLE void refreshBrowsers();

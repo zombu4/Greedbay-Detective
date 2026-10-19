@@ -190,6 +190,8 @@ public:
 
 signals:
     void changed();
+    // The user's choice and the new numbers were stored in the database.
+    void stored();
 
 private:
     // Valuation, CHEAPEST marks, the cheapest listing and the bar, from the
