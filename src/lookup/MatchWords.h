@@ -20,6 +20,10 @@ struct MatchWords {
     QStringList documentation;
     QStringList partFits;     // a part on its own
     QStringList partWords;    // a part when the title names another model too
+    QStringList kitWords;     // kit, set: decides nothing alone (owner case 9)
+    QStringList kitParts;     // with a kit word: a parts or repair kit
+    QStringList kitFor;       // "kit for": a kit for something
+    QStringList completeKit;  // with a kit word: the brand's complete kit, the item
     QStringList accessory;
     QStringList withItem;     // an accessory word after one of these is part of the item
     QStringList companion;    // "for": "<other model> ... for <model>"

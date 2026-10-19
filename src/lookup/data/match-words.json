@@ -90,6 +90,54 @@
             "cord wrap"
         ]
     },
+    "kitWords": {
+        "source": "owner case 9 (\"RECAP KIT\"; \"kit\"/\"set\" with component types): the word that makes a kit; alone it decides nothing, because the brand's own kits of complete devices are the item",
+        "words": [
+            "kit",
+            "kits",
+            "set"
+        ]
+    },
+    "kitParts": {
+        "source": "owner case 9: repair/upgrade kits and parts sets for the model (recap, cap, capacitor, rebuild, restoration, repair, upgrade, parts kit; component types capacitors, diodes, resistors, transistors, tubes, knobs); with a kit word -> part/fits",
+        "words": [
+            "recap",
+            "cap",
+            "caps",
+            "capacitor",
+            "capacitors",
+            "rebuild",
+            "restoration",
+            "repair",
+            "upgrade",
+            "parts",
+            "diode",
+            "diodes",
+            "resistor",
+            "resistors",
+            "transistor",
+            "transistors",
+            "tube",
+            "tubes",
+            "knob",
+            "knobs"
+        ]
+    },
+    "kitFor": {
+        "source": "owner case 9: \"kit for\" is a kit for something, not the item",
+        "words": [
+            "kit for",
+            "kits for",
+            "set for"
+        ]
+    },
+    "completeKit": {
+        "source": "owner case 9 (\"Heathkit IP-20 kit unbuilt\": an unbuilt complete brand kit IS the item); a kit with none of these and no parts word is \"to check\"",
+        "words": [
+            "unbuilt",
+            "complete"
+        ]
+    },
     "accessory": {
         "source": "owner rule 4 (probe, leads, case), case 5 (holster)",
         "words": [

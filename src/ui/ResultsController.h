@@ -114,6 +114,16 @@ class ResultsController : public QObject {
     Q_PROPERTY(QString middleText READ middleText NOTIFY changed)
     Q_PROPERTY(QString lowHighText READ lowHighText NOTIFY changed)
     Q_PROPERTY(QString forSaleText READ forSaleText NOTIFY changed)
+    // Product Research, with its period (owner decision 2026-10-19: 3 years
+    // by default): a heading line and, when it counted sales, its numbers.
+    Q_PROPERTY(QString researchLine READ researchLine NOTIFY changed)
+    Q_PROPERTY(bool hasResearchNumbers READ hasResearchNumbers NOTIFY changed)
+    Q_PROPERTY(QString researchMedianText READ researchMedianText NOTIFY changed)
+    Q_PROPERTY(QString researchMiddleText READ researchMiddleText NOTIFY changed)
+    Q_PROPERTY(QString researchLowHighText READ researchLowHighText NOTIFY changed)
+    // Which numbers the range bar shows: the sold search's, or Product
+    // Research's when the sold search counted none.
+    Q_PROPERTY(QString barSource READ barSource NOTIFY changed)
     // The range bar, in cents; -1 = not shown. barMin/barMax span every value
     // shown on it.
     Q_PROPERTY(double barMin READ barMin NOTIFY changed)
@@ -176,6 +186,12 @@ public:
     QString middleText() const;
     QString lowHighText() const;
     QString forSaleText() const;
+    QString researchLine() const;
+    bool hasResearchNumbers() const { return m_valuation.research.medianCents.has_value(); }
+    QString researchMedianText() const;
+    QString researchMiddleText() const;
+    QString researchLowHighText() const;
+    QString barSource() const;
     double barMin() const { return m_bar.min; }
     double barMax() const { return m_bar.max; }
     double bandLow() const { return m_bar.bandLow; }
@@ -198,6 +214,8 @@ private:
     // rows as they are now.
     void recompute();
     QList<RowsModel::Entry> entries(bool sameItem) const;
+    // "last 3 years", "last 2 years", "last 90 days".
+    QString periodText() const;
 
     lookup::LookupStore m_store;
     std::function<ValueSettings()> m_valueSettings;

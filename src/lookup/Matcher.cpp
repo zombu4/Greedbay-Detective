@@ -157,6 +157,25 @@ Match matchRow(const QString &title, const Identity &identity, const MatchWords 
         return done(Bucket::Documentation);
     }
 
+    // Kits (owner case 9): a parts or repair kit for the model is a part;
+    // the brand's own complete kit is the item; any other kit is unsure.
+    QString kit;
+    if (firstPhrase(list, words.kitWords, &kit) >= 0) {
+        if (firstPhrase(list, words.kitParts, &word) >= 0) {
+            reasons.append(QStringLiteral("parts kit (\"%1\" ... \"%2\")").arg(word, kit));
+            return done(Bucket::PartFits);
+        }
+        if (firstPhrase(list, words.kitFor, &word) >= 0) {
+            reasons.append(QStringLiteral("a kit for something (\"%1\")").arg(word));
+            return done(Bucket::PartFits);
+        }
+        if (firstPhrase(list, words.completeKit, &word) < 0) {
+            reasons.append(QStringLiteral("\"%1\": the complete kit or parts for it? check").arg(kit));
+            return done(Bucket::ToCheck);
+        }
+        reasons.append(QStringLiteral("the brand's complete kit (\"%1\" %2)").arg(word, kit));
+    }
+
     // "... for <model>": a companion word followed within reach by the model
     // (brand names may stand between).
     const QStringList others = otherModelCodes(codeList, identity, words);

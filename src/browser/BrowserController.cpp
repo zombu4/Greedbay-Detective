@@ -231,10 +231,25 @@ bool BrowserController::start(QString *error)
     // GetUserCacheDirectory). --no-first-run and --no-default-browser-check
     // keep a fresh profile from opening welcome pages and asking to become
     // the default browser.
-    const QStringList arguments{QStringLiteral("--user-data-dir=") + QDir::toNativeSeparators(profile),
-                                QStringLiteral("--disk-cache-dir=") + QDir::toNativeSeparators(profile),
-                                QStringLiteral("--no-first-run"), QStringLiteral("--no-default-browser-check"),
-                                QStringLiteral("about:blank")};
+    QStringList arguments{QStringLiteral("--user-data-dir=") + QDir::toNativeSeparators(profile),
+                          QStringLiteral("--disk-cache-dir=") + QDir::toNativeSeparators(profile),
+                          QStringLiteral("--no-first-run"), QStringLiteral("--no-default-browser-check")};
+#ifdef Q_OS_MACOS
+    // macOS: at start Chromium clones its own app bundle into a temp folder
+    // and hard-links the main executable into the clone, so a running browser
+    // survives an update of the bundle (chrome/browser/mac/
+    // code_sign_clone_manager.mm, CloneApp / HardLinkMainExecutable, feature
+    // kMacAppCodeSignClone, enabled by default; present in Brave 155). macOS
+    // App Management denies that link inside another app's bundle and blames
+    // the app that started the browser: "<App> was prevented from modifying
+    // apps on your Mac" (observed 2026-10-19: kernel "System Policy: Brave
+    // Browser deny(1) file-link /Applications/Brave Browser.app/Contents/
+    // MacOS/Brave Browser", tccd kTCCServiceSystemPolicyAppBundles,
+    // responsible = this app). The app's short sessions need no update
+    // safety, so the feature is off; nothing touches any app bundle.
+    arguments.append(QStringLiteral("--disable-features=MacAppCodeSignClone"));
+#endif
+    arguments.append(QStringLiteral("about:blank"));
     QString startError;
     if (!m_cdp->start(m_browser.executable, arguments, &startError)) {
         delete m_cdp;

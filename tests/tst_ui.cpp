@@ -158,7 +158,8 @@ void TestUi::initTestCase()
     const LookupStore store(QStringLiteral("app"));
     const Valuation valuation = valuate(result, rows, app::ValueSettings());
     const std::optional<qint64> id = store.save(QStringLiteral("100000000090"), result, rows, valuation,
-                                                app::lookup::Depths{240, 240, 200}, 90, &error);
+                                                app::lookup::Depths{240, 240, 200},
+                                                app::Settings::kDefaultSoldHistoryDays, &error);
     QVERIFY2(id, qPrintable(error));
     m_lookupId = *id;
 
@@ -286,6 +287,32 @@ void TestUi::savedLookupReopens()
     QCOMPARE(saved->rows.at(saleRow).included, false);
     // Back as it was, for the other tests.
     results->setIncluded(saleRow, true);
+    QCOMPARE(results->medianText(), QStringLiteral("$106.00"));
+
+    // Product Research with its period (3 years by default): one listing,
+    // $85.00 + $9.00.
+    QCOMPARE(results->researchLine(),
+             QStringLiteral("Product Research, last 3 years (one value per listing: average sold + average shipping): "
+                            "1 sale - not enough data confidence, median $94.00, middle half $94.00 - $94.00"));
+    QVERIFY(results->hasResearchNumbers());
+    QCOMPARE(results->researchMedianText(), QStringLiteral("$94.00"));
+    QCOMPARE(results->barSource(), QStringLiteral("bar: sold search"));
+    // With no sold sale counted, the bar shows Product Research.
+    QList<int> soldRows;
+    for (int i = 0; i < results->sameItem()->count(); ++i) {
+        const QModelIndex index = results->sameItem()->index(i);
+        if (index.data(app::ui::RowsModel::WhereRole).toString() == QLatin1String("sold"))
+            soldRows.append(index.data(app::ui::RowsModel::RowRole).toInt());
+    }
+    QCOMPARE(soldRows.size(), 4);
+    for (const int r : soldRows)
+        results->setIncluded(r, false);
+    QVERIFY(!results->hasSoldNumbers());
+    QCOMPARE(results->barSource(),
+             QStringLiteral("bar: Product Research, last 3 years (the sold search counted no sale)"));
+    QCOMPARE(results->medianValue(), 9400.0);
+    for (const int r : soldRows)
+        results->setIncluded(r, true);
     QCOMPARE(results->medianText(), QStringLiteral("$106.00"));
 }
 

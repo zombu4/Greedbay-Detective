@@ -3,6 +3,7 @@
 // page replies (the reply objects of BrowserController), with the built-in
 // matching data. Identity, matching and value: tst_matching. Every item,
 // seller and number is invented.
+#include "core/Settings.h"
 #include "ebay/SearchUrls.h"
 #include "lookup/Identity.h"
 #include "lookup/LookupReport.h"
@@ -14,6 +15,7 @@
 #include <QJsonObject>
 #include <QSignalSpy>
 #include <QTest>
+#include <QUrlQuery>
 
 using namespace app::lookup;
 using app::ebay::PageKind;
@@ -578,6 +580,19 @@ void TestLookup::startFromSavedItem()
     ItemRecord noNumber = item;
     noNumber.itemId.clear();
     QVERIFY(!makeRunner()->startFromItem(noNumber, &error));
+
+    // Product Research is asked for 3 years by default (owner decision
+    // 2026-10-19).
+    QCOMPARE(app::Settings::kDefaultSoldHistoryDays, 1095);
+    LookupRunner *research = makeRunner();
+    QVERIFY(research->startFromItem(item, &error));
+    QVERIFY(QSignalSpy(research, &LookupRunner::itemReady).wait(5000));
+    m_requests.clear();
+    QVERIFY2(research->startComps(research->result().queries, Depths{0, 0, 50}, app::Settings::kDefaultSoldHistoryDays, &error),
+             qPrintable(error));
+    QCOMPARE(m_requests.size(), 1);
+    QCOMPARE(m_requests.first().kind, PageKind::Research);
+    QCOMPARE(QUrlQuery(m_requests.first().url).queryItemValue(QStringLiteral("dayRange")), QStringLiteral("1095"));
 
     QJsonObject withPhoto = itemData();
     withPhoto.insert("imageUrl", "https://images.example.com/m7x.jpg");

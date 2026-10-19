@@ -185,7 +185,9 @@ void ResultsController::recompute()
         m_cheapestTotal = lookup::rowTotal(result, cheapest);
     }
 
-    const lookup::ValueNumbers &sold = m_valuation.sold;
+    // The sold search's numbers, or Product Research's when the sold search
+    // counted none.
+    const lookup::ValueNumbers &sold = m_valuation.sold.medianCents ? m_valuation.sold : m_valuation.research;
     m_bar = Bar();
     QList<double> values;
     auto add = [&values](double value) {
@@ -407,24 +409,63 @@ QString ResultsController::cheapestLabel() const
     return m_cheapestTotal ? QStringLiteral("cheapest for sale %1").arg(moneyText(m_cheapestTotal)) : QString();
 }
 
+QString ResultsController::periodText() const
+{
+    const int days = m_saved.historyDays;
+    if (days > 0 && days % 365 == 0)
+        return QStringLiteral("last %1").arg(countText(days / 365, QStringLiteral("year"), QStringLiteral("years")));
+    return QStringLiteral("last %1").arg(countText(days, QStringLiteral("day"), QStringLiteral("days")));
+}
+
+QString ResultsController::researchLine() const
+{
+    const lookup::LookupResult &result = m_saved.result;
+    if (result.researchUnavailable)
+        return QStringLiteral("Product Research is not available on this eBay account, so every sold price is shown as "
+                              "unconfirmed.");
+    bool anyResearch = false;
+    for (const Row &row : m_saved.rows)
+        anyResearch = anyResearch || row.source == Row::Source::Research;
+    const lookup::ValueNumbers &research = m_valuation.research;
+    if (research.included > 0 || !research.outliers.isEmpty())
+        return QStringLiteral("Product Research, %1 (one value per listing: average sold + average shipping): %2")
+            .arg(periodText(), numbersLine(research));
+    if (anyResearch)
+        return QStringLiteral("Product Research, %1: no listing of the same item counted.").arg(periodText());
+    if (m_saved.depths.research > 0 && result.status == QLatin1String("complete"))
+        return QStringLiteral("Product Research, %1: no listings found for these searches.").arg(periodText());
+    return QStringLiteral("Product Research, %1: not read.").arg(periodText());
+}
+
+QString ResultsController::researchMedianText() const { return moneyText(m_valuation.research.medianCents); }
+
+QString ResultsController::researchMiddleText() const
+{
+    const lookup::ValueNumbers &research = m_valuation.research;
+    return research.p25Cents ? QStringLiteral("%1 - %2").arg(moneyText(research.p25Cents), moneyText(research.p75Cents))
+                             : QStringLiteral("-");
+}
+
+QString ResultsController::researchLowHighText() const
+{
+    const lookup::ValueNumbers &research = m_valuation.research;
+    return research.lowCents ? QStringLiteral("%1 / %2").arg(moneyText(research.lowCents), moneyText(research.highCents))
+                             : QStringLiteral("-");
+}
+
+QString ResultsController::barSource() const
+{
+    if (m_valuation.sold.medianCents)
+        return QStringLiteral("bar: sold search");
+    if (m_valuation.research.medianCents)
+        return QStringLiteral("bar: Product Research, %1 (the sold search counted no sale)").arg(periodText());
+    return {};
+}
+
 QStringList ResultsController::sideLines() const
 {
     const lookup::LookupResult &result = m_saved.result;
     QStringList lines;
-    const QString period = QStringLiteral("last %1").arg(countText(m_saved.historyDays, QStringLiteral("day"), QStringLiteral("days")));
-    bool anyResearch = false;
-    for (const Row &row : m_saved.rows)
-        anyResearch = anyResearch || row.source == Row::Source::Research;
-    if (result.researchUnavailable)
-        lines.append(QStringLiteral("Product Research is not available on this eBay account, so every sold price is "
-                                    "shown as unconfirmed."));
-    else if (m_valuation.research.included > 0 || !m_valuation.research.outliers.isEmpty())
-        lines.append(QStringLiteral("Product Research (%1, one value per listing: average sold + average shipping): %2")
-                         .arg(period, numbersLine(m_valuation.research)));
-    else if (anyResearch)
-        lines.append(QStringLiteral("Product Research (%1): no listing of the same item counted.").arg(period));
-    else if (m_saved.depths.research > 0 && result.status == QLatin1String("complete"))
-        lines.append(QStringLiteral("Product Research (%1): no listings found for these searches.").arg(period));
     if (m_valuation.ebayAverageSoldCents) {
         const QJsonValue shipping = result.researchSummary.value(QStringLiteral("avgShippingCents"));
         lines.append(QStringLiteral("eBay's own Product Research average (it may mix in other models): %1 sold%2")

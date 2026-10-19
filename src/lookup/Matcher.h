@@ -30,6 +30,13 @@ namespace app::lookup {
 //   Lot            a lot word
 //   Documentation  a documentation word not following a with-item word
 //                  ("with manual" belongs to the item)
+//   PartFits       a kit word (kit, set) with a kit-parts word (recap, cap,
+//                  capacitors, diodes, repair, upgrade, ...) or "kit for"
+//                  (owner case 9)
+//   ToCheck        a kit word without those and without a complete-kit word
+//                  (unbuilt, complete): a complete kit or parts for it?
+//   (a kit word with a complete-kit word goes on: the brand's own kit of
+//   the device is the item)
 //   Companion      "<other model> ... for <model>" (rule 13)
 //   Accessory      "<accessory word> ... for <model>"
 //   PartFits       any other "... for <model>"; a part-fits word; a part

@@ -477,7 +477,7 @@ void TestExtractors::research()
     QCOMPARE(data.value("offset").toInt(), 0);
     QCOMPARE(data.value("limit").toInt(), 50);
     QCOMPARE(data.value("dayRange").toInt(), 1095);
-    QCOMPARE(data.value("rowCount").toInt(), 3);
+    QCOMPARE(data.value("rowCount").toInt(), 4);
     QCOMPARE(data.value("morePossible").toBool(), false);
 
     // Read from the section.aggregate-metric blocks only: the table header
@@ -495,7 +495,7 @@ void TestExtractors::research()
     QCOMPARE(names(summary.value("missing")), set({"sellThroughPercent"}));
 
     const QJsonArray rows = data.value("rows").toArray();
-    QCOMPARE(rows.size(), 3);
+    QCOMPARE(rows.size(), 4);
     const QJsonObject r1 = rows.at(0).toObject();
     QCOMPARE(r1.value("itemId").toString(), QStringLiteral("100000000020"));
     QCOMPARE(r1.value("title").toString(), QStringLiteral("Acme Model 7 Multimeter"));
@@ -527,6 +527,14 @@ void TestExtractors::research()
     QCOMPARE(r3.value("totalSold").toInt(), 2);
     QCOMPARE(names(r3.value("missing")), set({"formatText", "avgShippingCents", "freeShippingPercent",
                                                "totalSalesCents", "bids", "lastSoldDate"}));
+
+    // An old sale: title and item number from the span, no link.
+    const QJsonObject r4 = rows.at(3).toObject();
+    QCOMPARE(r4.value("itemId").toString(), QStringLiteral("100000000023"));
+    QCOMPARE(r4.value("title").toString(), QStringLiteral("Acme Model 7 Multimeter WORKING"));
+    QCOMPARE(r4.value("avgSoldPriceCents").toInt(), 3650);
+    QCOMPARE(r4.value("totalSold").toInt(), 2);
+    QCOMPARE(r4.value("lastSoldDate").toString(), QStringLiteral("2025-10-15"));
 }
 
 void TestExtractors::stopsAtFewerWordsDivider()

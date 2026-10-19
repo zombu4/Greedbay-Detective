@@ -28,7 +28,10 @@ struct ValueSettings {
 // always used and the platform default store is never touched.
 class Settings {
 public:
-    static constexpr int kDefaultSoldHistoryDays = 90;
+    // Owner decision 2026-10-19 (replaces Q20's 90 days): Product Research
+    // uses 3 years by default. Its first page is one load either way; more
+    // rows can mean more pages, up to the research depth.
+    static constexpr int kDefaultSoldHistoryDays = 1095;
     // Owner decision 2026-10-18: 3-6 s randomized between page loads.
     static constexpr int kDefaultPageDelayMinMs = 3000;
     static constexpr int kDefaultPageDelayMaxMs = 6000;

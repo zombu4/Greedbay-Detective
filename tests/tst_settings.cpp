@@ -45,7 +45,7 @@ void TestSettings::defaultsWhenNoFile()
     QTemporaryDir tmp;
     QVERIFY(tmp.isValid());
     const Settings settings(tmp.path() + QStringLiteral("/settings.ini"));
-    QCOMPARE(settings.soldHistoryDays(), 90);
+    QCOMPARE(settings.soldHistoryDays(), 1095);
     QCOMPARE(settings.soldHistoryDays(), Settings::kDefaultSoldHistoryDays);
 }
 
@@ -87,15 +87,15 @@ void TestSettings::invalidStoredValuesReadAsDefault()
 
     const QString notNumber = tmp.path() + QStringLiteral("/notnumber.ini");
     QVERIFY(writeTestFile(notNumber, "[lookup]\nsoldHistoryDays=abc\n"));
-    QCOMPARE(Settings(notNumber).soldHistoryDays(), 90);
+    QCOMPARE(Settings(notNumber).soldHistoryDays(), 1095);
 
     const QString negative = tmp.path() + QStringLiteral("/negative.ini");
     QVERIFY(writeTestFile(negative, "[lookup]\nsoldHistoryDays=-5\n"));
-    QCOMPARE(Settings(negative).soldHistoryDays(), 90);
+    QCOMPARE(Settings(negative).soldHistoryDays(), 1095);
 
     const QString tooLong = tmp.path() + QStringLiteral("/toolong.ini");
     QVERIFY(writeTestFile(tooLong, "[lookup]\nsoldHistoryDays=1096\n"));
-    QCOMPARE(Settings(tooLong).soldHistoryDays(), 90);
+    QCOMPARE(Settings(tooLong).soldHistoryDays(), 1095);
 }
 
 void TestSettings::writesIniText()

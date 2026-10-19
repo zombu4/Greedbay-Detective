@@ -200,8 +200,9 @@ Item {
 
             Section {
                 heading: "Sold history window"
-                note: "The period Product Research covers, in days: 90 by default, up to "
-                      + screen.settings.maxHistoryDays + " (3 years)."
+                note: "The period Product Research covers, in days: " + screen.settings.maxHistoryDays
+                      + " (3 years) by default and at most; pick a shorter period if you want. The sold search "
+                      + "always shows eBay's own period."
                 RowLayout {
                     spacing: 12
                     NumberBox { id: days; from: 1; to: screen.settings.maxHistoryDays; value: screen.settings.historyDays; Accessible.name: "Days" }

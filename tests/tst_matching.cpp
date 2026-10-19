@@ -6,6 +6,7 @@
 // item number and price is invented.
 #include "lookup/Identity.h"
 #include "lookup/KnownModels.h"
+#include "lookup/LookupReport.h"
 #include "lookup/MatchWords.h"
 #include "lookup/Matcher.h"
 #include "lookup/Text.h"
@@ -56,6 +57,7 @@ private slots:
     void rows_data();
     void rows();
     void valueOverAllRows();
+    void partsKitIsNotCheapest();
     void shippingCheck();
 };
 
@@ -409,6 +411,21 @@ void TestMatching::rows_data()
                                 << Bucket::SameItem;
     QTest::newRow("8 new by eBay") << "Marconi" << "2022" << "Marconi 2022 signal generator" << "Brand New"
                                    << Bucket::SameItem;
+    // Case 9, Heathkit IP-20: repair and parts kits are parts; the brand's
+    // own unbuilt kit is the item; any other kit is unsure.
+    const QString ip20 = QStringLiteral("IP-20");
+    QTest::newRow("9 recap kit") << heathkit << ip20
+                                 << "Heathkit IP-20 RECAP KIT for Power Supply w/ Instructions - capacitors & diodes"
+                                 << "Brand New" << Bucket::PartFits;
+    QTest::newRow("9 cap kit") << heathkit << ip20 << "Heathkit IP-20 cap kit" << "" << Bucket::PartFits;
+    QTest::newRow("9 kit for") << heathkit << ip20 << "Heathkit IP-20 kit for the regulated supply" << ""
+                               << Bucket::PartFits;
+    QTest::newRow("9 parts set") << heathkit << ip20 << "Heathkit IP-20 capacitors & diodes set" << ""
+                                 << Bucket::PartFits;
+    QTest::newRow("9 unbuilt kit") << heathkit << ip20 << "Heathkit IP-20 kit unbuilt" << "" << Bucket::SameItem;
+    QTest::newRow("9 unsure kit") << heathkit << ip20 << "Heathkit IP-20 power supply kit" << "" << Bucket::ToCheck;
+    QTest::newRow("9 the device") << heathkit << ip20 << "Heathkit IP-20 regulated power supply" << "Used"
+                                  << Bucket::SameItem;
 }
 
 void TestMatching::rows()
@@ -450,6 +467,39 @@ void TestMatching::valueOverAllRows()
     QCOMPARE(valueOf({}, settings).medianCents, std::nullopt);
     QCOMPARE(confidenceName(1, settings), QStringLiteral("Not enough data"));
     QCOMPARE(confidenceName(5, settings), QStringLiteral("Medium"));
+}
+
+// Case 9: the $32.00 recap kit was ticked and marked CHEAPEST. As a part it
+// is not counted, so "for sale now, from" and the cheapest marks (both from
+// the counted for-sale rows) start at the real item.
+void TestMatching::partsKitIsNotCheapest()
+{
+    LookupResult result;
+    result.status = QStringLiteral("complete");
+    result.item.itemId = QStringLiteral("100000000099");
+    result.item.priceCents = 9000;
+    result.item.shippingCents = 2000;
+    result.identity = identityFromUser({QStringLiteral("Heathkit"), QStringLiteral("IP-20"), QString()}, m_known,
+                                       QStringLiteral("user"));
+    auto forSale = [](const char *id, const char *title, qint64 price, qint64 shipping) {
+        SearchRecord record;
+        record.itemId = QString::fromLatin1(id);
+        record.title = QString::fromLatin1(title);
+        record.priceCents = price;
+        record.shippingCents = shipping;
+        return record;
+    };
+    result.active = {forSale("200000000091", "Heathkit IP-20 RECAP KIT for Power Supply w/ Instructions - capacitors & diodes",
+                             3200, 0),
+                     forSale("200000000092", "Heathkit IP-20 regulated power supply", 8000, 1500),
+                     forSale("200000000093", "Heathkit IP-20 power supply tested", 12000, 0)};
+    const QList<Row> rows = classifyRows(result, m_words);
+    QCOMPARE(rows.size(), 3);
+    QCOMPARE(rows.at(0).match.bucket, Bucket::PartFits);
+    QCOMPARE(rows.at(0).included, false);
+    const Valuation valuation = valuate(result, rows, app::ValueSettings());
+    QCOMPARE(valuation.forSale, QList<qint64>({9500, 12000}));
+    QCOMPARE(valuation.cheaperForSale, 1);
 }
 
 void TestMatching::shippingCheck()

@@ -227,7 +227,7 @@ Item {
                     }
                     RangeBar {
                         Layout.fillWidth: true
-                        visible: screen.results.hasSoldNumbers
+                        visible: screen.results.hasSoldNumbers || screen.results.hasResearchNumbers
                         minimum: screen.results.barMin
                         maximum: screen.results.barMax
                         bandLow: screen.results.bandLow
@@ -245,6 +245,28 @@ Item {
                         KeyNumber { label: "Middle half of sales"; value: screen.results.middleText }
                         KeyNumber { label: "Lowest / highest sale"; value: screen.results.lowHighText }
                         KeyNumber { label: "For sale now (from lowest)"; value: screen.results.forSaleText }
+                        Item { Layout.fillWidth: true }
+                    }
+                    Muted {
+                        Layout.fillWidth: true
+                        visible: text.length > 0
+                        font.family: Theme.mono
+                        text: screen.results.barSource
+                    }
+                    Muted {
+                        Layout.fillWidth: true
+                        Layout.topMargin: 8
+                        font.family: Theme.mono
+                        color: Theme.secondaryText
+                        text: screen.results.researchLine
+                    }
+                    RowLayout {
+                        Layout.fillWidth: true
+                        visible: screen.results.hasResearchNumbers
+                        spacing: 40
+                        KeyNumber { label: "Median, Product Research"; value: screen.results.researchMedianText }
+                        KeyNumber { label: "Middle half"; value: screen.results.researchMiddleText }
+                        KeyNumber { label: "Lowest / highest"; value: screen.results.researchLowHighText }
                         Item { Layout.fillWidth: true }
                     }
                     Repeater {

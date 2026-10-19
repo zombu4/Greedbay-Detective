@@ -108,6 +108,16 @@ function readRow(row) {
                 break;
             }
         }
+        // Sales older than 90 days (3-year period, seen 2026-10-19): no link;
+        // the title is a span carrying the item number in data-item-id.
+        const span = title === null ? info.querySelector('.research-table-row__product-info-name span[data-item-id]') : null;
+        if (span) {
+            const text = norm(span.textContent);
+            title = text.length > 0 ? text : null;
+            const id = span.getAttribute('data-item-id');
+            if (itemId === null && /^\d+$/.test(id || ''))
+                itemId = id;
+        }
         const infoText = textOf(info);
         // Some rows show only the item number instead of a title.
         if (itemId === null && infoText !== null && /^\d+$/.test(infoText))
