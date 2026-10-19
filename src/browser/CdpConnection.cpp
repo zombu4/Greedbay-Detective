@@ -214,6 +214,12 @@ bool CdpConnection::waitForExit(int timeoutMs)
     return false;
 }
 
+void CdpConnection::flush()
+{
+    if (m_socket)
+        m_socket->flush();
+}
+
 bool CdpConnection::isRunning() const
 {
     return m_process && m_process->state() != QProcess::NotRunning;

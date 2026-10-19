@@ -7,6 +7,7 @@
 #include <QFileInfo>
 #include <QLockFile>
 #include <QRegularExpression>
+#include <QStandardPaths>
 
 namespace app {
 
@@ -61,6 +62,22 @@ QString BrowserProfiles::lockPath(const WorkFolder &folder, const QString &brows
     return folder.browserProfilesDir() + QLatin1Char('/') + browserId + QStringLiteral(".lock");
 }
 
+QString BrowserProfiles::macCacheTwinDir(const WorkFolder &folder, const QString &browserId)
+{
+#if defined(Q_OS_MACOS)
+    const QString appData = QDir::cleanPath(QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation));
+    const QString caches = QDir::cleanPath(QStandardPaths::writableLocation(QStandardPaths::GenericCacheLocation));
+    const QString profile = QDir::cleanPath(profileDir(folder, browserId));
+    if (appData.isEmpty() || caches.isEmpty() || !profile.startsWith(appData + QLatin1Char('/')))
+        return {};
+    return caches + profile.mid(appData.size());
+#else
+    Q_UNUSED(folder);
+    Q_UNUSED(browserId);
+    return {};
+#endif
+}
+
 bool BrowserProfiles::clear(const WorkFolder &folder, const QString &browserId, QString *error)
 {
     auto fail = [error](const QString &message) {
@@ -95,6 +112,12 @@ bool BrowserProfiles::clear(const WorkFolder &folder, const QString &browserId, 
     removeContents(dir, &firstError);
     if (!QDir().rmdir(dir) && firstError.isEmpty())
         firstError = QStringLiteral("cannot delete %1").arg(QDir::toNativeSeparators(dir));
+    const QString twin = macCacheTwinDir(folder, browserId);
+    if (!twin.isEmpty() && QFileInfo(twin).isDir() && !isLink(twin)) {
+        removeContents(twin, &firstError);
+        if (!QDir().rmdir(twin) && firstError.isEmpty())
+            firstError = QStringLiteral("cannot delete %1").arg(QDir::toNativeSeparators(twin));
+    }
     lock.unlock();
     if (!firstError.isEmpty())
         return fail(firstError);

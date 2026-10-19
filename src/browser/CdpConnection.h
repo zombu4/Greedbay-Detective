@@ -26,10 +26,13 @@ namespace app::browser {
 // EnableAutomationControlled; measured with Brave 155 on macOS: true), and a
 // site sees that marker. With a fixed, non-zero port the marker stays false
 // (measured: false). The cost: while the session runs, other programs on the
-// same computer could connect to that port. Mitigations: the port is random
-// and bound to 127.0.0.1 only, the browser runs only during a session, and
-// it uses a profile folder of its own in the work folder (Chrome 136+ ignores
-// remote debugging on a browser's default profile).
+// same computer - including processes of other users of the computer -
+// could connect to that port and drive that browser session. Also, the port
+// is chosen free and released just before the browser takes it; a program
+// that grabs it in that moment could pose as the browser. Mitigations: the
+// port is random and bound to 127.0.0.1 only, the browser runs only during a
+// session, and it uses a profile folder of its own in the work folder
+// (Chrome 136+ ignores remote debugging on a browser's default profile).
 //
 // The WebSocket URL of the browser target comes from the browser's own
 // answer at http://127.0.0.1:<port>/json/version (webSocketDebuggerUrl); it is
@@ -70,7 +73,10 @@ public:
     bool waitForExit(int timeoutMs);
 
     bool isRunning() const;
+    bool isConnected() const { return m_connected; }
     qint64 processId() const;
+    // Pushes queued messages out now (used before blocking waits).
+    void flush();
 
     // Parses one DevTools message. std::nullopt (and *error) when it is not
     // a JSON object or is longer than kMaxMessageBytes.

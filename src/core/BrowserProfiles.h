@@ -22,10 +22,20 @@ public:
     static QString profileDir(const WorkFolder &folder, const QString &browserId);
     static QString lockPath(const WorkFolder &folder, const QString &browserId);
 
+    // macOS only: the folder Chromium derives for a profile's cache when the
+    // profile lies under ~/Library/Application Support (as the work folder
+    // does): the same relative path under ~/Library/Caches
+    // (chrome/common/chrome_paths_mac.mm, GetUserCacheDirectory). With
+    // --disk-cache-dir the cache stays in the profile, but the browser still
+    // creates this folder (measured with Brave 155: empty). An empty string
+    // on other systems, or when the work folder is not under Application
+    // Support.
+    static QString macCacheTwinDir(const WorkFolder &folder, const QString &browserId);
+
     // Sign out: deletes that browser's whole profile folder (cookies,
-    // storage, cache, everything the browser keeps there). Never starts the
-    // browser. Links inside are removed as links; their targets are never
-    // touched.
+    // storage, cache, everything the browser keeps there) and, on macOS, its
+    // cache twin folder (macCacheTwinDir). Never starts the browser. Links
+    // inside are removed as links; their targets are never touched.
     //
     // Refuses (returns false, sets *error, deletes nothing) when the id is not
     // valid, when the app's instance of that browser runs (the lock is held),

@@ -5,6 +5,7 @@
 #include "ebay/PageKind.h"
 
 #include <QElapsedTimer>
+#include <QHash>
 #include <QJsonObject>
 #include <QLockFile>
 #include <QObject>
@@ -79,7 +80,8 @@ public:
     BrowserController &operator=(const BrowserController &) = delete;
 
     // Takes the profile lock and starts the browser; ready() or failed()
-    // follows. Returns false (and sets *error) when the lock is held or the
+    // follows. A controller runs one session: after finished(), make a new
+    // one. Returns false (and sets *error) when the lock is held or the
     // browser cannot be started.
     bool start(QString *error);
 
@@ -163,6 +165,12 @@ private:
     QUrl m_url;
     bool m_loading = false;
     QString m_loaderId;
+    struct Document {
+        int status = 0;
+        QUrl url;
+    };
+    // Main-frame document responses of the current load, by loader id.
+    QHash<QString, Document> m_documents;
     QString m_navigationError;
     int m_httpStatus = 0;
     QUrl m_documentUrl;

@@ -20,6 +20,9 @@ int main(int argc, char *argv[])
         app::WorkFolder::open(app::WorkFolder::defaultPath(identifier), identifier, &error);
     const bool tempRedirected = folder && folder->redirectTempDirectory(&error);
 
+    // No shader binaries in the per-user cache folder (outside the work
+    // folder): "disable all disk-based caching of shaders" (Qt docs).
+    QCoreApplication::setAttribute(Qt::AA_DisableShaderDiskCache);
     QApplication application(argc, argv);
     QCoreApplication::setApplicationName(identifier);
     if (!folder || !tempRedirected) {
@@ -37,9 +40,13 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    DevWindow window(*folder);
-    window.show();
-    const int code = QApplication::exec();
+    int code = 0;
+    {
+        // Destroyed before logging stops, so its last messages are logged.
+        DevWindow window(*folder);
+        window.show();
+        code = QApplication::exec();
+    }
     app::Logging::uninstall();
     return code;
 }

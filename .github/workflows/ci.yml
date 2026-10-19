@@ -221,8 +221,8 @@ jobs:
       - name: Build (warnings are errors)
         run: cmake --build --preset "${{ matrix.preset }}-release"
 
-      # --verbose: the browser tests print what they observed (the session's
-      # processes, the Linux sandbox) even when they pass. --timeout 120: no
+      # --verbose: the browser tests print what they observed (the browsers
+      # found, the session's processes) even when they pass. --timeout 120: no
       # test may run longer (each also has its own TIMEOUT in CMake).
       # QT_FORCE_STDERR_LOGGING: on Windows, Qt sends test results and log
       # messages to the debugger (OutputDebugString) unless stderr has a

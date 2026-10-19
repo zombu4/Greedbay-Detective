@@ -14,6 +14,7 @@
 #include <QTimer>
 
 #include <algorithm>
+#include <limits>
 #include <utility>
 
 namespace app::browser {
@@ -118,7 +119,16 @@ BrowserController::BrowserController(WorkFolder folder, InstalledBrowser browser
         command(QStringLiteral("Page.stopLoading"), {}, nullptr);
         m_loading = false;
         m_sinceLastLoad.start();
-        finish(failedReply(QStringLiteral("the page did not finish loading within %1 s").arg(kLoadTimeoutMs / 1000)));
+        const QString reason = QStringLiteral("the page did not finish loading within %1 s").arg(kLoadTimeoutMs / 1000);
+        if (m_op == Op::Fetch) {
+            // Shown to the user like any page that is not the expected one.
+            QJsonObject reply = statusReply("unexpected_page");
+            reply.insert(QStringLiteral("page"), QStringLiteral("unexpected"));
+            reply.insert(QStringLiteral("reason"), reason);
+            waitForUser(reply, messageFor(QStringLiteral("unexpected"), false));
+        } else {
+            finish(failedReply(reason));
+        }
     });
     m_settleTimer = makeTimer([this]() { runExtractor(); });
     m_scriptTimer = makeTimer([this]() {
@@ -135,9 +145,17 @@ BrowserController::~BrowserController()
     blockSignals(true);
     m_op = Op::None;
     ++m_serial;
+    m_stopping = true;
+    // Its signals would reach this half-destroyed object.
+    m_cdp->disconnect(this);
     if (m_cdp->isRunning()) {
-        m_cdp->send(QStringLiteral("Browser.close"));
-        m_cdp->waitForExit(kCloseTimeoutMs);
+        if (m_cdp->isConnected()) {
+            m_cdp->send(QStringLiteral("Browser.close"));
+            m_cdp->flush();
+            m_cdp->waitForExit(kCloseTimeoutMs);
+        } else {
+            m_cdp->waitForExit(0);
+        }
     }
     if (m_lock.isLocked())
         m_lock.unlock();
@@ -166,7 +184,10 @@ bool BrowserController::start(QString *error)
     }
 
     m_cdp = new CdpConnection(this);
-    connect(m_cdp, &CdpConnection::connected, this, [this]() { attachToFirstPage(100); });
+    connect(m_cdp, &CdpConnection::connected, this, [this]() {
+        if (!m_stopping && !m_failed)
+            attachToFirstPage(100);
+    });
     connect(m_cdp, &CdpConnection::response, this, &BrowserController::onResponse);
     connect(m_cdp, &CdpConnection::cdpEvent, this, &BrowserController::onEvent);
     connect(m_cdp, &CdpConnection::protocolError, this, [this](const QString &message) {
@@ -176,9 +197,14 @@ bool BrowserController::start(QString *error)
     connect(m_cdp, &CdpConnection::finished, this, &BrowserController::onBrowserFinished);
 
     // A separate instance with its own profile folder; no automation switch.
-    // --no-first-run and --no-default-browser-check keep a fresh profile from
-    // opening welcome pages and asking to become the default browser.
+    // --disk-cache-dir keeps the HTTP cache in the profile folder: on macOS
+    // Chromium otherwise moves the cache of a profile under ~/Library/
+    // Application Support to ~/Library/Caches (chrome_paths_mac.mm,
+    // GetUserCacheDirectory). --no-first-run and --no-default-browser-check
+    // keep a fresh profile from opening welcome pages and asking to become
+    // the default browser.
     const QStringList arguments{QStringLiteral("--user-data-dir=") + QDir::toNativeSeparators(profile),
+                                QStringLiteral("--disk-cache-dir=") + QDir::toNativeSeparators(profile),
                                 QStringLiteral("--no-first-run"), QStringLiteral("--no-default-browser-check"),
                                 QStringLiteral("about:blank")};
     QString startError;
@@ -226,6 +252,8 @@ void BrowserController::attachToFirstPage(int attemptsLeft)
 {
     // The browser opens its first tab (about:blank) shortly after it starts.
     command(QStringLiteral("Target.getTargets"), {}, [this, attemptsLeft](const QJsonObject &result, const QJsonObject &) {
+        if (m_stopping || m_failed)
+            return;
         for (const QJsonValue &value : result.value(QStringLiteral("targetInfos")).toArray()) {
             const QJsonObject target = value.toObject();
             if (target.value(QStringLiteral("type")).toString() != QLatin1String("page"))
@@ -244,6 +272,8 @@ void BrowserController::attachToFirstPage(int attemptsLeft)
                     m_mainFrameId = tree.value(QStringLiteral("frameTree")).toObject().value(QStringLiteral("frame")).toObject().value(QStringLiteral("id")).toString();
                     command(QStringLiteral("Browser.getWindowForTarget"), {{QStringLiteral("targetId"), m_targetId}},
                             [this](const QJsonObject &window, const QJsonObject &) {
+                                if (m_stopping || m_failed)
+                                    return;
                                 m_windowId = window.value(QStringLiteral("windowId")).toInt(-1);
                                 // The window stays out of the way until the user has to act.
                                 setWindowState("minimized");
@@ -290,16 +320,24 @@ void BrowserController::onEvent(const QString &method, const QJsonObject &params
         if (!frame.contains(QStringLiteral("parentId")))
             m_mainFrameId = frame.value(QStringLiteral("id")).toString();
     } else if (method == QLatin1String("Network.responseReceived")) {
-        // The main document's response: its status and final URL (after redirects).
+        // A main document's response: its loader, status and final URL (after
+        // redirects). Kept until Page.navigate has said which loader is ours.
         if (m_loading && params.value(QStringLiteral("type")).toString() == QLatin1String("Document")
             && params.value(QStringLiteral("frameId")).toString() == m_mainFrameId) {
             const QJsonObject response = params.value(QStringLiteral("response")).toObject();
-            m_httpStatus = response.value(QStringLiteral("status")).toInt();
-            m_documentUrl = QUrl(response.value(QStringLiteral("url")).toString());
+            m_documents.insert(params.value(QStringLiteral("loaderId")).toString(),
+                               {response.value(QStringLiteral("status")).toInt(), QUrl(response.value(QStringLiteral("url")).toString())});
         }
     } else if (method == QLatin1String("Page.loadEventFired")) {
-        if (m_loading)
-            endLoad(m_navigationError.isEmpty() && (m_httpStatus == 0 || (m_httpStatus >= 200 && m_httpStatus < 400)));
+        // Only the load of the app's own navigation counts: its loader's
+        // document response must have arrived. A load event of a page the user
+        // opened, or of the page before, is ignored.
+        if (m_loading && !m_loaderId.isEmpty() && m_documents.contains(m_loaderId)) {
+            const Document document = m_documents.value(m_loaderId);
+            m_httpStatus = document.status;
+            m_documentUrl = document.url;
+            endLoad(m_navigationError.isEmpty() && m_httpStatus >= 200 && m_httpStatus < 400);
+        }
     }
 }
 
@@ -364,15 +402,20 @@ void BrowserController::stop()
     m_stopping = true;
     if (isBusy())
         cancel();
-    if (m_cdp->isRunning()) {
-        qCInfo(lcBrowser) << "closing the browser";
-        command(QStringLiteral("Browser.close"), {}, nullptr, false);
-        // Killed if it does not exit in time.
-        QTimer::singleShot(kCloseTimeoutMs, this, [this]() {
-            if (m_cdp && m_cdp->isRunning())
-                m_cdp->waitForExit(0);
-        });
+    if (!m_cdp->isRunning())
+        return;
+    if (!m_cdp->isConnected()) {
+        // Nothing to ask yet: the browser has no session of the app's.
+        m_cdp->waitForExit(0);
+        return;
     }
+    qCInfo(lcBrowser) << "closing the browser";
+    command(QStringLiteral("Browser.close"), {}, nullptr, false);
+    // Killed if it does not exit in time.
+    QTimer::singleShot(kCloseTimeoutMs, this, [this]() {
+        if (m_cdp && m_cdp->isRunning())
+            m_cdp->waitForExit(0);
+    });
 }
 
 void BrowserController::onBrowserFinished(int exitCode, bool crashed)
@@ -392,10 +435,10 @@ void BrowserController::onBrowserFinished(int exitCode, bool crashed)
 void BrowserController::scheduleLoad(const QUrl &url)
 {
     m_url = url;
-    const int minMs = std::max(0, m_options.pageDelayMinMs);
-    const int maxMs = std::max(minMs, m_options.pageDelayMaxMs);
-    const int delay = static_cast<int>(QRandomGenerator::global()->bounded(minMs, maxMs + 1));
-    const qint64 wait = std::max<qint64>(0, delay - m_sinceLastLoad.elapsed());
+    const qint64 minMs = std::max(0, m_options.pageDelayMinMs);
+    const qint64 maxMs = std::max<qint64>(minMs, m_options.pageDelayMaxMs);
+    const qint64 delay = QRandomGenerator::global()->bounded(minMs, maxMs + 1);
+    const qint64 wait = std::clamp<qint64>(delay - m_sinceLastLoad.elapsed(), 0, std::numeric_limits<int>::max());
     m_delayTimer->start(static_cast<int>(wait));
 }
 
@@ -404,6 +447,8 @@ void BrowserController::startLoad()
     m_loading = true;
     ++m_serial;
     m_navigationError.clear();
+    m_loaderId.clear();
+    m_documents.clear();
     m_httpStatus = 0;
     m_documentUrl = m_url;
     m_loadClock.start();
@@ -422,7 +467,9 @@ void BrowserController::startLoad()
                 if (!text.isEmpty() || !error.isEmpty()) {
                     m_navigationError = text.isEmpty() ? error.value(QStringLiteral("message")).toString() : text;
                     endLoad(false);
+                    return;
                 }
+                m_loaderId = result.value(QStringLiteral("loaderId")).toString();
             });
 }
 
@@ -464,17 +511,26 @@ void BrowserController::runExtractor()
         if (serial != m_serial || m_op != Op::Fetch)
             return;
         if (!error.isEmpty()) {
+            // The page changed under the extractor (for example a script
+            // redirect): look again or show it, as for any unexpected page.
             m_scriptTimer->stop();
-            onExtracted(Extractor::parseResult(QJsonValue()));
+            onExtracted(QJsonObject{{QStringLiteral("page"), QStringLiteral("unexpected")},
+                                    {QStringLiteral("reason"), QStringLiteral("the page changed while it was read")}});
             return;
         }
         const QJsonObject params{{QStringLiteral("expression"), Extractor::script(m_kind, m_documentUrl)},
                                  {QStringLiteral("contextId"), created.value(QStringLiteral("executionContextId"))},
                                  {QStringLiteral("returnByValue"), true}};
-        command(QStringLiteral("Runtime.evaluate"), params, [this, serial](const QJsonObject &evaluated, const QJsonObject &) {
+        command(QStringLiteral("Runtime.evaluate"), params, [this, serial](const QJsonObject &evaluated, const QJsonObject &error) {
             if (serial != m_serial || m_op != Op::Fetch)
                 return;
             m_scriptTimer->stop();
+            if (!error.isEmpty()) {
+                // The isolated world went away with a navigation.
+                onExtracted(QJsonObject{{QStringLiteral("page"), QStringLiteral("unexpected")},
+                                        {QStringLiteral("reason"), QStringLiteral("the page changed while it was read")}});
+                return;
+            }
             const QJsonValue value = evaluated.contains(QStringLiteral("exceptionDetails"))
                                          ? QJsonValue()
                                          : evaluated.value(QStringLiteral("result")).toObject().value(QStringLiteral("value"));
@@ -539,9 +595,15 @@ void BrowserController::checkSignedIn(bool loadOk)
     const quint64 serial = m_serial;
     m_scriptTimer->start(kScriptTimeoutMs);
     const QJsonObject world{{QStringLiteral("frameId"), m_mainFrameId}, {QStringLiteral("worldName"), QStringLiteral("extractor")}};
-    command(QStringLiteral("Page.createIsolatedWorld"), world, [this, serial, answer](const QJsonObject &created, const QJsonObject &) {
+    command(QStringLiteral("Page.createIsolatedWorld"), world, [this, serial, answer](const QJsonObject &created, const QJsonObject &error) {
         if (serial != m_serial || m_op != Op::SignInChecking)
             return;
+        // Never run the check in the page's own script world.
+        if (!error.isEmpty() || !created.value(QStringLiteral("executionContextId")).isDouble()) {
+            m_scriptTimer->stop();
+            answer(false);
+            return;
+        }
         const QJsonObject params{{QStringLiteral("expression"), kSignedInCheck},
                                  {QStringLiteral("contextId"), created.value(QStringLiteral("executionContextId"))},
                                  {QStringLiteral("returnByValue"), true}};
@@ -588,15 +650,8 @@ void BrowserController::fail(const QString &error)
     if (isBusy())
         finish(failedReply(error));
     emit failed(error);
-    // Close what is left of the browser.
-    if (m_cdp && m_cdp->isRunning()) {
-        m_stopping = true;
-        command(QStringLiteral("Browser.close"), {}, nullptr, false);
-        QTimer::singleShot(kCloseTimeoutMs, this, [this]() {
-            if (m_cdp && m_cdp->isRunning())
-                m_cdp->waitForExit(0);
-        });
-    }
+    // Close what is left of the browser (a no-op when stop() already ran).
+    stop();
 }
 
 void BrowserController::stopTimers()

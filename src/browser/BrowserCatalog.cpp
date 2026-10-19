@@ -21,8 +21,9 @@ struct Candidate {
     const char *id;
     const char *name;
     // macOS bundle identifier. com.brave.Browser is read from Brave's own
-    // Info.plist; the others are checked by tst_browsercatalog on the CI
-    // runners, whose images include Google Chrome and Microsoft Edge.
+    // Info.plist; the others are checked by tst_browserlogic
+    // (runnerBrowsersAreFound) on the CI runners, whose images include Google
+    // Chrome and Microsoft Edge.
     const char *bundleId;
     // Windows program name under the "App Paths" registry key.
     const char *windowsExe;
