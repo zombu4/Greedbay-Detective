@@ -25,6 +25,8 @@ private slots:
     void nativeStoreIsNotUsed();
     void preferredBrowser();
     void pageDelay();
+    void dailyPageCap();
+    void searchDepths();
 };
 
 // Synthetic names, so the native settings store checked below belongs to this
@@ -180,10 +182,67 @@ void TestSettings::pageDelay()
     const Settings again(path);
     QCOMPARE(again.pageDelayMinMs(), 4000);
     QCOMPARE(again.pageDelayMaxMs(), 9000);
-    QVERIFY(writeTestFile(path, "[pace]\npageDelayMinMs=7000\npageDelayMaxMs=2000\n"));
-    const Settings edited(path);
+    // Hand-edited files get their own paths: QSettings caches each file per
+    // process and may not notice a rewrite of the same size within the same
+    // millisecond.
+    const QString edit = tmp.path() + QStringLiteral("/edited.ini");
+    QVERIFY(writeTestFile(edit, "[pace]\npageDelayMinMs=7000\npageDelayMaxMs=2000\n"));
+    const Settings edited(edit);
     QCOMPARE(edited.pageDelayMinMs(), 3000);
     QCOMPARE(edited.pageDelayMaxMs(), 6000);
+}
+
+void TestSettings::dailyPageCap()
+{
+    QTemporaryDir tmp;
+    QVERIFY(tmp.isValid());
+    const QString path = tmp.path() + QStringLiteral("/settings.ini");
+    {
+        Settings settings(path);
+        QCOMPARE(settings.dailyPageCap(), 300);
+        QVERIFY(!settings.setDailyPageCap(0));
+        QVERIFY(!settings.setDailyPageCap(-5));
+        QVERIFY(settings.setDailyPageCap(120));
+        QVERIFY(settings.sync());
+    }
+    QCOMPARE(Settings(path).dailyPageCap(), 120);
+    const QString zero = tmp.path() + QStringLiteral("/zero.ini");
+    QVERIFY(writeTestFile(zero, "[pace]\ndailyPageCap=0\n"));
+    QCOMPARE(Settings(zero).dailyPageCap(), 300);
+    const QString text = tmp.path() + QStringLiteral("/text.ini");
+    QVERIFY(writeTestFile(text, "[pace]\ndailyPageCap=many\n"));
+    QCOMPARE(Settings(text).dailyPageCap(), 300);
+}
+
+void TestSettings::searchDepths()
+{
+    QTemporaryDir tmp;
+    QVERIFY(tmp.isValid());
+    const QString path = tmp.path() + QStringLiteral("/settings.ini");
+    {
+        Settings settings(path);
+        QCOMPARE(settings.soldDepth(), 240);
+        QCOMPARE(settings.activeDepth(), 240);
+        QCOMPARE(settings.researchDepth(), 200);
+        QVERIFY(!settings.setSoldDepth(-1));
+        QVERIFY(!settings.setActiveDepth(-1));
+        QVERIFY(!settings.setResearchDepth(-1));
+        // 0 skips a source.
+        QVERIFY(settings.setSoldDepth(480));
+        QVERIFY(settings.setActiveDepth(0));
+        QVERIFY(settings.setResearchDepth(50));
+        QVERIFY(settings.sync());
+    }
+    const Settings again(path);
+    QCOMPARE(again.soldDepth(), 480);
+    QCOMPARE(again.activeDepth(), 0);
+    QCOMPARE(again.researchDepth(), 50);
+    const QString edit = tmp.path() + QStringLiteral("/edited.ini");
+    QVERIFY(writeTestFile(edit, "[lookup]\nsoldDepth=-3\nactiveDepth=x\nresearchDepth=1.5\n"));
+    const Settings edited(edit);
+    QCOMPARE(edited.soldDepth(), 240);
+    QCOMPARE(edited.activeDepth(), 240);
+    QCOMPARE(edited.researchDepth(), 200);
 }
 
 QTEST_GUILESS_MAIN(TestSettings)

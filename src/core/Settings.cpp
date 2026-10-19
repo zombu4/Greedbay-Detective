@@ -7,6 +7,10 @@ const QString kSoldHistoryDaysKey = QStringLiteral("lookup/soldHistoryDays");
 const QString kPreferredBrowserKey = QStringLiteral("browser/preferred");
 const QString kPageDelayMinKey = QStringLiteral("pace/pageDelayMinMs");
 const QString kPageDelayMaxKey = QStringLiteral("pace/pageDelayMaxMs");
+const QString kDailyPageCapKey = QStringLiteral("pace/dailyPageCap");
+const QString kSoldDepthKey = QStringLiteral("lookup/soldDepth");
+const QString kActiveDepthKey = QStringLiteral("lookup/activeDepth");
+const QString kResearchDepthKey = QStringLiteral("lookup/researchDepth");
 constexpr int kMinPageDelayMs = 1000;
 
 bool isBrowserId(const QString &id)
@@ -91,6 +95,62 @@ bool Settings::setPageDelay(int minMs, int maxMs)
         return false;
     m_settings.setValue(kPageDelayMinKey, minMs);
     m_settings.setValue(kPageDelayMaxKey, maxMs);
+    return true;
+}
+
+int Settings::dailyPageCap() const
+{
+    const int cap = storedInt(m_settings, kDailyPageCapKey);
+    return cap >= 1 ? cap : kDefaultDailyPageCap;
+}
+
+bool Settings::setDailyPageCap(int cap)
+{
+    if (cap < 1)
+        return false;
+    m_settings.setValue(kDailyPageCapKey, cap);
+    return true;
+}
+
+int Settings::soldDepth() const
+{
+    const int depth = storedInt(m_settings, kSoldDepthKey);
+    return depth >= 0 ? depth : kDefaultSoldDepth;
+}
+
+int Settings::activeDepth() const
+{
+    const int depth = storedInt(m_settings, kActiveDepthKey);
+    return depth >= 0 ? depth : kDefaultActiveDepth;
+}
+
+int Settings::researchDepth() const
+{
+    const int depth = storedInt(m_settings, kResearchDepthKey);
+    return depth >= 0 ? depth : kDefaultResearchDepth;
+}
+
+bool Settings::setSoldDepth(int depth)
+{
+    if (depth < 0)
+        return false;
+    m_settings.setValue(kSoldDepthKey, depth);
+    return true;
+}
+
+bool Settings::setActiveDepth(int depth)
+{
+    if (depth < 0)
+        return false;
+    m_settings.setValue(kActiveDepthKey, depth);
+    return true;
+}
+
+bool Settings::setResearchDepth(int depth)
+{
+    if (depth < 0)
+        return false;
+    m_settings.setValue(kResearchDepthKey, depth);
     return true;
 }
 

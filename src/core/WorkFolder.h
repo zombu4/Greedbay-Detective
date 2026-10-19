@@ -16,6 +16,7 @@ namespace app {
 //   backups/                 database copies made before each schema upgrade
 //   logs/                    rotating log files
 //   settings.ini             settings in INI format
+//   page-count.json          eBay pages loaded today (core/PageBudget, the daily cap)
 //   browser/                 profiles of the installed browsers the app drives,
 //                            one subfolder per browser (browser/<id>/), plus
 //                            their lock files (browser/<id>.lock)
@@ -36,8 +37,8 @@ public:
     // marker on first use.
     //
     // Refuses (returns std::nullopt and sets *error) when:
-    //   - `path`, one of its subfolders, settings.ini, the database file or
-    //     the lock file is a symbolic link, junction or alias,
+    //   - `path`, one of its subfolders, settings.ini, page-count.json, the
+    //     database file or the lock file is a symbolic link, junction or alias,
     //   - the marker exists but does not hold a well-formed ID,
     //   - the folder exists, has no marker and is not empty (the app never
     //     adopts a folder it did not create),
@@ -65,6 +66,7 @@ public:
     QString backupsDir() const;
     QString logsDir() const;
     QString settingsPath() const;
+    QString pageCountPath() const;
     QString browserProfilesDir() const;
     QString tmpDir() const;
 

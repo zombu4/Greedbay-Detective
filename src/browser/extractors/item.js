@@ -1,4 +1,4 @@
-// Item page (/itm/<id>), recon section 3.
+// Item page (/itm/<id>), recon section 3 and "2026-10-19 real pages".
 //
 // input: {url, kind: "item", itemId}
 // Key elements: a JSON-LD Product (script type="application/ld+json") or the
@@ -15,6 +15,17 @@
 // it; its text is never returned.
 
 const TITLE_SELECTOR = 'h1 .x-item-title__mainTitle, h1.x-item-title__mainTitle';
+
+// Counters eBay shows only on some listings; null when absent, and not
+// listed in "missing".
+const OPTIONAL_FIELDS = ['watchers', 'soldCount', 'quantityAvailable'];
+
+// "9 available" in the quantity box (seen 2026-10-19); any other text gives
+// null.
+function quantityAvailable() {
+    const match = /^(\d{1,3}(?:,\d{3})+|\d+) available$/.exec(textOf(document.querySelector('.x-quantity__availability')) || '');
+    return match ? intOf(match[1]) : null;
+}
 
 // Every JSON-LD node on the page: top-level objects, array members and
 // @graph members. Scripts that are not valid JSON are skipped.
@@ -215,11 +226,14 @@ function extract(input) {
         shippingCents: null,
         location: null,
         bestOfferOffered: document.querySelector('[data-testid="x-offer-action"], .x-offer-action') !== null,
+        // The Buy It Now button (seen on a fixed-price listing 2026-10-19).
+        buyItNowOffered: document.querySelector('[data-testid="x-bin-action"]') !== null,
         returnsText: textOf(document.querySelector('.ux-labels-values--returns')),
         seller: sellerFromCard(),
         specifics: itemSpecifics(),
         watchers: intOf(uniqueWholeTextMatch(/^(\d{1,3}(?:,\d{3})+|\d+) watchers?$/, 'watcher')),
         soldCount: intOf(uniqueWholeTextMatch(/^(\d{1,3}(?:,\d{3})+|\d+) sold$/, 'sold')),
+        quantityAvailable: quantityAvailable(),
         offersInJsonLd: offers.length,
     };
 
@@ -270,7 +284,7 @@ function extract(input) {
     record.shippingCents = shipping.costCents;
     record.location = shipping.location;
 
-    record.missing = missingFields(record);
+    record.missing = missingFields(record).filter(function (key) { return OPTIONAL_FIELDS.indexOf(key) < 0; });
     // Nested values that are missing are listed as "seller.name",
     // "shippingOptions[0].currency" and so on.
     if (record.seller !== null) {

@@ -53,6 +53,11 @@ app_add_unit_test(tst_browserprofiles tst_browserprofiles.cpp support/TestFiles.
 target_compile_definitions(tst_browserprofiles PRIVATE LOCKHOLDER_PATH="$<TARGET_FILE:lockholder>")
 add_dependencies(tst_browserprofiles lockholder)
 
+app_add_unit_test(tst_pagebudget tst_pagebudget.cpp support/TestFiles.h)
+
+app_add_unit_test(tst_lookup tst_lookup.cpp)
+target_link_libraries(tst_lookup PRIVATE applookup)
+
 app_add_unit_test(tst_browserlogic tst_browserlogic.cpp)
 target_link_libraries(tst_browserlogic PRIVATE appbrowser)
 
@@ -64,6 +69,7 @@ set(app_test_fixtures
     fixtures/item_dom.html
     fixtures/item_inline.html
     fixtures/item_jsonld.html
+    fixtures/late_page.html
     fixtures/research.html
     fixtures/sold_search.html
     fixtures/webdriver_check.html

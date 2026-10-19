@@ -1,6 +1,7 @@
 #include "ebay/PageCheck.h"
 
 #include <QRegularExpression>
+#include <QUrlQuery>
 
 #include <algorithm>
 #include <iterator>
@@ -25,6 +26,9 @@ UrlClass classifyUrl(const QUrl &url)
     if (host == QLatin1String("signin.ebay.com"))
         return UrlClass::SignIn;
     if (host == QLatin1String("www.ebay.com")) {
+        if (path.compare(QLatin1String("/ws/eBayISAPI.dll"), Qt::CaseInsensitive) == 0
+            && QUrlQuery(url).hasQueryItem(QStringLiteral("SignIn")))
+            return UrlClass::SignIn;
         if (path == QLatin1String("/sh/landing") || path.startsWith(QLatin1String("/sh/landing/")))
             return UrlClass::ResearchLanding;
         if (path.startsWith(QLatin1String("/mye/myebay")))

@@ -26,6 +26,7 @@ private slots:
     void refusesBadMarkers();
     void refusesRootThatIsAFile();
     void refusesLinkedSettingsFile();
+    void refusesLinkedPageCountFile();
     void restrictsFolderToOwner();
     void redirectsTempDirectory();
 };
@@ -70,6 +71,7 @@ void TestWorkFolder::createsLayoutAndMarker()
     QCOMPARE(folder->path(), root);
     QCOMPARE(folder->databasePath(), root + QStringLiteral("/" TEST_APP_NAME ".sqlite"));
     QCOMPARE(folder->settingsPath(), root + QStringLiteral("/settings.ini"));
+    QCOMPARE(folder->pageCountPath(), root + QStringLiteral("/page-count.json"));
     QCOMPARE(folder->lockPath(), root + QStringLiteral("/.lock"));
     QCOMPARE(folder->markerPath(), root + QStringLiteral("/.workfolder"));
 }
@@ -250,6 +252,22 @@ void TestWorkFolder::refusesLinkedSettingsFile()
     QVERIFY(QFile::link(outside, root + QStringLiteral("/settings.ini")));
     QVERIFY(!WorkFolder::open(root, QStringLiteral(TEST_APP_NAME), &error));
     QVERIFY2(error.contains(QStringLiteral("settings.ini is a link")), qPrintable(error));
+}
+
+void TestWorkFolder::refusesLinkedPageCountFile()
+{
+    if (!kCanLinkFiles)
+        QSKIP("File links need extra privileges on Windows");
+    QTemporaryDir tmp;
+    QVERIFY(tmp.isValid());
+    const QString root = tmp.path() + QStringLiteral("/work");
+    QString error;
+    QVERIFY2(WorkFolder::open(root, QStringLiteral(TEST_APP_NAME), &error), qPrintable(error));
+    const QString outside = tmp.path() + QStringLiteral("/outside.json");
+    QVERIFY(writeTestFile(outside, "{}"));
+    QVERIFY(QFile::link(outside, root + QStringLiteral("/page-count.json")));
+    QVERIFY(!WorkFolder::open(root, QStringLiteral(TEST_APP_NAME), &error));
+    QVERIFY2(error.contains(QStringLiteral("page-count.json is a link")), qPrintable(error));
 }
 
 void TestWorkFolder::restrictsFolderToOwner()

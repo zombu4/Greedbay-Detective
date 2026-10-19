@@ -1,4 +1,5 @@
-// Seller Hub Product Research, SOLD tab (/sh/research), recon section 4.
+// Seller Hub Product Research, SOLD tab (/sh/research), recon section 4 and
+// "2026-10-19 real pages".
 //
 // input: {url, kind: "research"}
 // The redirect to /sh/landing (no Product Research access) is recognized
@@ -21,21 +22,23 @@
 //                             may exist; null when limit is unknown. The
 //                             extractor never fetches further pages itself.
 
-// Summary labels, as listed in recon section 4, and the pattern of each
-// value. Recon writes "Free shipping %" and "Sell-through %"; whether the "%"
-// is part of the label was not recorded, so both forms are accepted.
+// Summary metrics (recon "2026-10-19 real pages"): div.aggregates holds one
+// section.aggregate-metric per metric; inside it, header.metric-title holds
+// the label (span.subtitle) and a description sentence, and the rest of the
+// section's text is the value.
 const SUMMARY_FIELDS = [
-    {labels: ['Avg sold price'], key: 'avgSoldPriceCents', parse: function (t) { return moneyCents(t, false); }},
-    {labels: ['Sold price range'], key: 'soldPriceRange', parse: priceRange},
-    {labels: ['Avg shipping'], key: 'avgShippingCents', parse: function (t) { return moneyCents(t, false); }},
-    {labels: ['Free shipping', 'Free shipping %'], key: 'freeShippingPercent', parse: percentOf},
-    {labels: ['Sell-through', 'Sell-through %'], key: 'sellThroughPercent', parse: percentOf},
-    {labels: ['Total sellers'], key: 'totalSellers', parse: intOf},
+    {label: 'Avg sold price', key: 'avgSoldPriceCents', parse: function (t) { return moneyCents(t, false); }},
+    {label: 'Sold price range', key: 'soldPriceRange', parse: priceRange},
+    {label: 'Avg shipping', key: 'avgShippingCents', parse: function (t) { return moneyCents(t, false); }},
+    {label: 'Free shipping', key: 'freeShippingPercent', parse: percentOf},
+    {label: 'Sell-through', key: 'sellThroughPercent', parse: percentOf},
+    {label: 'Total sellers', key: 'totalSellers', parse: intOf},
 ];
 
-// "$12.00 - $80.50" -> {minCents: 1200, maxCents: 8050}; else null.
+// "$0.01 – $9,469.00" (EN DASH, as on the page) or "$12.00 - $80.50" ->
+// {minCents, maxCents}; else null.
 function priceRange(text) {
-    const match = /^(\$[\d,]+\.\d{2}) ?- ?(\$[\d,]+\.\d{2})$/.exec(text || '');
+    const match = /^(\$[\d,]+\.\d{2}) ?[-\u2013] ?(\$[\d,]+\.\d{2})$/.exec(text || '');
     if (!match)
         return null;
     const low = moneyCents(match[1], false);
@@ -43,55 +46,30 @@ function priceRange(text) {
     return low !== null && high !== null && low <= high ? {minCents: low, maxCents: high} : null;
 }
 
-// Elements outside the results table whose whole text is a summary label.
-// Only elements without child elements are looked at, so the text of large
-// containers is never built.
-function labelElements() {
-    const labels = [].concat.apply([], SUMMARY_FIELDS.map(function (field) { return field.labels; }));
-    const found = [];
-    for (const element of document.querySelectorAll('body *')) {
-        if (element.firstElementChild !== null || element.closest('table'))
+// The value text of each metric section, by its label. A section without a
+// label or value is skipped; a label shown twice with different values
+// gives null for that metric, as does a value that does not match its
+// pattern ("Sell-through" can be "-").
+function readSummary() {
+    const values = {};
+    for (const section of document.querySelectorAll('section.aggregate-metric')) {
+        const header = section.querySelector('header.metric-title');
+        const label = header ? textOf(header.querySelector('.subtitle')) : null;
+        if (!label)
             continue;
-        const text = norm(element.textContent);
-        if (labels.indexOf(text) >= 0)
-            found.push({element: element, label: text});
+        // The section's text without its header, wherever the header sits.
+        const copy = section.cloneNode(true);
+        copy.querySelector('header.metric-title').remove();
+        const valueText = norm(copy.textContent);
+        if (valueText.length === 0)
+            continue;
+        (values[label] = values[label] || []).push(valueText);
     }
-    return found;
-}
-
-// The summary layout was not recorded in recon, only the labels. A value is
-// taken from the smallest element ("tile") around a label that contains no
-// other summary label and whose remaining text is exactly one value of the
-// expected pattern. So a value can be missing, but never taken from the
-// neighbouring metric. A label that appears twice with different values
-// gives null. "Sell-through" shown as "-" gives null.
-function readSummary(found) {
     const summary = {};
     for (const field of SUMMARY_FIELDS) {
-        const values = [];
-        for (const entry of found) {
-            if (field.labels.indexOf(entry.label) < 0)
-                continue;
-            let tile = entry.element.parentElement;
-            for (let depth = 0; tile && depth < 4; ++depth, tile = tile.parentElement) {
-                const others = found.filter(function (other) {
-                    return other.element !== entry.element && tile.contains(other.element);
-                });
-                if (others.length > 0)
-                    break;
-                const tileText = norm(tile.textContent);
-                const at = tileText.indexOf(entry.label);
-                const rest = norm(tileText.slice(0, at) + ' ' + tileText.slice(at + entry.label.length));
-                if (rest.length === 0)
-                    continue;
-                const value = field.parse(rest);
-                if (value !== null)
-                    values.push(JSON.stringify(value));
-                break;
-            }
-        }
-        const distinct = values.filter(function (v, i) { return values.indexOf(v) === i; });
-        summary[field.key] = distinct.length === 1 ? JSON.parse(distinct[0]) : null;
+        const texts = values[field.label] || [];
+        const distinct = texts.filter(function (t, i) { return texts.indexOf(t) === i; });
+        summary[field.key] = distinct.length === 1 ? field.parse(distinct[0]) : null;
     }
     summary.missing = missingFields(summary);
     return summary;
@@ -99,6 +77,19 @@ function readSummary(found) {
 
 function cell(row, name) {
     return row.querySelector('td.research-table-row__' + name);
+}
+
+// A table cell as {main, sub}: sub is the text of its div.format (null when
+// it has none), main the rest of its text. null for a missing cell.
+function cellParts(td) {
+    if (!td)
+        return null;
+    const sub = td.querySelector('.format');
+    if (!sub)
+        return {main: textOf(td), sub: null};
+    const copy = td.cloneNode(true);
+    copy.querySelector('.format').remove();
+    return {main: textOf(copy), sub: textOf(sub)};
 }
 
 function readRow(row) {
@@ -124,25 +115,47 @@ function readRow(row) {
             title = null;
     }
 
-    // "$38.16 | Fixed price" (the separator may be missing in the text).
-    const soldText = textOf(cell(row, 'avgSoldPrice'));
-    const sold = soldText ? /^(\$[\d,]+\.\d{2})\s*\|?\s*(.*)$/.exec(soldText) : null;
-    // "$6.63 | 0% Free shipping"
-    const shipText = textOf(cell(row, 'avgShippingCost'));
-    const ship = shipText ? /^(\$[\d,]+\.\d{2})\s*\|?\s*(\d+(?:\.\d+)?)% Free shipping$/.exec(shipText) : null;
-    // "-" when the listing had no bids.
+    // Value cells (2026-10-19): the amount in one div and div.format below
+    // it ("Fixed price", "99% Free shipping"). Recon of 2026-10-18 wrote them
+    // as one text, "$38.16 | Fixed price" and "$6.63 | 0% Free shipping";
+    // that form is read too.
+    const soldParts = cellParts(cell(row, 'avgSoldPrice'));
+    const shipParts = cellParts(cell(row, 'avgShippingCost'));
+    let avgSoldPriceCents = null;
+    let formatText = null;
+    if (soldParts && soldParts.sub !== null) {
+        avgSoldPriceCents = moneyCents(soldParts.main, false);
+        formatText = soldParts.sub.length > 0 ? soldParts.sub : null;
+    } else if (soldParts && soldParts.main !== null) {
+        const sold = /^(\$[\d,]+\.\d{2})\s*\|?\s*(.*)$/.exec(soldParts.main);
+        avgSoldPriceCents = sold ? moneyCents(sold[1], false) : null;
+        formatText = sold && sold[2].length > 0 ? sold[2] : null;
+    }
+    let avgShippingCents = null;
+    let freeShippingPercent = null;
+    if (shipParts && shipParts.sub !== null) {
+        const free = /^(\d+(?:\.\d+)?)% Free shipping$/.exec(shipParts.sub);
+        avgShippingCents = moneyCents(shipParts.main, false);
+        freeShippingPercent = free ? parseFloat(free[1]) : null;
+    } else if (shipParts && shipParts.main !== null) {
+        const ship = /^(\$[\d,]+\.\d{2})\s*\|?\s*(\d+(?:\.\d+)?)% Free shipping$/.exec(shipParts.main);
+        avgShippingCents = ship ? moneyCents(ship[1], false) : null;
+        freeShippingPercent = ship ? parseFloat(ship[2]) : null;
+    }
+    // A dash when the listing had no bids: "–" (EN DASH) on the page,
+    // "-" also accepted.
     const bidsText = textOf(cell(row, 'bids'));
 
     const record = {
         itemId: itemId,
         title: title,
-        avgSoldPriceCents: sold ? moneyCents(sold[1], false) : null,
-        formatText: sold && sold[2].length > 0 ? sold[2] : null,
-        avgShippingCents: ship ? moneyCents(ship[1], false) : null,
-        freeShippingPercent: ship ? parseFloat(ship[2]) : null,
+        avgSoldPriceCents: avgSoldPriceCents,
+        formatText: formatText,
+        avgShippingCents: avgShippingCents,
+        freeShippingPercent: freeShippingPercent,
         totalSold: intOf(textOf(cell(row, 'totalSoldCount'))),
         totalSalesCents: moneyCents(textOf(cell(row, 'totalSalesValue')), false),
-        bids: bidsText === '-' ? 0 : intOf(bidsText),
+        bids: bidsText === '-' || bidsText === '\u2013' ? 0 : intOf(bidsText),
         lastSoldDate: usDate(textOf(cell(row, 'dateLastSold'))),
     };
     record.missing = missingFields(record);
@@ -158,7 +171,6 @@ function extract(input) {
     });
     if (rows.length === 0)
         return notExpected('unexpected', 'no research result rows');
-    const found = labelElements();
 
     const offsetText = url.searchParams.get('offset');
     const limit = intParam(url, 'limit');
@@ -167,7 +179,7 @@ function extract(input) {
         offset: offsetText !== null && /^\d+$/.test(offsetText) ? parseInt(offsetText, 10) : null,
         limit: limit,
         dayRange: intParam(url, 'dayRange'),
-        summary: readSummary(found),
+        summary: readSummary(),
         rows: records,
         rowCount: records.length,
         morePossible: limit !== null ? records.length === limit : null,

@@ -1,10 +1,12 @@
 # appcore: work folder, settings, logging, single-instance lock, version, the
-# database layer, browser profiles and the eBay URL rules.
+# database layer, browser profiles, the daily page count and the eBay URL rules.
 qt_add_library(appcore STATIC
     core/BrowserProfiles.cpp
     core/BrowserProfiles.h
     core/Logging.cpp
     core/Logging.h
+    core/PageBudget.cpp
+    core/PageBudget.h
     core/PathChecks.h
     core/Settings.cpp
     core/Settings.h
@@ -22,6 +24,8 @@ qt_add_library(appcore STATIC
     ebay/PageCheck.h
     ebay/PageKind.cpp
     ebay/PageKind.h
+    ebay/SearchUrls.cpp
+    ebay/SearchUrls.h
 )
 
 configure_file(core/Version.h.in "${CMAKE_CURRENT_BINARY_DIR}/core/Version.h" @ONLY)
@@ -74,3 +78,23 @@ qt_add_resources(appbrowser "extractors"
         browser/extractors/research.js
         browser/extractors/search.js
 )
+
+# applookup: one lookup (item page -> identity -> queries -> comparison pages
+# -> records -> report). Browser-free: it asks for pages through a callback,
+# so tests run it on fake page records.
+qt_add_library(applookup STATIC
+    lookup/Identity.cpp
+    lookup/Identity.h
+    lookup/LookupReport.cpp
+    lookup/LookupReport.h
+    lookup/LookupRunner.cpp
+    lookup/LookupRunner.h
+    lookup/Records.cpp
+    lookup/Records.h
+    lookup/Stats.cpp
+    lookup/Stats.h
+)
+
+target_link_libraries(applookup PUBLIC appcore)
+
+app_enable_warnings(applookup)

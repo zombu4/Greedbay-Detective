@@ -1,6 +1,8 @@
 #pragma once
 
 #include "browser/BrowserCatalog.h"
+#include "core/PageBudget.h"
+#include "core/Settings.h"
 #include "core/WorkFolder.h"
 #include "ebay/PageKind.h"
 
@@ -26,6 +28,9 @@ struct BrowserControllerOptions {
     // 3-6 s).
     int pageDelayMinMs = 3000;
     int pageDelayMaxMs = 6000;
+    // At most this many page loads per day (Settings "pace/dailyPageCap"),
+    // counted in the work folder's page-count.json.
+    int dailyPageCap = Settings::kDefaultDailyPageCap;
     // Tests only: fetch may also open http://127.0.0.1 and file: pages.
     bool allowLocalTestPages = false;
 };
@@ -43,14 +48,19 @@ struct BrowserControllerOptions {
 // One operation at a time, each ending with exactly one done() reply (the
 // reply objects of the old worker protocol: {"status":"ok","result":{...}},
 // {"status":"unexpected_page","page":...,"reason":...},
-// {"status":"ok","signedIn":bool}, {"status":"failed","error":...}).
+// {"status":"ok","signedIn":bool}, {"status":"failed","error":...}), and
+// {"status":"limit_reached","error":...} when today's page cap stops a load.
 //
 // fetch(): loads the URL and runs the page's extractor (Extractor). If the page
 // is not the expected one (eBay's error page, the sign-in page, the Seller Hub
 // start page, a security check, a failed load, anything without the page's key
 // elements), the browser window is shown, needsUser() tells the user what to do,
-// and the reply is sent when the user calls continueAfterUser(). Nothing is
-// reloaded or retried, and no check is ever solved or skipped by the app.
+// and the reply is sent when the user calls continueAfterUser(). Then the
+// page is read once more, as it is at that moment: when the user's action has
+// brought the requested page (for example eBay returns to it after a
+// sign-in), and the extractor finds the expected page there, the reply is
+// "ok" with what it read; otherwise it is the unexpected_page reply. Nothing
+// is reloaded or retried, and no check is ever solved or skipped by the app.
 //
 // signIn(): opens the eBay homepage in the shown window; the user clicks
 // "Sign in" there himself and signs in on eBay's own page, then calls
@@ -62,6 +72,9 @@ struct BrowserControllerOptions {
 // Pacing: one page at a time, and a random wait in [pageDelayMinMs,
 // pageDelayMaxMs] before every page load the app makes, counted from the end
 // of the previous load (or from the session's start for the first one).
+// Every page load the app makes (fetch, sign-in homepage, My eBay check) is
+// counted against the daily cap when it starts; at the cap the load is not
+// made and the operation ends with limit_reached.
 class BrowserController : public QObject {
     Q_OBJECT
 public:
@@ -130,6 +143,12 @@ private:
     void startLoad();
     void endLoad(bool ok);
     void runExtractor();
+    // Runs the extractor for m_kind in an isolated world of the current main
+    // frame, reading `pageUrl`; `handle` gets the result object
+    // (Extractor::parseResult, or "unexpected" when the page changed while it
+    // was read). Not called back after the operation ended.
+    void evaluateExtractor(const QUrl &pageUrl, std::function<void(const QJsonObject &)> handle);
+    void rereadAfterUser();
     void onExtracted(const QJsonObject &result);
     void checkSignedIn(bool loadOk);
     void waitForUser(const QJsonObject &reply, const QString &message);
@@ -141,6 +160,7 @@ private:
     InstalledBrowser m_browser;
     BrowserControllerOptions m_options;
     QLockFile m_lock;
+    PageBudget m_budget;
     CdpConnection *m_cdp = nullptr;
     std::map<int, Callback> m_callbacks;
     QString m_targetId;

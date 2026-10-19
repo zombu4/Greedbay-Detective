@@ -28,6 +28,11 @@ void TestPageCheck::classify_data()
     QTest::addColumn<int>("expected");
     QTest::newRow("sign-in") << "https://signin.ebay.com/ws/eBayISAPI.dll?SignIn&ru=x" << int(UrlClass::SignIn);
     QTest::newRow("sign-in upper case host") << "https://SIGNIN.EBAY.COM/ws/x" << int(UrlClass::SignIn);
+    QTest::newRow("sign-in on www") << "https://www.ebay.com/ws/eBayISAPI.dll?SignIn&siteid=0&ru=x&sgfl=y"
+                                    << int(UrlClass::SignIn);
+    QTest::newRow("www eBayISAPI without SignIn") << "https://www.ebay.com/ws/eBayISAPI.dll?ViewItem&item=1"
+                                                  << int(UrlClass::Other);
+    QTest::newRow("SignIn key on another path") << "https://www.ebay.com/sch/i.html?SignIn" << int(UrlClass::Other);
     QTest::newRow("landing") << "https://www.ebay.com/sh/landing" << int(UrlClass::ResearchLanding);
     QTest::newRow("landing subpath") << "https://www.ebay.com/sh/landing/x?y=1" << int(UrlClass::ResearchLanding);
     QTest::newRow("landing prefix only") << "https://www.ebay.com/sh/landingpage" << int(UrlClass::Other);

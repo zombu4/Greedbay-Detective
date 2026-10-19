@@ -29,9 +29,11 @@ Under active development. No release yet.
 ## Building from source
 
 What builds today: the core library (work folder, settings, logging,
-single-instance lock, version, database), the browser control that reads eBay
-pages through an installed browser, a small developer window for checking it,
-and their tests. There is no app window yet.
+single-instance lock, version, database, the daily page limit), the browser
+control that reads eBay pages through an installed browser, a first rough
+lookup (a listing, its sold and for-sale comparisons and Product Research
+rows, as text tables with the median and middle range of sold totals), a small
+developer window for trying them, and their tests. There is no app window yet.
 
 You need:
 - CMake 4.4.4 (the project requires 4.4 or newer)

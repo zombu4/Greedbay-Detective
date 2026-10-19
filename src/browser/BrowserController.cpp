@@ -12,6 +12,7 @@
 #include <QMap>
 #include <QRandomGenerator>
 #include <QTimer>
+#include <QUrlQuery>
 
 #include <algorithm>
 #include <limits>
@@ -69,8 +70,9 @@ QJsonObject failedReply(const QString &error)
     return reply;
 }
 
-// Counts of what an extractor read, for the log: record count and the
-// names of missing fields with how often each was missing. No page text.
+// Counts of what an extractor read, for the log: record count, the names of
+// missing fields with how often each was missing, and for search pages the
+// number of unrecognized card rows. No page text.
 QString logSummary(const QJsonObject &data)
 {
     QJsonArray records;
@@ -91,7 +93,26 @@ QString logSummary(const QJsonObject &data)
     QStringList parts;
     for (auto it = missing.cbegin(); it != missing.cend(); ++it)
         parts << QStringLiteral("%1 x%2").arg(it.key()).arg(it.value());
-    return QStringLiteral("records=%1 missing=[%2]").arg(records.size()).arg(parts.join(QStringLiteral(", ")));
+    QString summary = QStringLiteral("records=%1 missing=[%2]").arg(records.size()).arg(parts.join(QStringLiteral(", ")));
+    if (data.value(QStringLiteral("unrecognizedRows")).isDouble())
+        summary += QStringLiteral(" unrecognizedRows=%1").arg(data.value(QStringLiteral("unrecognizedRows")).toInteger());
+    return summary;
+}
+
+// True when `current` is the page the app asked for: same scheme, host and
+// path, and every query item of `requested` present in `current` with the
+// same value (eBay may add items of its own, for example limit and offset).
+bool isRequestedPage(const QUrl &current, const QUrl &requested)
+{
+    if (!current.isValid() || current.scheme() != requested.scheme()
+        || current.host().compare(requested.host(), Qt::CaseInsensitive) != 0 || current.port() != requested.port()
+        || current.path() != requested.path())
+        return false;
+    const QUrlQuery have(current);
+    const QList<std::pair<QString, QString>> wanted = QUrlQuery(requested).queryItems(QUrl::FullyDecoded);
+    return std::all_of(wanted.cbegin(), wanted.cend(), [&have](const std::pair<QString, QString> &item) {
+        return have.allQueryItemValues(item.first, QUrl::FullyDecoded).contains(item.second);
+    });
 }
 
 } // namespace
@@ -99,7 +120,7 @@ QString logSummary(const QJsonObject &data)
 BrowserController::BrowserController(WorkFolder folder, InstalledBrowser browser, BrowserControllerOptions options,
                                      QObject *parent)
     : QObject(parent), m_folder(std::move(folder)), m_browser(std::move(browser)), m_options(options),
-      m_lock(BrowserProfiles::lockPath(m_folder, m_browser.id))
+      m_lock(BrowserProfiles::lockPath(m_folder, m_browser.id)), m_budget(m_folder.pageCountPath(), m_options.dailyPageCap)
 {
     // No age limit (a session can be long); a lock left by a crashed app is
     // still taken over, because its process no longer runs.
@@ -371,9 +392,10 @@ void BrowserController::signIn()
 void BrowserController::continueAfterUser()
 {
     if (m_op == Op::Fetch && m_waitingForUser) {
-        qCInfo(lcBrowser) << "the user pressed Continue";
+        qCInfo(lcBrowser) << "the user pressed Continue; reading the page as it is now";
         setWindowState("minimized");
-        finish(m_replyAfterUser);
+        m_waitingForUser = false;
+        rereadAfterUser();
     } else if (m_op == Op::SignInWaiting) {
         qCInfo(lcBrowser) << "sign-in: the user pressed Continue; checking the My eBay page";
         setWindowState("minimized");
@@ -444,6 +466,15 @@ void BrowserController::scheduleLoad(const QUrl &url)
 
 void BrowserController::startLoad()
 {
+    QString budgetError;
+    const PageBudget::Take take = m_budget.take(&budgetError);
+    if (take != PageBudget::Take::Taken) {
+        qCWarning(lcBrowser).noquote() << "page not loaded:" << budgetError;
+        QJsonObject reply = take == PageBudget::Take::CapReached ? statusReply("limit_reached") : statusReply("failed");
+        reply.insert(QStringLiteral("error"), budgetError);
+        finish(reply);
+        return;
+    }
     m_loading = true;
     ++m_serial;
     m_navigationError.clear();
@@ -502,39 +533,83 @@ void BrowserController::runExtractor()
         onExtracted(*outcome);
         return;
     }
+    evaluateExtractor(m_documentUrl, [this](const QJsonObject &result) { onExtracted(result); });
+}
+
+void BrowserController::evaluateExtractor(const QUrl &pageUrl, std::function<void(const QJsonObject &)> handle)
+{
     const quint64 serial = m_serial;
     m_scriptTimer->start(kScriptTimeoutMs);
+    const QJsonObject changed{{QStringLiteral("page"), QStringLiteral("unexpected")},
+                              {QStringLiteral("reason"), QStringLiteral("the page changed while it was read")}};
     // An isolated world of the app's own: page scripts cannot interfere
     // with the extractor's functions; the DOM is shared.
     const QJsonObject world{{QStringLiteral("frameId"), m_mainFrameId}, {QStringLiteral("worldName"), QStringLiteral("extractor")}};
-    command(QStringLiteral("Page.createIsolatedWorld"), world, [this, serial](const QJsonObject &created, const QJsonObject &error) {
+    command(QStringLiteral("Page.createIsolatedWorld"), world,
+            [this, serial, pageUrl, handle, changed](const QJsonObject &created, const QJsonObject &error) {
         if (serial != m_serial || m_op != Op::Fetch)
             return;
         if (!error.isEmpty()) {
             // The page changed under the extractor (for example a script
             // redirect): look again or show it, as for any unexpected page.
             m_scriptTimer->stop();
-            onExtracted(QJsonObject{{QStringLiteral("page"), QStringLiteral("unexpected")},
-                                    {QStringLiteral("reason"), QStringLiteral("the page changed while it was read")}});
+            handle(changed);
             return;
         }
-        const QJsonObject params{{QStringLiteral("expression"), Extractor::script(m_kind, m_documentUrl)},
+        const QJsonObject params{{QStringLiteral("expression"), Extractor::script(m_kind, pageUrl)},
                                  {QStringLiteral("contextId"), created.value(QStringLiteral("executionContextId"))},
                                  {QStringLiteral("returnByValue"), true}};
-        command(QStringLiteral("Runtime.evaluate"), params, [this, serial](const QJsonObject &evaluated, const QJsonObject &error) {
+        command(QStringLiteral("Runtime.evaluate"), params,
+                [this, serial, handle, changed](const QJsonObject &evaluated, const QJsonObject &error) {
             if (serial != m_serial || m_op != Op::Fetch)
                 return;
             m_scriptTimer->stop();
             if (!error.isEmpty()) {
                 // The isolated world went away with a navigation.
-                onExtracted(QJsonObject{{QStringLiteral("page"), QStringLiteral("unexpected")},
-                                        {QStringLiteral("reason"), QStringLiteral("the page changed while it was read")}});
+                handle(changed);
                 return;
             }
             const QJsonValue value = evaluated.contains(QStringLiteral("exceptionDetails"))
                                          ? QJsonValue()
                                          : evaluated.value(QStringLiteral("result")).toObject().value(QStringLiteral("value"));
-            onExtracted(Extractor::parseResult(value));
+            handle(Extractor::parseResult(value));
+        });
+    });
+}
+
+void BrowserController::rereadAfterUser()
+{
+    // The page the tab shows now: the current entry of its history.
+    const quint64 serial = m_serial;
+    m_scriptTimer->start(kScriptTimeoutMs);
+    command(QStringLiteral("Page.getNavigationHistory"), {}, [this, serial](const QJsonObject &history, const QJsonObject &error) {
+        if (serial != m_serial || m_op != Op::Fetch)
+            return;
+        m_scriptTimer->stop();
+        const QJsonArray entries = history.value(QStringLiteral("entries")).toArray();
+        const int index = history.value(QStringLiteral("currentIndex")).toInt(-1);
+        const QUrl current = error.isEmpty() && index >= 0 && index < entries.size()
+                                 ? QUrl(entries.at(index).toObject().value(QStringLiteral("url")).toString())
+                                 : QUrl();
+        if (!isRequestedPage(current, m_url) || Extractor::outcomeFromUrl(current, m_kind)) {
+            qCInfo(lcBrowser).noquote() << "fetch" << ebay::pageKindName(m_kind)
+                                        << "after Continue: still not the requested page, at" << ebay::urlForLog(current);
+            finish(m_replyAfterUser);
+            return;
+        }
+        evaluateExtractor(current, [this](const QJsonObject &result) {
+            if (result.value(QStringLiteral("page")).toString() != QLatin1String("expected")) {
+                qCInfo(lcBrowser).noquote() << "fetch" << ebay::pageKindName(m_kind)
+                                            << "after Continue: still not the expected page:"
+                                            << result.value(QStringLiteral("reason")).toString();
+                finish(m_replyAfterUser);
+                return;
+            }
+            const QJsonObject data = result.value(QStringLiteral("data")).toObject();
+            qCInfo(lcBrowser).noquote() << "fetch" << ebay::pageKindName(m_kind) << "read after Continue:" << logSummary(data);
+            QJsonObject reply = statusReply("ok");
+            reply.insert(QStringLiteral("result"), data);
+            finish(reply);
         });
     });
 }

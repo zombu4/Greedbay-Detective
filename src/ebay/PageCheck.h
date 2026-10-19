@@ -12,8 +12,12 @@ namespace app::ebay {
 //     answer 302 with Location https://signin.ebay.com/ws/eBayISAPI.dll?SignIn&...
 //     &ru=<the requested URL>
 //   - an account without Seller Hub is sent from /sh/research to /sh/landing
+// and (2026-10-19, signed in): a sold search (LH_Sold=1&LH_Complete=1) ended at
+// https://www.ebay.com/ws/eBayISAPI.dll?SignIn&siteid=...&ru=...&sgfl=...,
+// titled "Sign in or Register | eBay", with eBay's sign-in form.
 enum class UrlClass {
-    SignIn,          // host signin.ebay.com: eBay wants the user to sign in
+    SignIn,          // host signin.ebay.com, or www.ebay.com/ws/eBayISAPI.dll
+                     // with a SignIn query key: eBay wants the user to sign in
     ResearchLanding, // www.ebay.com/sh/landing: no Product Research access
     AccountPage,     // www.ebay.com/mye/myebay...: only reachable while signed in
     Other,

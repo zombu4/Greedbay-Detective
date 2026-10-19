@@ -1,47 +1,47 @@
 <!DOCTYPE html>
 <!-- Synthetic test page shaped after Seller Hub Product Research, SOLD tab
-     (/sh/research). The summary layout is invented (recon recorded only the
-     labels); one tile puts the value before its label. Every item and number
-     is invented. -->
+     (/sh/research). The structure follows the page as seen on 2026-10-19.
+     Every item, seller and number is invented. -->
 <html lang="en">
 <head><meta charset="utf-8"><title>Product Research | eBay</title></head>
 <body>
-<div class="research-summary">
-  <div class="tile"><div class="tile__value">$41.70</div><div class="tile__label">Avg sold price</div></div>
-  <div class="tile"><span>Sold price range</span><span>$12.00 - $80.50</span></div>
-  <div class="tile"><span>Avg shipping</span><span>$5.85</span></div>
-  <div class="tile"><span>Free shipping</span><span>45%</span></div>
-  <div class="tile"><span>Sell-through</span><span>-</span></div>
-  <div class="tile"><span>Total sellers</span><span>1,021</span></div>
-</div>
 <p>Listing details may not be available for listings older than 90 days.</p>
+<div class="aggregates">
+  <section class="aggregate-metric"><div class="metric-value">$41.70</div><header class="metric-title"><span class="subtitle">Avg sold price</span><p class="metric-description">The mean sold price per item for similar listings, not including shipping costs.</p></header></section>
+  <section class="aggregate-metric"><div class="metric-value">$12.00 – $80.50</div><header class="metric-title"><span class="subtitle">Sold price range</span><p class="metric-description">The minimum and maximum sold price for similar listings, not including shipping costs.</p></header></section>
+  <section class="aggregate-metric"><header class="metric-title"><span class="subtitle">Avg shipping</span><p class="metric-description">The average shipping cost to be paid by the buyer.</p></header><div class="metric-value">$5.85</div></section>
+  <section class="aggregate-metric"><div class="metric-value">45%</div><header class="metric-title"><span class="subtitle">Free shipping</span><p class="metric-description">The percentage of sales that included free shipping.</p></header></section>
+  <section class="aggregate-metric"><div class="metric-value">-</div><header class="metric-title"><span class="subtitle">Sell-through</span><p class="metric-description">The percentage of similar items that sold.</p></header></section>
+  <section class="aggregate-metric"><div class="metric-value">1,021</div><header class="metric-title"><span class="subtitle">Total sellers</span><p class="metric-description">The total number of sellers.</p></header></section>
+</div>
+<div class="averageSold_chart"><svg class="highcharts-root"><text class="highcharts-title"><tspan>Avg sold price</tspan></text><text class="highcharts-axis-title">$99.99</text></svg></div>
 <table>
   <tr><th>Listing</th><th>Avg sold price</th><th>Avg shipping</th></tr>
-  <tr>
-    <td class="research-table-row__item research-table-row__product-info"><img src="data:," alt=""><a href="https://www.ebay.com/itm/100000000020">Acme Model 7 Multimeter</a></td>
-    <td class="research-table-row__item research-table-row__actions">Edit</td>
-    <td class="research-table-row__item research-table-row__avgSoldPrice"><span>$41.70</span><span>Fixed price</span></td>
-    <td class="research-table-row__item research-table-row__avgShippingCost"><span>$5.85</span> | <span>0%</span> <span>Free shipping</span></td>
-    <td class="research-table-row__item research-table-row__totalSoldCount">4</td>
-    <td class="research-table-row__item research-table-row__totalSalesValue">$166.80</td>
-    <td class="research-table-row__item research-table-row__bids">-</td>
-    <td class="research-table-row__item research-table-row__dateLastSold">Mar 3, 2026</td>
+  <tr class="research-table-row">
+    <td class="research-table-row__item research-table-row__product-info"><div class="research-table-row__inner-item"><div class="research-table-row__thumbnail"><div><div class="__zoomable-thumbnail" data-testid="zoomable-thumbnail" role="button"><div class="__zoomable-thumbnail-inner"><img class="small" src="data:," alt=""></div><span class="gh-ar-hdn">, preview full size image</span></div><div class="__zoomable-modal hidden" data-testid="zoomable-modal" role="dialog"><div class="__zoomable-modal-header"><p>Acme Model 7 Multimeter</p></div></div></div></div><div class="research-table-row__product-info-name"><a class="research-table-row__link-row-anchor" href="https://www.ebay.com/itm/100000000020"><span>Acme Model 7 Multimeter</span></a></div></div></td>
+    <td class="research-table-row__item research-table-row__actions"><div class="research-table-row__actions-wrapper"><button class="fake-link">Edit</button></div></td>
+    <td class="research-table-row__item research-table-row__avgSoldPrice"><div class="research-table-row__item-with-subtitle"><div>$41.70</div><div class="format">Fixed price</div></div></td>
+    <td class="research-table-row__item research-table-row__avgShippingCost"><div class="research-table-row__item-with-subtitle"><div>$5.85</div><div class="format">0% Free shipping</div></div></td>
+    <td class="research-table-row__item research-table-row__totalSoldCount"><div class="research-table-row__inner-item"><div>4</div></div></td>
+    <td class="research-table-row__item research-table-row__totalSalesValue"><div class="research-table-row__inner-item"><div>$166.80</div></div></td>
+    <td class="research-table-row__item research-table-row__bids"><div class="research-table-row__inner-item"><div>–</div></div></td>
+    <td class="research-table-row__item research-table-row__dateLastSold"><div class="research-table-row__inner-item"><div>Mar 3, 2026</div></div></td>
   </tr>
-  <tr>
-    <td class="research-table-row__item research-table-row__product-info">100000000021</td>
-    <td class="research-table-row__item research-table-row__actions">Edit</td>
-    <td class="research-table-row__item research-table-row__avgSoldPrice">$33.20 | Auction</td>
-    <td class="research-table-row__item research-table-row__avgShippingCost">$0.00 | 100% Free shipping</td>
-    <td class="research-table-row__item research-table-row__totalSoldCount">1</td>
-    <td class="research-table-row__item research-table-row__totalSalesValue">$33.20</td>
-    <td class="research-table-row__item research-table-row__bids">7</td>
-    <td class="research-table-row__item research-table-row__dateLastSold">Sep 30, 2026</td>
+  <tr class="research-table-row">
+    <td class="research-table-row__item research-table-row__product-info"><div class="research-table-row__inner-item">100000000021</div></td>
+    <td class="research-table-row__item research-table-row__actions"><div class="research-table-row__actions-wrapper"><button class="fake-link">Edit</button></div></td>
+    <td class="research-table-row__item research-table-row__avgSoldPrice"><div class="research-table-row__item-with-subtitle"><div>$33.20</div><div class="format">Auction</div></div></td>
+    <td class="research-table-row__item research-table-row__avgShippingCost"><div class="research-table-row__item-with-subtitle"><div>$0.00</div><div class="format">100% Free shipping</div></div></td>
+    <td class="research-table-row__item research-table-row__totalSoldCount"><div class="research-table-row__inner-item"><div>1</div></div></td>
+    <td class="research-table-row__item research-table-row__totalSalesValue"><div class="research-table-row__inner-item"><div>$33.20</div></div></td>
+    <td class="research-table-row__item research-table-row__bids"><div class="research-table-row__inner-item"><div>7</div></div></td>
+    <td class="research-table-row__item research-table-row__dateLastSold"><div class="research-table-row__inner-item"><div>Sep 30, 2026</div></div></td>
   </tr>
-  <tr>
-    <td class="research-table-row__item research-table-row__product-info"><a href="https://www.ebay.com/itm/100000000022">Acme Leads</a></td>
-    <td class="research-table-row__item research-table-row__avgSoldPrice">$1,200.00</td>
-    <td class="research-table-row__item research-table-row__totalSoldCount">2</td>
-    <td class="research-table-row__item research-table-row__dateLastSold">Unknown</td>
+  <tr class="research-table-row">
+    <td class="research-table-row__item research-table-row__product-info"><div class="research-table-row__product-info-name"><a class="research-table-row__link-row-anchor" href="https://www.ebay.com/itm/100000000022"><span>Acme Leads</span></a></div></td>
+    <td class="research-table-row__item research-table-row__avgSoldPrice"><div class="research-table-row__inner-item"><div>$1,200.00</div></div></td>
+    <td class="research-table-row__item research-table-row__totalSoldCount"><div class="research-table-row__inner-item"><div>2</div></div></td>
+    <td class="research-table-row__item research-table-row__dateLastSold"><div class="research-table-row__inner-item"><div>Unknown</div></div></td>
   </tr>
 </table>
 </body>

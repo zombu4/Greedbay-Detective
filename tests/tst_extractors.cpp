@@ -23,6 +23,7 @@
 #include <QTcpSocket>
 #include <QTemporaryDir>
 #include <QTest>
+#include <QTimer>
 
 #include <optional>
 
@@ -74,6 +75,8 @@ private:
     QTcpServer m_server;
     QByteArray m_fixture;
     QString m_lastUserMessage;
+    // How long the test, playing the user, waits before pressing Continue.
+    int m_continueDelayMs = 0;
 
 private slots:
     void initTestCase();
@@ -89,6 +92,8 @@ private slots:
     void unexpectedPage_data();
     void unexpectedPage();
     void noAutomationMarker();
+    void pageReadAgainAfterContinue();
+    void dailyCapStopsLoads();
     void browserClosesCleanly();
 };
 
@@ -171,7 +176,7 @@ void TestExtractors::initTestCase()
     connect(m_controller, &BrowserController::needsUser, this, [this](const QString &message) {
         // The test plays the user: it looks at nothing and presses Continue.
         m_lastUserMessage = message;
-        m_controller->continueAfterUser();
+        QTimer::singleShot(m_continueDelayMs, m_controller, &BrowserController::continueAfterUser);
     });
     QSignalSpy ready(m_controller, &BrowserController::ready);
     QSignalSpy failed(m_controller, &BrowserController::failed);
@@ -200,15 +205,20 @@ void TestExtractors::activeSearch()
     QCOMPARE(data.value("page").toInt(), 1);
     QCOMPARE(data.value("perPage").toInt(), 240);
     QCOMPARE(data.value("hasMorePages").toBool(), true);
+    // The dummy card is found by its /itm/123456 link; its data-listingid
+    // is another number, as on the real page.
     QCOMPARE(data.value("skippedDummyCards").toInt(), 1);
-    // "Top Rated Plus" and a seller row with "(2.1K)" match no pattern.
+    // "Top Rated Plus" and "Watch this space" match no pattern.
     QCOMPARE(data.value("unrecognizedRows").toInt(), 2);
+    QCOMPARE(data.value("unrecognizedSamples").toArray(), QJsonArray({"Top Rated Plus", "Watch this space"}));
 
     const QJsonArray items = data.value("items").toArray();
     QCOMPARE(items.size(), 4);
     for (const QJsonValue &item : items)
         QVERIFY(item.toObject().value("itemId").toString() != QLatin1String("123456"));
 
+    // A fixed-price card with the earlier price struck through, a seller row
+    // in two spans and the optional counters.
     const QJsonObject a = items.at(0).toObject();
     QCOMPARE(a.value("itemId").toString(), QStringLiteral("100000000001"));
     QCOMPARE(a.value("title").toString(), QStringLiteral("Acme Model 7 Digital Multimeter"));
@@ -217,6 +227,7 @@ void TestExtractors::activeSearch()
     QCOMPARE(a.value("price").toObject().value("maxCents").toInt(), 27400);
     QCOMPARE(a.value("price").toObject().value("currency").toString(), QStringLiteral("USD"));
     QCOMPARE(a.value("priceText").toString(), QStringLiteral("$274.00"));
+    QCOMPARE(a.value("originalPriceCents").toInt(), 30000);
     QCOMPARE(a.value("shippingCents").toInt(), 1125);
     QCOMPARE(a.value("format").toString(), QStringLiteral("fixed_price"));
     QVERIFY(a.value("bids").isNull());
@@ -226,13 +237,20 @@ void TestExtractors::activeSearch()
     QCOMPARE(a.value("freeReturns").toBool(), true);
     QCOMPARE(a.value("location").toString(), QStringLiteral("United States"));
     QCOMPARE(a.value("listedAt").toString(), QStringLiteral("Mar-02 09:15"));
+    QCOMPARE(a.value("watchers").toInt(), 12);
+    QCOMPARE(a.value("importFees").toString(), QStringLiteral("included"));
     QCOMPARE(a.value("seller").toObject().value("name").toString(), QStringLiteral("examplesellerone"));
     QCOMPARE(a.value("seller").toObject().value("positivePercent").toDouble(), 97.4);
     QCOMPARE(a.value("seller").toObject().value("feedbackCount").toInt(), 215);
-    QCOMPARE(names(a.value("missing")), set({"bids"}));
+    QCOMPARE(a.value("seller").toObject().value("feedbackText").toString(), QStringLiteral("215"));
+    // Optional fields that are empty (bids, coupon, ...) are not "missing".
+    QCOMPARE(names(a.value("missing")), QSet<QString>());
     QVERIFY(!a.contains("soldDate"));
     QVERIFY(!a.contains("priceStatus"));
+    QVERIFY(!a.contains("offerRowUnrecognized"));
 
+    // An auction: bids and time left share one row; an abbreviated feedback
+    // count gives no exact number.
     const QJsonObject b = items.at(1).toObject();
     QCOMPARE(b.value("itemId").toString(), QStringLiteral("100000000002"));
     QCOMPARE(b.value("title").toString(), QStringLiteral("Acme Model 7 Meter with Leads"));
@@ -241,13 +259,17 @@ void TestExtractors::activeSearch()
     QCOMPARE(b.value("shippingCents").toInt(), 0);
     QCOMPARE(b.value("format").toString(), QStringLiteral("auction"));
     QCOMPARE(b.value("bids").toInt(), 12);
+    QCOMPARE(b.value("timeLeft").toString(), QStringLiteral("2d 5h left"));
+    QCOMPARE(b.value("auctionEnd").toString(), QStringLiteral("Fri, 07:30 PM"));
     QCOMPARE(b.value("location").toString(), QStringLiteral("Canada"));
+    QCOMPARE(b.value("seller").toObject().value("name").toString(), QStringLiteral("examplesellertwo"));
     QCOMPARE(b.value("seller").toObject().value("positivePercent").toDouble(), 100.0);
-    QCOMPARE(b.value("seller").toObject().value("feedbackCount").toInt(), 1204);
-    QCOMPARE(names(b.value("missing")), set({"listedAt"}));
+    QVERIFY(b.value("seller").toObject().value("feedbackCount").isNull());
+    QCOMPARE(b.value("seller").toObject().value("feedbackText").toString(), QStringLiteral("1.2K"));
+    QCOMPARE(names(b.value("missing")), set({"seller.feedbackCount"}));
 
-    // A title that only starts with the words "New Listing" (no marker
-    // element) is kept as it is.
+    // A price range (listing with variations) and the remaining row kinds.
+    // The title starts with "New Listings", which is not the marker.
     const QJsonObject c = items.at(2).toObject();
     QCOMPARE(c.value("itemId").toString(), QStringLiteral("100000000003"));
     QCOMPARE(c.value("title").toString(), QStringLiteral("New Listings Display Rack"));
@@ -255,17 +277,26 @@ void TestExtractors::activeSearch()
     QCOMPARE(c.value("price").toObject().value("maxCents").toInt(), 3500);
     QCOMPARE(c.value("buyItNow").toBool(), true);
     QCOMPARE(c.value("format").toString(), QStringLiteral("fixed_price"));
-    QCOMPARE(names(c.value("missing")), set({"condition", "shippingCents", "bids", "location", "listedAt", "seller"}));
+    QCOMPARE(c.value("soldCount").toObject().value("count").toInt(), 355);
+    QCOMPARE(c.value("soldCount").toObject().value("atLeast").toBool(), false);
+    QCOMPARE(c.value("stockNote").toString(), QStringLiteral("Last one"));
+    QCOMPARE(c.value("couponPriceCents").toInt(), 1800);
+    QCOMPARE(c.value("multiBuyText").toString(), QStringLiteral("Save up to 10% when you buy more"));
+    QCOMPARE(c.value("importFees").toString(), QStringLiteral("due_before_delivery"));
+    QCOMPARE(names(c.value("missing")), set({"condition", "shippingCents", "location", "seller"}));
 
-    // No data-listingid: the item number comes from the /itm/ link. The
-    // price text matches no pattern, so the price is missing, not guessed.
+    // No data-listingid: the item number comes from the link; the price text
+    // is not a price.
     const QJsonObject d = items.at(3).toObject();
     QCOMPARE(d.value("itemId").toString(), QStringLiteral("100000000004"));
     QVERIFY(d.value("price").isNull());
     QCOMPARE(d.value("priceText").toString(), QStringLiteral("see price"));
     QCOMPARE(d.value("shippingCents").toInt(), 750);
+    QCOMPARE(d.value("stockNote").toString(), QStringLiteral("Almost gone"));
+    QCOMPARE(d.value("soldCount").toObject().value("count").toInt(), 39);
+    QCOMPARE(d.value("soldCount").toObject().value("atLeast").toBool(), true);
     QVERIFY(d.value("seller").isNull());
-    QCOMPARE(names(d.value("missing")), set({"price", "format", "bids", "location", "listedAt", "seller"}));
+    QCOMPARE(names(d.value("missing")), set({"price", "format", "location", "seller"}));
 }
 
 void TestExtractors::soldSearch()
@@ -293,7 +324,7 @@ void TestExtractors::soldSearch()
     QCOMPARE(a.value("format").toString(), QStringLiteral("fixed_price"));
     QCOMPARE(a.value("shippingCents").toInt(), 845);
     QCOMPARE(a.value("seller").toObject().value("positivePercent").toDouble(), 99.0);
-    QCOMPARE(names(a.value("missing")), set({"bids", "listedAt"}));
+    QCOMPARE(names(a.value("missing")), QSet<QString>());
 
     const QJsonObject b = items.at(1).toObject();
     QCOMPARE(b.value("soldDate").toString(), QStringLiteral("2026-03-09"));
@@ -349,6 +380,8 @@ void TestExtractors::itemFromJsonLd()
     QCOMPARE(specifics.at(0).toObject().value("value").toString(), QStringLiteral("Acme"));
     QCOMPARE(specifics.at(1).toObject().value("label").toString(), QStringLiteral("MPN"));
     QCOMPARE(specifics.at(1).toObject().value("value").toString(), QStringLiteral("meter"));
+    QCOMPARE(data.value("buyItNowOffered").toBool(), true);
+    QCOMPARE(data.value("quantityAvailable").toInt(), 3);
     QCOMPARE(data.value("watchers").toInt(), 17);
     QCOMPARE(data.value("soldCount").toInt(), 3);
     QCOMPARE(data.value("offersInJsonLd").toInt(), 1);
@@ -383,8 +416,12 @@ void TestExtractors::itemFromDom()
     QCOMPARE(data.value("shippingOptions").toArray().size(), 0);
     QCOMPARE(data.value("specifics").toArray().size(), 0);
     QCOMPARE(data.value("offersInJsonLd").toInt(), 0);
+    QCOMPARE(data.value("buyItNowOffered").toBool(), false);
+    QVERIFY(data.value("quantityAvailable").isNull());
+    // watchers, soldCount and quantityAvailable are optional: null, not missing.
+    QVERIFY(data.value("watchers").isNull());
     QCOMPARE(names(data.value("missing")),
-             set({"itemId", "availability", "listingStartedAt", "returnsText", "seller", "watchers", "soldCount"}));
+             set({"itemId", "availability", "listingStartedAt", "returnsText", "seller"}));
 }
 
 void TestExtractors::itemShippingBlockOnOneLine()
@@ -408,7 +445,7 @@ void TestExtractors::itemShippingBlockOnOneLine()
     QVERIFY(data.value("soldCount").isNull());
     QVERIFY(names(data.value("missing")).contains(QStringLiteral("shippingCents")));
     QVERIFY(names(data.value("missing")).contains(QStringLiteral("location")));
-    QVERIFY(names(data.value("missing")).contains(QStringLiteral("soldCount")));
+    QVERIFY(!names(data.value("missing")).contains(QStringLiteral("soldCount")));
 
     const QString json = QString::fromUtf8(QJsonDocument(*result).toJson(QJsonDocument::Compact));
     // (The item number contains "00000" too, so the ZIP is searched with
@@ -431,8 +468,10 @@ void TestExtractors::research()
     QCOMPARE(data.value("rowCount").toInt(), 3);
     QCOMPARE(data.value("morePossible").toBool(), false);
 
-    // The table header repeats "Avg sold price" and a row cell holds a span
-    // "Free shipping"; both are inside the table and must not be used.
+    // Read from the section.aggregate-metric blocks only: the table header
+    // and a chart title repeat "Avg sold price" (the chart with another
+    // amount), one section has its value after the header, the price range
+    // uses an EN DASH, and "Sell-through" shows "-".
     const QJsonObject summary = data.value("summary").toObject();
     QCOMPARE(summary.value("avgSoldPriceCents").toInt(), 4170);
     QCOMPARE(summary.value("soldPriceRange").toObject().value("minCents").toInt(), 1200);
@@ -454,7 +493,7 @@ void TestExtractors::research()
     QCOMPARE(r1.value("freeShippingPercent").toDouble(), 0.0);
     QCOMPARE(r1.value("totalSold").toInt(), 4);
     QCOMPARE(r1.value("totalSalesCents").toInt(), 16680);
-    QCOMPARE(r1.value("bids").toInt(), 0);
+    QCOMPARE(r1.value("bids").toInt(), 0); // shown as an EN DASH
     QCOMPARE(r1.value("lastSoldDate").toString(), QStringLiteral("2026-03-03"));
     QCOMPARE(names(r1.value("missing")), QSet<QString>());
 
@@ -533,6 +572,62 @@ void TestExtractors::noAutomationMarker()
     QVERIFY2(result, qPrintable(error));
     QCOMPARE(result->value("page").toString(), QStringLiteral("expected"));
     QCOMPARE(result->value("data").toObject().value("totalResults").toInt(), 1);
+}
+
+void TestExtractors::pageReadAgainAfterContinue()
+{
+    // The page is not a results page when it loads, so the app shows it and
+    // waits; the "user" presses Continue 3 s later, by when the page has
+    // become the requested results page: it is read then, without a reload.
+    m_continueDelayMs = 3000;
+    QString error;
+    const std::optional<QJsonObject> result = extract("late_page.html", kActiveUrl, PageKind::ActiveSearch, &error);
+    m_continueDelayMs = 0;
+    QVERIFY2(result, qPrintable(error));
+    QCOMPARE(result->value("page").toString(), QStringLiteral("expected"));
+    const QJsonObject data = result->value("data").toObject();
+    QCOMPARE(data.value("totalResults").toInt(), 7);
+    QCOMPARE(data.value("items").toArray().size(), 1);
+    QCOMPARE(data.value("items").toArray().at(0).toObject().value("itemId").toString(), QStringLiteral("100000000040"));
+}
+
+void TestExtractors::dailyCapStopsLoads()
+{
+    // A second session with its own work folder and a cap of one page: the
+    // first fetch loads, the second is refused before any load.
+    QString error;
+    const std::optional<app::WorkFolder> folder =
+        app::WorkFolder::open(m_temp.path() + QStringLiteral("/capped"), TEST_APP_NAME, &error);
+    QVERIFY2(folder, qPrintable(error));
+    QFile file(QStringLiteral(":/fixtures/active_search.html"));
+    QVERIFY(file.open(QIODevice::ReadOnly));
+    m_fixture = file.readAll();
+    app::browser::BrowserControllerOptions options;
+    options.pageDelayMinMs = 0;
+    options.pageDelayMaxMs = 0;
+    options.allowLocalTestPages = true;
+    options.dailyPageCap = 1;
+    BrowserController capped(*folder, app::browser::BrowserCatalog::installed().first(), options);
+    QSignalSpy ready(&capped, &BrowserController::ready);
+    QVERIFY2(capped.start(&error), qPrintable(error));
+    QVERIFY(ready.wait(BrowserController::kStartTimeoutMs) || !ready.isEmpty());
+    QUrl local(QStringLiteral("http://127.0.0.1:%1/sch/i.html?_nkw=test+meter&_ipg=240").arg(m_server.serverPort()));
+    QSignalSpy done(&capped, &BrowserController::done);
+    capped.fetch(local, PageKind::ActiveSearch);
+    QVERIFY(done.wait(60000) || !done.isEmpty());
+    QCOMPARE(done.at(0).at(0).toJsonObject().value("status").toString(), QStringLiteral("ok"));
+    capped.fetch(local, PageKind::ActiveSearch);
+    QVERIFY(QTest::qWaitFor([&done]() { return done.size() >= 2; }, 10000));
+    const QJsonObject refused = done.at(1).at(0).toJsonObject();
+    QCOMPARE(refused.value("status").toString(), QStringLiteral("limit_reached"));
+    QVERIFY2(refused.value("error").toString().contains(QStringLiteral("limit 1")), qPrintable(refused.value("error").toString()));
+    QFile count(folder->pageCountPath());
+    QVERIFY(count.open(QIODevice::ReadOnly));
+    QCOMPARE(QJsonDocument::fromJson(count.readAll()).object().value("pages").toInt(), 1);
+    QSignalSpy finished(&capped, &BrowserController::finished);
+    capped.stop();
+    QVERIFY(finished.wait(BrowserController::kCloseTimeoutMs + 10000) || !finished.isEmpty());
+    QCOMPARE(finished.at(0).at(0).toBool(), true);
 }
 
 void TestExtractors::browserClosesCleanly()
