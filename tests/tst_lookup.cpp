@@ -328,11 +328,10 @@ void TestLookup::researchWithoutAccess()
     for (const SearchRecord &record : runner->result().sold)
         QVERIFY(!record.confirmed);
     const QList<Row> rows = classifyRows(runner->result(), m_words);
-    const Valuation valuation = valuate(runner->result(), rows, m_words, app::ValueSettings());
-    for (const ConditionNumbers &level : valuation.sold) {
-        QCOMPARE(level.included, 0);
-        QCOMPARE(level.medianCents, std::nullopt);
-    }
+    const Valuation valuation = valuate(runner->result(), rows, app::ValueSettings());
+    QCOMPARE(valuation.sold.included, 0);
+    QCOMPARE(valuation.sold.medianCents, std::nullopt);
+    QCOMPARE(valuation.sold.unconfirmed, 5);
     QCOMPARE(finished.size(), 1);
     QCOMPARE(runner->result().status, QStringLiteral("complete"));
     QVERIFY(runner->result().researchUnavailable);
@@ -498,16 +497,17 @@ void TestLookup::reportNumbers()
     QJsonObject noShipping = card(10, 50000, 0);
     noShipping.insert("shippingCents", QJsonValue());
     result.sold.append(SearchRecord::fromJson(noShipping, true));
+    // For sale now: $305.00 and $155.00 (listed in that order).
+    result.active.append(SearchRecord::fromJson(card(21, 30000, 500), false));
+    result.active.append(SearchRecord::fromJson(card(20, 15000, 500), false));
     result.status = QStringLiteral("complete");
 
     QList<Row> rows = classifyRows(result, m_words);
-    QCOMPARE(rows.size(), 6);
+    QCOMPARE(rows.size(), 8);
     for (const Row &row : std::as_const(rows))
         QCOMPARE(row.match.bucket, Bucket::SameItem);
-    Valuation valuation = valuate(result, rows, m_words, app::ValueSettings());
-    QCOMPARE(valuation.sold.size(), 1);
-    const ConditionNumbers &level = valuation.sold.at(0);
-    QCOMPARE(level.condition, Condition::NotStated);
+    Valuation valuation = valuate(result, rows, app::ValueSettings());
+    const ValueNumbers &level = valuation.sold;
     QCOMPARE(level.included, 4);
     QCOMPARE(level.p25Cents, std::optional<qint64>(18000));
     QCOMPARE(level.medianCents, std::optional<qint64>(25500));
@@ -520,13 +520,20 @@ void TestLookup::reportNumbers()
 
     const QString text = reportText(result, rows, valuation, QStringLiteral("$200-300"));
     QVERIFY2(text.contains(QStringLiteral("4 sales, median $255.00, P25-P75 $180.00-$330.00")), qPrintable(text));
+    QVERIFY2(text.contains(QStringLiteral("THIS LISTING: total $265.00 | sold median $255.00 (+$10.00)")), qPrintable(text));
     QVERIFY2(text.contains(QStringLiteral("your estimate: $200-300")), qPrintable(text));
     QVERIFY(text.contains(QStringLiteral("SOLD - same item (6)")));
+    // The pasted listing against what is for sale now; lowest total first,
+    // the cheapest marked.
+    QVERIFY2(text.contains(QStringLiteral("for sale now: 1 of 2 same-item listings are cheaper, cheapest $155.00")), qPrintable(text));
+    const qsizetype cheap = text.indexOf(QStringLiteral("CHEAPEST 1 Acme M7X meter 20"));
+    const qsizetype dear = text.indexOf(QStringLiteral("CHEAPEST 2 Acme M7X meter 21"));
+    QVERIFY2(cheap > 0 && dear > cheap, qPrintable(text));
 
     // Unticking a row changes the numbers.
     rows[0].included = false;
-    valuation = valuate(result, rows, m_words, app::ValueSettings());
-    QCOMPARE(valuation.sold.at(0).included, 3);
+    valuation = valuate(result, rows, app::ValueSettings());
+    QCOMPARE(valuation.sold.included, 3);
 }
 
 QTEST_GUILESS_MAIN(TestLookup)

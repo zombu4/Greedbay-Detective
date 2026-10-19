@@ -47,10 +47,12 @@ class LookupRunner;
 //                     anew
 //   Fetch comps       reads the sold search, the active search and Product
 //                     Research for the queries (one per line) up to the
-//                     depths shown, then lists every row by bucket with a
-//                     checkbox (ticked = counted; same-item rows start
-//                     ticked) and its reasons; the numbers below recompute
-//                     when a box changes
+//                     depths shown, then lists every row by bucket, by
+//                     total price lowest first, with eBay's condition text,
+//                     a checkbox (ticked = counted; same-item rows start
+//                     ticked) and its reasons; the cheapest same-item
+//                     listings for sale now are marked; the numbers below
+//                     recompute when a box changes
 //   Cancel            stops the lookup after the page being loaded
 // Every step is written to the log area, including the browser's process
 // id, how it exited and how many eBay pages were loaded today (daily cap).

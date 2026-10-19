@@ -33,11 +33,13 @@ namespace app::lookup {
 struct Identity {
     QString brandId;           // empty when no brand is known
     QString brandName;         // shown: the name found, or the first name
-    QStringList matchNames;    // every name of the brand
+    QStringList matchNames;    // every name of the brand that applies to the model
     QStringList searchNames;   // the names used in queries
+    QList<BrandName> allNames; // every name of the brand, with its scope
     QString model;             // manufacturer's spelling; empty when unknown
     QStringList family;        // codes that count as the same item
     QString productName;
+    QString category;          // of a known model; empty otherwise
     QStringList notes;         // known-issue notes of the model
     bool confident = false;
     // Where it came from: "saved" (the user confirmed it for this listing),

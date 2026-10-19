@@ -3,6 +3,8 @@
 #include <QJsonObject>
 #include <QStringList>
 
+#include <algorithm>
+
 namespace app::lookup {
 
 namespace {
@@ -24,13 +26,6 @@ QString orDash(const QString &text)
     return text.isEmpty() ? QStringLiteral("-") : text;
 }
 
-std::optional<qint64> researchTotal(const ResearchRecord &record)
-{
-    if (!record.avgSoldPriceCents || !record.avgShippingCents)
-        return std::nullopt;
-    return *record.avgSoldPriceCents + *record.avgShippingCents;
-}
-
 std::optional<qint64> summaryCents(const QJsonObject &summary, const char *key)
 {
     const QJsonValue value = summary.value(QLatin1String(key));
@@ -39,30 +34,31 @@ std::optional<qint64> summaryCents(const QJsonObject &summary, const char *key)
     return static_cast<qint64>(value.toDouble());
 }
 
-void numbersLines(QStringList *out, const QList<ConditionNumbers> &levels)
+QString numbersLine(const ValueNumbers &numbers)
 {
-    if (levels.isEmpty()) {
-        out->append(QStringLiteral("  none"));
-        return;
+    QString line = QStringLiteral("  %1 sales").arg(numbers.included);
+    if (numbers.medianCents)
+        line += QStringLiteral(", median %1, P25-P75 %2-%3")
+                    .arg(money(*numbers.medianCents), money(*numbers.p25Cents), money(*numbers.p75Cents));
+    line += QStringLiteral(", confidence %1").arg(numbers.confidence);
+    if (!numbers.outliers.isEmpty()) {
+        QStringList values;
+        for (const qint64 cents : numbers.outliers)
+            values.append(money(cents));
+        line += QStringLiteral(" | outliers left out: %1").arg(values.join(QStringLiteral(", ")));
     }
-    for (const ConditionNumbers &level : levels) {
-        QString line = QStringLiteral("  %1: %2 sales").arg(conditionName(level.condition).leftJustified(18)).arg(level.included);
-        if (level.medianCents)
-            line += QStringLiteral(", median %1, P25-P75 %2-%3")
-                        .arg(money(*level.medianCents), money(*level.p25Cents), money(*level.p75Cents));
-        line += QStringLiteral(", confidence %1").arg(level.confidence);
-        if (!level.outliers.isEmpty()) {
-            QStringList values;
-            for (const qint64 cents : level.outliers)
-                values.append(money(cents));
-            line += QStringLiteral(" | outliers left out: %1").arg(values.join(QStringLiteral(", ")));
-        }
-        if (level.unconfirmed > 0)
-            line += QStringLiteral(" | unconfirmed (Best Offer etc.): %1, median %2")
-                        .arg(level.unconfirmed)
-                        .arg(moneyOr(level.unconfirmedMedianCents));
-        out->append(line);
-    }
+    if (numbers.unconfirmed > 0)
+        line += QStringLiteral(" | unconfirmed (Best Offer etc.): %1, median %2")
+                    .arg(numbers.unconfirmed)
+                    .arg(moneyOr(numbers.unconfirmedMedianCents));
+    return line;
+}
+
+int bucketRank(Bucket bucket)
+{
+    const Bucket order[] = {Bucket::SameItem, Bucket::Documentation, Bucket::PartFits, Bucket::Companion, Bucket::Accessory,
+                            Bucket::Lot, Bucket::UnknownItem, Bucket::ToCheck, Bucket::NoMatch};
+    return static_cast<int>(std::find(std::begin(order), std::end(order), bucket) - std::begin(order));
 }
 
 } // namespace
@@ -77,31 +73,91 @@ QString money(qint64 cents)
     return cents < 0 ? QLatin1Char('-') + text : text;
 }
 
+std::optional<qint64> rowTotal(const LookupResult &result, const Row &row)
+{
+    switch (row.source) {
+    case Row::Source::Sold:
+        return result.sold.at(row.index).totalCents();
+    case Row::Source::Active:
+        return result.active.at(row.index).totalCents();
+    case Row::Source::Research: {
+        const ResearchRecord &record = result.research.at(row.index);
+        if (!record.avgSoldPriceCents || !record.avgShippingCents)
+            return std::nullopt;
+        return *record.avgSoldPriceCents + *record.avgShippingCents;
+    }
+    }
+    return std::nullopt;
+}
+
+QString rowCondition(const LookupResult &result, const Row &row)
+{
+    switch (row.source) {
+    case Row::Source::Sold:
+        return result.sold.at(row.index).condition;
+    case Row::Source::Active:
+        return result.active.at(row.index).condition;
+    case Row::Source::Research:
+        break;
+    }
+    return {};
+}
+
+QString rowTitle(const LookupResult &result, const Row &row)
+{
+    switch (row.source) {
+    case Row::Source::Sold:
+        return result.sold.at(row.index).title;
+    case Row::Source::Active:
+        return result.active.at(row.index).title;
+    case Row::Source::Research:
+        return result.research.at(row.index).title;
+    }
+    return {};
+}
+
+QList<qsizetype> rowOrder(const LookupResult &result, const QList<Row> &rows)
+{
+    QList<qsizetype> order;
+    for (qsizetype i = 0; i < rows.size(); ++i)
+        order.append(i);
+    std::stable_sort(order.begin(), order.end(), [&](qsizetype a, qsizetype b) {
+        const int rankA = bucketRank(rows.at(a).match.bucket);
+        const int rankB = bucketRank(rows.at(b).match.bucket);
+        if (rankA != rankB)
+            return rankA < rankB;
+        const std::optional<qint64> totalA = rowTotal(result, rows.at(a));
+        const std::optional<qint64> totalB = rowTotal(result, rows.at(b));
+        if (totalA.has_value() != totalB.has_value())
+            return totalA.has_value();
+        return totalA && *totalA < *totalB;
+    });
+    return order;
+}
+
 QList<Row> classifyRows(const LookupResult &result, const MatchWords &words)
 {
     QList<Row> rows;
-    auto add = [&](Row::Source source, qsizetype index, const QString &title, const QString &condition) {
+    auto add = [&](Row::Source source, qsizetype index, const QString &title) {
         Row row;
         row.source = source;
         row.index = index;
-        row.match = matchRow(title, condition, result.identity, words);
+        row.match = matchRow(title, result.identity, words);
         row.included = row.match.bucket == Bucket::SameItem;
         rows.append(row);
     };
     for (qsizetype i = 0; i < result.sold.size(); ++i)
-        add(Row::Source::Sold, i, result.sold.at(i).title, result.sold.at(i).condition);
+        add(Row::Source::Sold, i, result.sold.at(i).title);
     for (qsizetype i = 0; i < result.active.size(); ++i)
-        add(Row::Source::Active, i, result.active.at(i).title, result.active.at(i).condition);
+        add(Row::Source::Active, i, result.active.at(i).title);
     for (qsizetype i = 0; i < result.research.size(); ++i)
-        add(Row::Source::Research, i, result.research.at(i).title, QString());
+        add(Row::Source::Research, i, result.research.at(i).title);
     return rows;
 }
 
-Valuation valuate(const LookupResult &result, const QList<Row> &rows, const MatchWords &words,
-                  const ValueSettings &settings)
+Valuation valuate(const LookupResult &result, const QList<Row> &rows, const ValueSettings &settings)
 {
     Valuation valuation;
-    valuation.listing = conditionOf(result.item.title, result.item.condition, words);
     QList<Comp> sold;
     QList<Comp> research;
     for (const Row &row : rows) {
@@ -109,14 +165,21 @@ Valuation valuate(const LookupResult &result, const QList<Row> &rows, const Matc
             continue;
         if (row.source == Row::Source::Sold) {
             const SearchRecord &record = result.sold.at(row.index);
-            sold.append({record.totalCents(), record.shippingCents, record.confirmed, row.match.condition});
+            sold.append({record.totalCents(), record.shippingCents, record.confirmed});
         } else if (row.source == Row::Source::Research) {
-            const ResearchRecord &record = result.research.at(row.index);
-            research.append({researchTotal(record), record.avgShippingCents, true, row.match.condition});
+            research.append({rowTotal(result, row), result.research.at(row.index).avgShippingCents, true});
+        } else if (const std::optional<qint64> total = rowTotal(result, row);
+                   total && result.active.at(row.index).itemId != result.item.itemId) {
+            valuation.forSale.append(*total);
         }
     }
-    valuation.sold = valueByCondition(sold, settings);
-    valuation.research = valueByCondition(research, settings);
+    std::sort(valuation.forSale.begin(), valuation.forSale.end());
+    if (const std::optional<qint64> listing = result.item.totalCents()) {
+        valuation.cheaperForSale = static_cast<int>(
+            std::count_if(valuation.forSale.cbegin(), valuation.forSale.cend(), [&](qint64 total) { return total < *listing; }));
+    }
+    valuation.sold = valueOf(sold, settings);
+    valuation.research = valueOf(research, settings);
     valuation.shipping = checkShipping(result.item.shippingCents, sold,
                                        summaryCents(result.researchSummary, "avgShippingCents"), settings);
     valuation.ebayAverageSoldCents = summaryCents(result.researchSummary, "avgSoldPriceCents");
@@ -130,9 +193,8 @@ QString reportText(const LookupResult &result, const QList<Row> &rows, const Val
     const ItemRecord &item = result.item;
     const Identity &identity = result.identity;
     out.append(QStringLiteral("LISTING %1: %2").arg(orDash(item.itemId), orDash(item.title)));
-    out.append(QStringLiteral("  price %1 + shipping %2 = total %3 | condition: %4")
-                   .arg(moneyOr(item.priceCents), moneyOr(item.shippingCents), moneyOr(item.totalCents()),
-                        conditionName(valuation.listing.condition)));
+    out.append(QStringLiteral("  price %1 + shipping %2 = total %3 | eBay condition: %4")
+                   .arg(moneyOr(item.priceCents), moneyOr(item.shippingCents), moneyOr(item.totalCents()), orDash(item.condition)));
     out.append(QStringLiteral("  identity: brand %1, model %2%3 (%4)")
                    .arg(orDash(identity.brandName), orDash(identity.model),
                         identity.productName.isEmpty() ? QString() : QStringLiteral(", \"%1\"").arg(identity.productName),
@@ -169,10 +231,24 @@ QString reportText(const LookupResult &result, const QList<Row> &rows, const Val
         out.append(QString());
     }
 
-    out.append(QStringLiteral("SOLD, MATCHED (sold search, totals = price + shipping, confirmed prices)"));
-    numbersLines(&out, valuation.sold);
-    out.append(QStringLiteral("PRODUCT RESEARCH, MATCHED (one value per listing: average sold + average shipping)"));
-    numbersLines(&out, valuation.research);
+    out.append(QStringLiteral("SOLD, SAME ITEM (sold search, totals = price + shipping, confirmed prices, every condition)"));
+    out.append(numbersLine(valuation.sold));
+    out.append(QStringLiteral("PRODUCT RESEARCH, SAME ITEM (one value per listing: average sold + average shipping)"));
+    out.append(numbersLine(valuation.research));
+    if (const std::optional<qint64> total = item.totalCents()) {
+        QString line = QStringLiteral("THIS LISTING: total %1").arg(money(*total));
+        if (valuation.sold.medianCents)
+            line += QStringLiteral(" | sold median %1 (%2%3), P25-P75 %4-%5")
+                        .arg(money(*valuation.sold.medianCents), *total >= *valuation.sold.medianCents ? QStringLiteral("+") : QString(),
+                             money(*total - *valuation.sold.medianCents), money(*valuation.sold.p25Cents),
+                             money(*valuation.sold.p75Cents));
+        if (!valuation.forSale.isEmpty())
+            line += QStringLiteral(" | for sale now: %1 of %2 same-item listings are cheaper, cheapest %3")
+                        .arg(valuation.cheaperForSale)
+                        .arg(valuation.forSale.size())
+                        .arg(money(valuation.forSale.first()));
+        out.append(line);
+    }
     out.append(QStringLiteral("SHIPPING: listing %1 | median of %2 matched sales %3 | eBay Product Research average %4")
                    .arg(moneyOr(shipping.listingCents))
                    .arg(shipping.compsWithShipping)
@@ -185,44 +261,51 @@ QString reportText(const LookupResult &result, const QList<Row> &rows, const Val
         out.append(QStringLiteral("note: %1").arg(note));
     out.append(QString());
 
-    const Bucket order[] = {Bucket::SameItem, Bucket::Documentation, Bucket::PartFits, Bucket::Companion,
-                            Bucket::Accessory, Bucket::Lot, Bucket::UnknownItem, Bucket::ToCheck, Bucket::NoMatch};
+    const QList<qsizetype> order = rowOrder(result, rows);
     const struct {
         Row::Source source;
         const char *name;
-    } sources[] = {{Row::Source::Sold, "SOLD"}, {Row::Source::Research, "PRODUCT RESEARCH"}, {Row::Source::Active, "FOR SALE NOW"}};
+    } sources[] = {{Row::Source::Active, "FOR SALE NOW"}, {Row::Source::Sold, "SOLD"}, {Row::Source::Research, "PRODUCT RESEARCH"}};
     for (const auto &source : sources) {
-        for (const Bucket bucket : order) {
-            QStringList lines;
-            for (const Row &row : rows) {
-                if (row.source != source.source || row.match.bucket != bucket)
-                    continue;
-                QString total;
-                QString title;
-                QString extra;
-                if (row.source == Row::Source::Research) {
-                    const ResearchRecord &record = result.research.at(row.index);
-                    total = moneyOr(researchTotal(record));
-                    title = record.title;
-                    extra = QStringLiteral("%1 sold").arg(record.totalSold ? QString::number(*record.totalSold) : QStringLiteral("-"));
-                } else {
-                    const SearchRecord &record = row.source == Row::Source::Sold ? result.sold.at(row.index) : result.active.at(row.index);
-                    total = moneyOr(record.totalCents());
-                    title = record.title;
-                    extra = row.source == Row::Source::Sold
-                                ? (record.confirmed ? QStringLiteral("confirmed") : QStringLiteral("unconfirmed"))
-                                : orDash(record.format);
-                }
-                lines.append(QStringLiteral("  [%1] %2 %3 %4 %5 | %6")
-                                 .arg(row.included ? QStringLiteral("x") : QStringLiteral(" "), total.leftJustified(11),
-                                      extra.leftJustified(11), conditionName(row.match.condition).leftJustified(18),
-                                      cut(title), row.match.reasons.join(QStringLiteral("; "))));
-            }
+        Bucket current = Bucket::NoMatch;
+        QStringList lines;
+        int cheapest = 0;
+        auto flush = [&]() {
             if (lines.isEmpty())
-                continue;
-            out.append(QStringLiteral("%1 - %2 (%3)").arg(QString::fromLatin1(source.name), bucketName(bucket)).arg(lines.size()));
+                return;
+            out.append(QStringLiteral("%1 - %2 (%3)").arg(QString::fromLatin1(source.name), bucketName(current)).arg(lines.size()));
             out.append(lines);
+            lines.clear();
+        };
+        for (const qsizetype i : order) {
+            const Row &row = rows.at(i);
+            if (row.source != source.source)
+                continue;
+            if (row.match.bucket != current)
+                flush();
+            current = row.match.bucket;
+            QString mark;
+            const bool ownListing = row.source == Row::Source::Active && result.active.at(row.index).itemId == item.itemId;
+            if (ownListing)
+                mark = QStringLiteral("THIS LISTING ");
+            else if (row.source == Row::Source::Active && row.included && rowTotal(result, row) && cheapest < kCheapestMarked)
+                mark = QStringLiteral("CHEAPEST %1 ").arg(++cheapest);
+            QString extra;
+            if (row.source == Row::Source::Research) {
+                const ResearchRecord &record = result.research.at(row.index);
+                extra = QStringLiteral("%1 sold").arg(record.totalSold ? QString::number(*record.totalSold) : QStringLiteral("-"));
+            } else if (row.source == Row::Source::Sold) {
+                extra = result.sold.at(row.index).confirmed ? QStringLiteral("confirmed") : QStringLiteral("unconfirmed");
+            } else {
+                extra = orDash(result.active.at(row.index).format);
+            }
+            lines.append(QStringLiteral("  [%1] %2 %3 %4 %5%6 | %7")
+                             .arg(row.included ? QStringLiteral("x") : QStringLiteral(" "),
+                                  moneyOr(rowTotal(result, row)).leftJustified(11), extra.leftJustified(11),
+                                  orDash(rowCondition(result, row)).leftJustified(24), mark, cut(rowTitle(result, row)),
+                                  row.match.reasons.join(QStringLiteral("; "))));
         }
+        flush();
     }
     out.append(QString());
     out.append(QStringLiteral("pages loaded: %1 | time: %2 s | status: %3%4")

@@ -1,6 +1,6 @@
 {
     "format": 1,
-    "about": "Words the matcher uses, as data. Phrases are matched as whole words, without regard to case. Each list names where its words come from: the project owner's matching rules and cases (docs: rule N / case N) or the design (DESIGN 3.3).",
+    "about": "Words the matcher uses, as data. Phrases are matched as whole words, without regard to case. Each list names where its words come from: the project owner's matching rules and cases (docs: rule N / case N) or the design (DESIGN 3.3). The app does not grade condition (owner decision 2026-10-19); eBay's own condition text is shown as it is.",
     "specUnits": {
         "source": "owner rule 24 and case 7 (DC-600 KHZ, 0-1500V, 50kv, 10Hz-50 MHz, 100:1, 15 MEG, 4 channels); GHz, mA, mV, VAC, VDC added in the phase-4 review (frequency ranges of signal generators and mains voltages are written that way)",
         "words": [
@@ -115,69 +115,6 @@
         "source": "owner rule 13 (\"<other model> ... for <model>\")",
         "words": [
             "for"
-        ]
-    },
-    "conditions": {
-        "source": "owner rules 4, 5, 18 and 22, cases 1, 5, 6, 8 (phrases, not bare words: \"parts\" alone can mean original parts, \"new\" alone can mean new caps); \"not tested\" added in the phase-4 review; the level of \"powered on\" (untested) is a placement for the owner to confirm",
-        "nonWorking": [
-            "for parts",
-            "parts only",
-            "parts or repair",
-            "parts repair",
-            "for repair",
-            "needs repair",
-            "not working",
-            "non working",
-            "non-working",
-            "broken",
-            "roached",
-            "baked",
-            "burnt",
-            "heat damage",
-            "needs work",
-            "needs restoration",
-            "project",
-            "for restoration"
-        ],
-        "untested": [
-            "untested",
-            "not tested",
-            "as is",
-            "as-is",
-            "powered on"
-        ],
-        "new": [
-            "brand new",
-            "nib",
-            "new in box",
-            "nos",
-            "new old stock",
-            "sealed",
-            "never used",
-            "never opened"
-        ],
-        "working": [
-            "working",
-            "tested",
-            "tested working",
-            "restored",
-            "recapped",
-            "calibrated"
-        ]
-    },
-    "ebayConditions": {
-        "source": "condition texts seen on eBay pages (recon: search card subtitles \"Pre-Owned\", \"Brand New\", \"New (Other)\", \"Parts Only\"; item JSON-LD UsedCondition)",
-        "new": [
-            "Brand New",
-            "New (Other)"
-        ],
-        "nonWorking": [
-            "Parts Only"
-        ],
-        "used": [
-            "Pre-Owned",
-            "Used",
-            "UsedCondition"
         ]
     }
 }

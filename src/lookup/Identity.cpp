@@ -36,25 +36,35 @@ bool isUnitWord(const QString &word, const QStringList &units)
                        [&word](const QString &unit) { return word.compare(unit, Qt::CaseInsensitive) == 0; });
 }
 
-void setBrand(Identity *identity, const Brand &brand, const QString &shownName)
+// The names that apply to the identity's model: unscoped names always,
+// scoped ones ("onlyFor") only for a known model of that category.
+void applyNames(Identity *identity)
 {
-    identity->brandId = brand.id;
-    identity->brandName = shownName.isEmpty() ? brand.names.first().name : shownName;
     identity->matchNames.clear();
     identity->searchNames.clear();
-    for (const BrandName &name : brand.names) {
+    for (const BrandName &name : std::as_const(identity->allNames)) {
+        if (!name.onlyFor.isEmpty() && name.onlyFor.compare(identity->category, Qt::CaseInsensitive) != 0)
+            continue;
         identity->matchNames.append(name.name);
         if (name.search)
             identity->searchNames.append(name.name);
     }
 }
 
+void setBrand(Identity *identity, const Brand &brand, const QString &shownName)
+{
+    identity->brandId = brand.id;
+    identity->brandName = shownName.isEmpty() ? brand.names.first().name : shownName;
+    identity->allNames = brand.names;
+    applyNames(identity);
+}
+
 void setNewBrand(Identity *identity, const QString &name)
 {
     identity->brandId = QStringLiteral("user:") + name.simplified().toLower();
     identity->brandName = name.simplified();
-    identity->matchNames = {identity->brandName};
-    identity->searchNames = {identity->brandName};
+    identity->allNames = {BrandName{identity->brandName, true, QString()}};
+    applyNames(identity);
 }
 
 void setKnownModel(Identity *identity, const KnownModel &model)
@@ -62,7 +72,9 @@ void setKnownModel(Identity *identity, const KnownModel &model)
     identity->model = model.model;
     identity->family = model.family;
     identity->productName = model.productName;
+    identity->category = model.category;
     identity->notes = model.notes;
+    applyNames(identity);
 }
 
 // The known brand whose name appears first in `text` (as whole words; at

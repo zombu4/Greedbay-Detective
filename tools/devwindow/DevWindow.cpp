@@ -35,7 +35,7 @@ const char kTestUrl[] = "https://www.ebay.com/sch/i.html?_nkw=usb+c+cable&_ipg=2
 // cap limits the loads).
 constexpr int kDepthSpinMaximum = 100000;
 
-enum Column { ColUse, ColSource, ColCondition, ColTotal, ColExtra, ColTitle, ColReasons, ColCount };
+enum Column { ColUse, ColSource, ColTotal, ColCondition, ColExtra, ColTitle, ColReasons, ColCount };
 
 QSpinBox *depthBox(int value, QWidget *parent)
 {
@@ -88,8 +88,8 @@ DevWindow::DevWindow(app::WorkFolder folder, QWidget *parent)
     m_numbers->setLineWrapMode(QPlainTextEdit::NoWrap);
     m_numbers->setFont(fixed);
     m_table->setColumnCount(ColCount);
-    m_table->setHeaderLabels({QStringLiteral("use"), QStringLiteral("source"), QStringLiteral("condition"),
-                              QStringLiteral("total"), QStringLiteral("sold/format"), QStringLiteral("title"),
+    m_table->setHeaderLabels({QStringLiteral("use"), QStringLiteral("source"), QStringLiteral("total"),
+                              QStringLiteral("eBay condition"), QStringLiteral("sold/format"), QStringLiteral("title"),
                               QStringLiteral("reasons")});
     m_table->setUniformRowHeights(true);
     m_table->header()->setStretchLastSection(true);
@@ -450,51 +450,50 @@ void DevWindow::showRows()
     m_filling = true;
     m_table->clear();
     m_rowOf.clear();
-    const app::lookup::Bucket order[] = {app::lookup::Bucket::SameItem, app::lookup::Bucket::Documentation,
-                                         app::lookup::Bucket::PartFits, app::lookup::Bucket::Companion,
-                                         app::lookup::Bucket::Accessory, app::lookup::Bucket::Lot,
-                                         app::lookup::Bucket::UnknownItem, app::lookup::Bucket::ToCheck,
-                                         app::lookup::Bucket::NoMatch};
-    for (const app::lookup::Bucket bucket : order) {
-        QTreeWidgetItem *group = nullptr;
-        for (qsizetype i = 0; i < m_rows.size(); ++i) {
-            const Row &row = m_rows.at(i);
-            if (row.match.bucket != bucket)
-                continue;
-            if (!group) {
-                group = new QTreeWidgetItem(m_table);
-                group->setFirstColumnSpanned(true);
-            }
-            auto *item = new QTreeWidgetItem(group);
-            item->setFlags(item->flags() | Qt::ItemIsUserCheckable);
-            item->setCheckState(ColUse, row.included ? Qt::Checked : Qt::Unchecked);
-            item->setText(ColCondition, app::lookup::conditionName(row.match.condition));
-            item->setText(ColReasons, row.match.reasons.join(QStringLiteral("; ")));
-            if (row.source == Row::Source::Research) {
-                const app::lookup::ResearchRecord &record = m_result.research.at(row.index);
-                item->setText(ColSource, QStringLiteral("research"));
-                std::optional<qint64> total;
-                if (record.avgSoldPriceCents && record.avgShippingCents)
-                    total = *record.avgSoldPriceCents + *record.avgShippingCents;
-                item->setText(ColTotal, moneyOr(total));
-                item->setText(ColExtra, record.lastSoldDate);
-                item->setText(ColTitle, record.title);
-            } else {
-                const bool sold = row.source == Row::Source::Sold;
-                const app::lookup::SearchRecord &record = sold ? m_result.sold.at(row.index) : m_result.active.at(row.index);
-                item->setText(ColSource, sold ? (record.confirmed ? QStringLiteral("sold") : QStringLiteral("sold, unconfirmed"))
-                                              : QStringLiteral("for sale"));
-                item->setText(ColTotal, moneyOr(record.totalCents()));
-                item->setText(ColExtra, sold ? record.soldDate : record.format);
-                item->setText(ColTitle, record.title);
-            }
-            m_rowOf.insert(item, i);
+    // By bucket, then by total price, lowest first (owner decision
+    // 2026-10-19); the cheapest same-item listings for sale now are marked.
+    QTreeWidgetItem *group = nullptr;
+    std::optional<app::lookup::Bucket> current;
+    int cheapest = 0;
+    auto closeGroup = [&]() {
+        if (group && current) {
+            group->setText(ColUse, QStringLiteral("%1 (%2)").arg(app::lookup::bucketName(*current)).arg(group->childCount()));
+            group->setExpanded(*current != app::lookup::Bucket::NoMatch);
         }
-        if (group) {
-            group->setText(ColUse, QStringLiteral("%1 (%2)").arg(app::lookup::bucketName(bucket)).arg(group->childCount()));
-            group->setExpanded(bucket != app::lookup::Bucket::NoMatch);
+    };
+    for (const qsizetype i : app::lookup::rowOrder(m_result, m_rows)) {
+        const Row &row = m_rows.at(i);
+        if (!current || row.match.bucket != *current) {
+            closeGroup();
+            current = row.match.bucket;
+            group = new QTreeWidgetItem(m_table);
+            group->setFirstColumnSpanned(true);
         }
+        auto *item = new QTreeWidgetItem(group);
+        item->setFlags(item->flags() | Qt::ItemIsUserCheckable);
+        item->setCheckState(ColUse, row.included ? Qt::Checked : Qt::Unchecked);
+        item->setText(ColTotal, moneyOr(app::lookup::rowTotal(m_result, row)));
+        item->setText(ColCondition, app::lookup::rowCondition(m_result, row));
+        item->setText(ColReasons, row.match.reasons.join(QStringLiteral("; ")));
+        QString title = app::lookup::rowTitle(m_result, row);
+        if (row.source == Row::Source::Research) {
+            item->setText(ColSource, QStringLiteral("research"));
+            item->setText(ColExtra, m_result.research.at(row.index).lastSoldDate);
+        } else {
+            const bool sold = row.source == Row::Source::Sold;
+            const app::lookup::SearchRecord &record = sold ? m_result.sold.at(row.index) : m_result.active.at(row.index);
+            item->setText(ColSource, sold ? (record.confirmed ? QStringLiteral("sold") : QStringLiteral("sold, unconfirmed"))
+                                          : QStringLiteral("for sale"));
+            item->setText(ColExtra, sold ? record.soldDate : record.format);
+            if (!sold && record.itemId == m_result.item.itemId)
+                title = QStringLiteral("[THIS LISTING] ") + title;
+            else if (!sold && row.included && app::lookup::rowTotal(m_result, row) && cheapest < app::lookup::kCheapestMarked)
+                title = QStringLiteral("[CHEAPEST %1] ").arg(++cheapest) + title;
+        }
+        item->setText(ColTitle, title);
+        m_rowOf.insert(item, i);
     }
+    closeGroup();
     for (int column = 0; column < ColReasons; ++column)
         m_table->resizeColumnToContents(column);
     m_filling = false;
@@ -505,7 +504,7 @@ void DevWindow::recompute()
     if (!m_words || m_result.status == QLatin1String("running"))
         return;
     const app::Settings settings(m_folder.settingsPath());
-    const app::lookup::Valuation valuation = app::lookup::valuate(m_result, m_rows, *m_words, settings.valueSettings());
+    const app::lookup::Valuation valuation = app::lookup::valuate(m_result, m_rows, settings.valueSettings());
     m_numbers->setPlainText(app::lookup::reportText(m_result, m_rows, valuation, m_expectation->text()));
 }
 

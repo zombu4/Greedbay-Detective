@@ -8,8 +8,8 @@
 
 namespace app::lookup {
 
-// What one result row is, judged from its title (and eBay's condition text)
-// against the listing's identity, with the reasons shown to the user
+// What one result row is, judged from its title against the listing's
+// identity, with the reasons shown to the user
 // (owner rules 3, 4, 10, 13, 14, 17, 19, 28; DESIGN 3.3). All words come from
 // MatchWords.
 //
@@ -42,26 +42,16 @@ namespace app::lookup {
 // words (a brand name may stand between), by the model.
 enum class Bucket { SameItem, Documentation, PartFits, Companion, Accessory, Lot, UnknownItem, ToCheck, NoMatch };
 
-// Condition scale (rule 18), from title words first - the strongest found
-// counts: NonWorking > Untested > New > Working; a longer phrase wins over a
-// shorter one inside it ("not working" over "working"). Without such words,
-// eBay's condition text: parts -> NonWorking, new -> New, used ->
-// NotStated. Otherwise NotStated.
-enum class Condition { New, Working, NotStated, Untested, NonWorking };
-
+// The app does not grade condition (owner decision 2026-10-19, replacing
+// rules 5, 15, 18 and 22): matching only decides whether a row is the same
+// item; eBay's own condition text is shown as it is.
 struct Match {
     Bucket bucket = Bucket::NoMatch;
-    Condition condition = Condition::NotStated;
-    QString conditionWord; // the word that decided it, or eBay's text
     QStringList reasons;
 };
 
-Match matchRow(const QString &title, const QString &ebayCondition, const Identity &identity, const MatchWords &words);
-
-// The condition alone (for the listing itself).
-Match conditionOf(const QString &title, const QString &ebayCondition, const MatchWords &words);
+Match matchRow(const QString &title, const Identity &identity, const MatchWords &words);
 
 QString bucketName(Bucket bucket);
-QString conditionName(Condition condition);
 
 } // namespace app::lookup

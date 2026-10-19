@@ -23,13 +23,6 @@ struct MatchWords {
     QStringList accessory;
     QStringList withItem;     // an accessory word after one of these is part of the item
     QStringList companion;    // "for": "<other model> ... for <model>"
-    QStringList nonWorking;
-    QStringList untested;
-    QStringList newWords;
-    QStringList working;
-    QStringList ebayNew;      // eBay condition texts that mean new
-    QStringList ebayUsed;     // eBay condition texts that mean used, condition not stated
-    QStringList ebayNonWorking; // eBay condition texts that mean parts / not working
 
     // std::nullopt (and *error) when `json` is not the format-1 object with
     // every list present as an array of non-empty strings.

@@ -1,7 +1,6 @@
 #pragma once
 
 #include "core/Settings.h"
-#include "lookup/Matcher.h"
 
 #include <QList>
 #include <QString>
@@ -10,23 +9,21 @@
 
 namespace app::lookup {
 
-// One comparable sale: its total (price + shipping), shipping, whether the
-// price is the price paid, and its condition level.
+// One comparable sale: its total (price + shipping), shipping, and whether
+// the price is the price paid.
 struct Comp {
     std::optional<qint64> totalCents;
     std::optional<qint64> shippingCents;
     bool confirmed = false;
-    Condition condition = Condition::NotStated;
 };
 
-// The numbers of one condition level (owner rules 15, 18; DESIGN 3.4):
-// confirmed totals only; totals outside [P25 - f x IQR, P75 + f x IQR]
-// (computed on all confirmed totals of the level) are outliers, listed and
-// left out; median and P25-P75 of the rest (Stats::percentile); confidence
-// by how many are left. Unconfirmed sales are counted apart, with their own
-// median, never mixed in.
-struct ConditionNumbers {
-    Condition condition = Condition::NotStated;
+// One set of numbers over all comps (owner decision 2026-10-19: no condition
+// grading; DESIGN 3.4): confirmed totals only; totals outside
+// [P25 - f x IQR, P75 + f x IQR] are outliers, listed and left out; median
+// and P25-P75 of the rest (Stats::percentile); confidence by how many are
+// left. Unconfirmed sales are counted apart, with their own median, never
+// mixed in. Comps without a total are not counted.
+struct ValueNumbers {
     int included = 0;
     QList<qint64> outliers;
     std::optional<qint64> medianCents;
@@ -37,15 +34,13 @@ struct ConditionNumbers {
     std::optional<qint64> unconfirmedMedianCents;
 };
 
-// The levels that have comps, in scale order (new, working, not stated,
-// untested, non-working). Comps without a total are not counted.
-QList<ConditionNumbers> valueByCondition(const QList<Comp> &comps, const ValueSettings &settings);
+ValueNumbers valueOf(const QList<Comp> &comps, const ValueSettings &settings);
 
 // "High", "Medium", "Low" or "Not enough data" for `count` sales.
 QString confidenceName(int count, const ValueSettings &settings);
 
 // The listing's shipping against the median shipping of the comps (the
-// matched, confirmed same-item sales, any condition; rules 11, 16) and
+// matched, confirmed same-item sales; rules 11, 16) and
 // against eBay's Product Research average (a side figure, rule 20).
 struct ShippingCheck {
     std::optional<qint64> listingCents;

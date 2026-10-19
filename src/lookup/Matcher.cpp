@@ -25,13 +25,6 @@ qsizetype firstPhrase(const QStringList &words, const QStringList &list, QString
     return best;
 }
 
-struct Span {
-    qsizetype start;
-    qsizetype length;
-    Condition level;
-    QString phrase;
-};
-
 // Positions in `words` (title words) where the model or a family member
 // stands, alone or as 2-3 neighbouring words written together.
 QList<qsizetype> modelPositions(const QStringList &words, const Identity &identity)
@@ -106,70 +99,12 @@ qsizetype firstNotWithItem(const QStringList &words, const QStringList &list, co
 
 } // namespace
 
-Match conditionOf(const QString &title, const QString &ebayCondition, const MatchWords &words)
+Match matchRow(const QString &title, const Identity &identity, const MatchWords &words)
 {
     Match match;
-    const QStringList titleList = listWords(title);
-    QList<Span> spans;
-    const struct {
-        const QStringList *list;
-        Condition level;
-    } levels[] = {{&words.nonWorking, Condition::NonWorking},
-                  {&words.untested, Condition::Untested},
-                  {&words.newWords, Condition::New},
-                  {&words.working, Condition::Working}};
-    for (const auto &level : levels) {
-        for (const QString &phrase : *level.list) {
-            const qsizetype length = phrase.split(QLatin1Char(' '), Qt::SkipEmptyParts).size();
-            for (const qsizetype at : phrasePositions(titleList, phrase))
-                spans.append({at, length, level.level, phrase});
-        }
-    }
-    // A phrase inside a longer one does not count ("working" in "not working").
-    QList<Span> kept;
-    for (const Span &span : std::as_const(spans)) {
-        const bool inside = std::any_of(spans.cbegin(), spans.cend(), [&span](const Span &other) {
-            return other.length > span.length && other.start <= span.start
-                   && other.start + other.length >= span.start + span.length;
-        });
-        if (!inside)
-            kept.append(span);
-    }
-    const Condition order[] = {Condition::NonWorking, Condition::Untested, Condition::New, Condition::Working};
-    for (const Condition level : order) {
-        const auto it = std::find_if(kept.cbegin(), kept.cend(), [level](const Span &span) { return span.level == level; });
-        if (it != kept.cend()) {
-            match.condition = level;
-            match.conditionWord = it->phrase;
-            match.reasons.append(QStringLiteral("condition %1 (\"%2\")").arg(conditionName(level), it->phrase));
-            return match;
-        }
-    }
-    const QString text = ebayCondition.simplified();
-    if (words.ebayNonWorking.contains(text, Qt::CaseInsensitive)) {
-        match.condition = Condition::NonWorking;
-        match.conditionWord = text;
-        match.reasons.append(QStringLiteral("condition non-working/parts (eBay: %1)").arg(text));
-    } else if (words.ebayNew.contains(text, Qt::CaseInsensitive)) {
-        match.condition = Condition::New;
-        match.conditionWord = text;
-        match.reasons.append(QStringLiteral("condition new (eBay: %1)").arg(text));
-    } else {
-        match.condition = Condition::NotStated;
-        match.conditionWord = text;
-        match.reasons.append(text.isEmpty() ? QStringLiteral("condition not stated")
-                                            : QStringLiteral("condition not stated (eBay: %1)").arg(text));
-    }
-    return match;
-}
-
-Match matchRow(const QString &title, const QString &ebayCondition, const Identity &identity, const MatchWords &words)
-{
-    Match match = conditionOf(title, ebayCondition, words);
     QStringList reasons;
     auto done = [&match, &reasons](Bucket bucket) {
         match.bucket = bucket;
-        reasons.append(match.reasons);
         match.reasons = reasons;
         return match;
     };
@@ -296,23 +231,6 @@ QString bucketName(Bucket bucket)
         break;
     }
     return QStringLiteral("not this item");
-}
-
-QString conditionName(Condition condition)
-{
-    switch (condition) {
-    case Condition::New:
-        return QStringLiteral("new");
-    case Condition::Working:
-        return QStringLiteral("working");
-    case Condition::Untested:
-        return QStringLiteral("untested/as-is");
-    case Condition::NonWorking:
-        return QStringLiteral("non-working/parts");
-    case Condition::NotStated:
-        break;
-    }
-    return QStringLiteral("not stated");
 }
 
 } // namespace app::lookup

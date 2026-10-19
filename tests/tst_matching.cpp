@@ -22,7 +22,6 @@
 using namespace app::lookup;
 
 Q_DECLARE_METATYPE(app::lookup::Bucket)
-Q_DECLARE_METATYPE(app::lookup::Condition)
 
 namespace {
 
@@ -56,8 +55,7 @@ private slots:
     void identityWithoutKnownBrand();
     void rows_data();
     void rows();
-    void conditionOfTheListing();
-    void valuePerCondition();
+    void valueOverAllRows();
     void shippingCheck();
 };
 
@@ -246,8 +244,16 @@ void TestMatching::identityPerCase()
     QVERIFY(hp.confident);
     QCOMPARE(hp.brandId, QStringLiteral("hp"));
     QCOMPARE(hp.model, QStringLiteral("8904A"));
-    QCOMPARE(buildQueries(hp), QStringList({"HP 8904A", "Hewlett Packard 8904A", "Hewlett-Packard 8904A"}));
+    // Owner decisions 2026-10-19: successor names searched for HP test
+    // equipment; no separate Hewlett-Packard query, but it still matches.
+    QCOMPARE(buildQueries(hp), QStringList({"HP 8904A", "Hewlett Packard 8904A", "Agilent 8904A", "Keysight 8904A"}));
     QVERIFY(hp.matchNames.contains(QStringLiteral("Keysight")));
+    QVERIFY(hp.matchNames.contains(QStringLiteral("Hewlett-Packard")));
+    // An HP model the data does not mark as test equipment: no successor names.
+    const Identity otherHp = identityFromUser({QStringLiteral("HP"), QStringLiteral("12C"), QString()}, m_known, QStringLiteral("user"));
+    QCOMPARE(buildQueries(otherHp), QStringList({"HP 12C", "Hewlett Packard 12C"}));
+    QVERIFY(!otherHp.matchNames.contains(QStringLiteral("Agilent")));
+    QCOMPARE(matchRow(QStringLiteral("Agilent 12C calculator"), otherHp, m_words).bucket, Bucket::ToCheck);
     QCOMPARE(hp.notes.size(), 1);
 
     // Case 8: brand and specs only: no search, ask; the brand's known models
@@ -304,106 +310,105 @@ void TestMatching::rows_data()
     QTest::addColumn<QString>("brand");
     QTest::addColumn<QString>("model");
     QTest::addColumn<QString>("title");
-    QTest::addColumn<QString>("ebayCondition");
+    QTest::addColumn<QString>("ebayCondition"); // shown to the user, not used for matching
     QTest::addColumn<Bucket>("bucket");
-    QTest::addColumn<Condition>("condition");
     const QString heathkit = QStringLiteral("Heathkit");
     const QString sencore = QStringLiteral("Sencore");
     // Case 1, Heathkit IM-13.
-    QTest::newRow("1 card #IM13") << heathkit << "IM-13" << "Trading card #IM13 rookie" << "" << Bucket::ToCheck << Condition::NotStated;
-    QTest::newRow("1 brake kit") << heathkit << "IM-13" << "9 inch 13\" disc brake kit" << "" << Bucket::NoMatch << Condition::NotStated;
-    QTest::newRow("1 other model") << heathkit << "IM-13" << "Heathkit IM-16 VTVM" << "" << Bucket::NoMatch << Condition::NotStated;
-    QTest::newRow("1 manual") << heathkit << "IM-13" << "Heathkit IM-13 Assembly Manual" << "" << Bucket::Documentation << Condition::NotStated;
+    QTest::newRow("1 card #IM13") << heathkit << "IM-13" << "Trading card #IM13 rookie" << "" << Bucket::ToCheck;
+    QTest::newRow("1 brake kit") << heathkit << "IM-13" << "9 inch 13\" disc brake kit" << "" << Bucket::NoMatch;
+    QTest::newRow("1 other model") << heathkit << "IM-13" << "Heathkit IM-16 VTVM" << "" << Bucket::NoMatch;
+    QTest::newRow("1 manual") << heathkit << "IM-13" << "Heathkit IM-13 Assembly Manual" << "" << Bucket::Documentation;
     QTest::newRow("1 part") << heathkit << "IM-13" << "Heathkit IM13, IM48 & IM9001 meter movement, P/N 100-234" << ""
-                            << Bucket::PartFits << Condition::NotStated;
-    QTest::newRow("1 lot") << heathkit << "IM-13" << "LOT OF 3 Heathkit IM-13 meters" << "" << Bucket::Lot << Condition::NotStated;
+                            << Bucket::PartFits;
+    QTest::newRow("1 lot") << heathkit << "IM-13" << "LOT OF 3 Heathkit IM-13 meters" << "" << Bucket::Lot;
     QTest::newRow("1 broken") << heathkit << "IM-13" << "Heathkit IM-13 meter powered on / parts repair as is" << "Pre-Owned"
-                              << Bucket::SameItem << Condition::NonWorking;
+                              << Bucket::SameItem;
     QTest::newRow("1 with leads") << heathkit << "IM-13" << "Heathkit IM-13 analog voltmeter 0-1500V w/ Leads"
-                                  << "Pre-Owned" << Bucket::SameItem << Condition::NotStated;
+                                  << "Pre-Owned" << Bucket::SameItem;
     QTest::newRow("1 spaced, tested") << heathkit << "IM-13" << "Heathkit IM 13 vacuum tube voltmeter tested working" << ""
-                                      << Bucket::SameItem << Condition::Working;
-    QTest::newRow("1 not working") << heathkit << "IM-13" << "Heathkit IM-13 not working" << "" << Bucket::SameItem << Condition::NonWorking;
-    QTest::newRow("1 untested") << heathkit << "IM-13" << "Heathkit IM-13 VTVM untested" << "" << Bucket::SameItem << Condition::Untested;
-    QTest::newRow("1 case for") << heathkit << "IM-13" << "Carrying Case for Heathkit IM-13" << "" << Bucket::Accessory << Condition::NotStated;
-    QTest::newRow("1 holster") << heathkit << "IM-13" << "Heathkit IM-13 holster" << "" << Bucket::Accessory << Condition::NotStated;
+                                      << Bucket::SameItem;
+    QTest::newRow("1 not working") << heathkit << "IM-13" << "Heathkit IM-13 not working" << "" << Bucket::SameItem;
+    QTest::newRow("1 untested") << heathkit << "IM-13" << "Heathkit IM-13 VTVM untested" << "" << Bucket::SameItem;
+    QTest::newRow("1 case for") << heathkit << "IM-13" << "Carrying Case for Heathkit IM-13" << "" << Bucket::Accessory;
+    QTest::newRow("1 holster") << heathkit << "IM-13" << "Heathkit IM-13 holster" << "" << Bucket::Accessory;
     QTest::newRow("1 needs cord") << heathkit << "IM-13" << "Heathkit IM-13 voltmeter (needs a cord)" << "Pre-Owned"
-                                  << Bucket::SameItem << Condition::NotStated;
+                                  << Bucket::SameItem;
     QTest::newRow("1 eBay parts only") << heathkit << "IM-13" << "Heathkit IM-13 VTVM Vacuum Tube Voltmeter" << "Parts Only"
-                                       << Bucket::SameItem << Condition::NonWorking;
-    QTest::newRow("1 eBay new other") << heathkit << "IM-13" << "Heathkit IM-13 VTVM" << "New (Other)" << Bucket::SameItem << Condition::New;
-    QTest::newRow("1 w/ glued") << heathkit << "IM-13" << "Heathkit IM-13 voltmeter w/Leads" << "" << Bucket::SameItem << Condition::NotStated;
-    QTest::newRow("1 not tested") << heathkit << "IM-13" << "Heathkit IM-13 not tested" << "" << Bucket::SameItem << Condition::Untested;
+                                       << Bucket::SameItem;
+    QTest::newRow("1 eBay new other") << heathkit << "IM-13" << "Heathkit IM-13 VTVM" << "New (Other)" << Bucket::SameItem;
+    QTest::newRow("1 w/ glued") << heathkit << "IM-13" << "Heathkit IM-13 voltmeter w/Leads" << "" << Bucket::SameItem;
+    QTest::newRow("1 not tested") << heathkit << "IM-13" << "Heathkit IM-13 not tested" << "" << Bucket::SameItem;
     QTest::newRow("1 in original case") << heathkit << "IM-13" << "Heathkit IM-13 voltmeter in original case" << ""
-                                        << Bucket::SameItem << Condition::NotStated;
+                                        << Bucket::SameItem;
     QTest::newRow("1 mains voltage, cord") << heathkit << "IM-13" << "Heathkit IM-13 VTVM 120VAC power cord" << ""
-                                           << Bucket::SameItem << Condition::NotStated;
+                                           << Bucket::SameItem;
     QTest::newRow("1 original parts") << heathkit << "IM-13" << "Heathkit IM-13 all original parts" << ""
-                                      << Bucket::SameItem << Condition::NotStated;
-    QTest::newRow("1 no title") << heathkit << "IM-13" << "" << "" << Bucket::UnknownItem << Condition::NotStated;
+                                      << Bucket::SameItem;
+    QTest::newRow("1 no title") << heathkit << "IM-13" << "" << "" << Bucket::UnknownItem;
     QTest::newRow("6 decade and version") << heathkit << "AA-100" << "Heathkit AA-100 1960s Mk2 amplifier" << ""
-                                          << Bucket::SameItem << Condition::NotStated;
+                                          << Bucket::SameItem;
     QTest::newRow("6 restored, new caps") << heathkit << "AA-100" << "Heathkit AA-100 restored, new caps" << ""
-                                          << Bucket::SameItem << Condition::Working;
+                                          << Bucket::SameItem;
     // Case 2, Sencore LC53.
-    QTest::newRow("2 other model") << sencore << "LC53" << "Sencore LC103 Z Meter" << "" << Bucket::NoMatch << Condition::NotStated;
-    QTest::newRow("2 longer model") << sencore << "LC53" << "Sencore LC530 tester" << "" << Bucket::NoMatch << Condition::NotStated;
+    QTest::newRow("2 other model") << sencore << "LC53" << "Sencore LC103 Z Meter" << "" << Bucket::NoMatch;
+    QTest::newRow("2 longer model") << sencore << "LC53" << "Sencore LC530 tester" << "" << Bucket::NoMatch;
     QTest::newRow("2 with manual") << sencore << "LC53" << "Sencore LC53 Z Meter with manual and leads" << ""
-                                   << Bucket::SameItem << Condition::NotStated;
+                                   << Bucket::SameItem;
     QTest::newRow("2 hyphen") << sencore << "LC53" << "Sencore LC-53 Z Meter Capacitor Analyzer" << "Pre-Owned"
-                              << Bucket::SameItem << Condition::NotStated;
+                              << Bucket::SameItem;
     // Case 3, Sencore PR570.
     QTest::newRow("3 inside a part number") << sencore << "PR570" << "Cargo mat Sencore QT-PR570-ZZ" << ""
-                                            << Bucket::NoMatch << Condition::NotStated;
-    QTest::newRow("3 manual") << sencore << "PR570" << "Sencore Pr570 manual (PDF)" << "" << Bucket::Documentation << Condition::NotStated;
+                                            << Bucket::NoMatch;
+    QTest::newRow("3 manual") << sencore << "PR570" << "Sencore Pr570 manual (PDF)" << "" << Bucket::Documentation;
     QTest::newRow("3 feet") << sencore << "PR570" << "2pcs Sencore PR570 compatible rubber foot/feet" << ""
-                            << Bucket::PartFits << Condition::NotStated;
+                            << Bucket::PartFits;
     QTest::newRow("3 item") << sencore << "PR570" << "Sencore PR570 Powerite II isolation transformer" << "Pre-Owned"
-                            << Bucket::SameItem << Condition::NotStated;
+                            << Bucket::SameItem;
     // Case 4, Sencore VG91.
     QTest::newRow("4 companion") << sencore << "VG91" << "Sencore QZ50 video amplifier made for VG91" << ""
-                                 << Bucket::Companion << Condition::NotStated;
+                                 << Bucket::Companion;
     QTest::newRow("4 knobs") << sencore << "VG91" << "Pair Sencore knobs QA10, QB20, QC30, VG91, others" << ""
-                             << Bucket::PartFits << Condition::NotStated;
+                             << Bucket::PartFits;
     QTest::newRow("4 cover several models") << sencore << "VG91" << "Sencore front cover QX12 for QA10 QB20 VG91"
-                                            << "" << Bucket::PartFits << Condition::NotStated;
+                                            << "" << Bucket::PartFits;
     QTest::newRow("4 TV repair gear") << sencore << "VG91" << "Sencore VG91 video generator TV repair test equipment" << ""
-                                      << Bucket::SameItem << Condition::NotStated;
-    QTest::newRow("4 shoe code") << sencore << "VG91" << "Running shoe VG91-5040" << "" << Bucket::NoMatch << Condition::NotStated;
-    QTest::newRow("4 card grade") << sencore << "VG91" << "Baseball card #91 VG" << "" << Bucket::NoMatch << Condition::NotStated;
+                                      << Bucket::SameItem;
+    QTest::newRow("4 shoe code") << sencore << "VG91" << "Running shoe VG91-5040" << "" << Bucket::NoMatch;
+    QTest::newRow("4 card grade") << sencore << "VG91" << "Baseball card #91 VG" << "" << Bucket::NoMatch;
     // Case 5, Sencore PR57.
-    QTest::newRow("5 longer model") << sencore << "PR57" << "Sencore PR570 Powerite II" << "" << Bucket::NoMatch << Condition::NotStated;
-    QTest::newRow("5 holster") << sencore << "PR57" << "Acme PR57 holster" << "" << Bucket::ToCheck << Condition::NotStated;
-    QTest::newRow("5 stamp") << sencore << "PR57" << "#PR57 newspaper stamp" << "" << Bucket::ToCheck << Condition::NotStated;
+    QTest::newRow("5 longer model") << sencore << "PR57" << "Sencore PR570 Powerite II" << "" << Bucket::NoMatch;
+    QTest::newRow("5 holster") << sencore << "PR57" << "Acme PR57 holster" << "" << Bucket::ToCheck;
+    QTest::newRow("5 stamp") << sencore << "PR57" << "#PR57 newspaper stamp" << "" << Bucket::ToCheck;
     QTest::newRow("5 new in box") << sencore << "PR57" << "Sencore PR57 Powerite new in box never opened" << "Pre-Owned"
-                                  << Bucket::SameItem << Condition::New;
+                                  << Bucket::SameItem;
     // Case 6, Heathkit AA-100.
-    QTest::newRow("6 car part") << heathkit << "AA-100" << "Car part 15208-AA100 filter" << "" << Bucket::NoMatch << Condition::NotStated;
+    QTest::newRow("6 car part") << heathkit << "AA-100" << "Car part 15208-AA100 filter" << "" << Bucket::NoMatch;
     QTest::newRow("6 roached") << heathkit << "AA-100" << "Heathkit AA-100 stereo amplifier completely roached, needs restoration"
-                               << "" << Bucket::SameItem << Condition::NonWorking;
+                               << "" << Bucket::SameItem;
     QTest::newRow("6 NOS spaced") << heathkit << "AA-100" << "Heathkit AA 100 tube amp NOS never used" << ""
-                                  << Bucket::SameItem << Condition::New;
+                                  << Bucket::SameItem;
     // Case 7, HP 8904A.
     QTest::newRow("7 item") << "HP" << "8904A" << "HP 8904A Multifunction Synthesizer DC 600 kHz" << "Pre-Owned"
-                            << Bucket::SameItem << Condition::NotStated;
+                            << Bucket::SameItem;
     QTest::newRow("7 manual") << "HP" << "8904A" << "Hewlett Packard 8904A Operation and Calibration Manual" << ""
-                              << Bucket::Documentation << Condition::NotStated;
+                              << Bucket::Documentation;
     QTest::newRow("7 successor names") << "HP" << "8904A" << "HP Agilent Keysight 8904A synthesizer" << ""
-                                       << Bucket::SameItem << Condition::NotStated;
-    QTest::newRow("7 slash-joined brands") << "HP" << "8904A" << "HP/Agilent 8904A synthesizer" << "" << Bucket::SameItem << Condition::NotStated;
-    QTest::newRow("7 no brand") << "HP" << "8904A" << "8904a multifunction synthesizer dc-600" << "" << Bucket::ToCheck << Condition::NotStated;
-    QTest::newRow("7 successor only") << "HP" << "8904A" << "Agilent 8904a synthesizer" << "" << Bucket::SameItem << Condition::NotStated;
+                                       << Bucket::SameItem;
+    QTest::newRow("7 slash-joined brands") << "HP" << "8904A" << "HP/Agilent 8904A synthesizer" << "" << Bucket::SameItem;
+    QTest::newRow("7 no brand") << "HP" << "8904A" << "8904a multifunction synthesizer dc-600" << "" << Bucket::ToCheck;
+    QTest::newRow("7 successor only") << "HP" << "8904A" << "Agilent 8904a synthesizer" << "" << Bucket::SameItem;
     // Case 8, Marconi 2022 and its family.
     QTest::newRow("8 family member") << "Marconi" << "2022" << "Marconi 2022D signal generator" << ""
-                                     << Bucket::SameItem << Condition::NotStated;
-    QTest::newRow("8 successor name") << "Marconi" << "2022" << "IFR 2022E signal generator" << "" << Bucket::SameItem << Condition::NotStated;
-    QTest::newRow("8 other model") << "Marconi" << "2022" << "Marconi 2023 signal generator" << "" << Bucket::NoMatch << Condition::NotStated;
+                                     << Bucket::SameItem;
+    QTest::newRow("8 successor name") << "Marconi" << "2022" << "IFR 2022E signal generator" << "" << Bucket::SameItem;
+    QTest::newRow("8 other model") << "Marconi" << "2022" << "Marconi 2023 signal generator" << "" << Bucket::NoMatch;
     QTest::newRow("8 digits away from brand") << "Marconi" << "2022" << "Marconi signal generator calibrated 2022" << ""
-                                              << Bucket::ToCheck << Condition::Working;
+                                              << Bucket::ToCheck;
     QTest::newRow("8 untested") << "Marconi" << "2022" << "Marconi Instruments 2022 AM/FM signal generator untested" << ""
-                                << Bucket::SameItem << Condition::Untested;
+                                << Bucket::SameItem;
     QTest::newRow("8 new by eBay") << "Marconi" << "2022" << "Marconi 2022 signal generator" << "Brand New"
-                                   << Bucket::SameItem << Condition::New;
+                                   << Bucket::SameItem;
 }
 
 void TestMatching::rows()
@@ -413,54 +418,36 @@ void TestMatching::rows()
     QFETCH(QString, title);
     QFETCH(QString, ebayCondition);
     QFETCH(Bucket, bucket);
-    QFETCH(Condition, condition);
     const Identity identity = identityFromUser({brand, model, QString()}, m_known, QStringLiteral("user"));
     QVERIFY(identity.confident);
-    const Match match = matchRow(title, ebayCondition, identity, m_words);
+    Q_UNUSED(ebayCondition)
+    const Match match = matchRow(title, identity, m_words);
     QVERIFY2(match.bucket == bucket, qPrintable(bucketName(match.bucket) + QStringLiteral(": ") + match.reasons.join(QStringLiteral("; "))));
-    QVERIFY2(match.condition == condition, qPrintable(conditionName(match.condition) + QStringLiteral(": ") + match.reasons.join(QStringLiteral("; "))));
     QVERIFY(!match.reasons.isEmpty());
 }
 
-void TestMatching::conditionOfTheListing()
+void TestMatching::valueOverAllRows()
 {
-    QCOMPARE(conditionOf(QStringLiteral("Heathkit IM-13 recapped and calibrated"), QString(), m_words).condition, Condition::Working);
-    QCOMPARE(conditionOf(QStringLiteral("Heathkit IM-13"), QStringLiteral("UsedCondition"), m_words).condition, Condition::NotStated);
-    QCOMPARE(conditionOf(QStringLiteral("Heathkit IM-13 as-is"), QString(), m_words).condition, Condition::Untested);
-}
-
-void TestMatching::valuePerCondition()
-{
+    // One set of numbers over every same-item sale, whatever its condition
+    // (owner decision 2026-10-19).
     const app::ValueSettings settings;
     QList<Comp> comps;
-    // Working: 10 confirmed totals 100..190 dollars plus one at 2000 (outlier).
     for (int i = 0; i < 10; ++i)
-        comps.append({10000 + i * 1000, 1000, true, Condition::Working});
-    comps.append({200000, 1000, true, Condition::Working});
-    // Working, unconfirmed: counted apart.
-    comps.append({50000, 1000, false, Condition::Working});
-    // Non-working: 2 sales.
-    comps.append({2000, 500, true, Condition::NonWorking});
-    comps.append({3000, 500, true, Condition::NonWorking});
-    // No total: not counted.
-    comps.append({std::nullopt, std::nullopt, true, Condition::New});
-
-    const QList<ConditionNumbers> levels = valueByCondition(comps, settings);
-    QCOMPARE(levels.size(), 2);
-    const ConditionNumbers &working = levels.at(0);
-    QCOMPARE(working.condition, Condition::Working);
-    QCOMPARE(working.included, 10);
-    QCOMPARE(working.outliers, QList<qint64>({200000}));
-    QCOMPARE(working.medianCents, std::optional<qint64>(14500));
-    QCOMPARE(working.p25Cents, std::optional<qint64>(12250));
-    QCOMPARE(working.p75Cents, std::optional<qint64>(16750));
-    QCOMPARE(working.confidence, QStringLiteral("High"));
-    QCOMPARE(working.unconfirmed, 1);
-    QCOMPARE(working.unconfirmedMedianCents, std::optional<qint64>(50000));
-    const ConditionNumbers &broken = levels.at(1);
-    QCOMPARE(broken.condition, Condition::NonWorking);
-    QCOMPARE(broken.included, 2);
-    QCOMPARE(broken.confidence, QStringLiteral("Low"));
+        comps.append({10000 + i * 1000, 1000, true});
+    comps.append({200000, 1000, true});        // outlier
+    comps.append({50000, 1000, false});        // unconfirmed: apart
+    comps.append({std::nullopt, std::nullopt, true}); // no total: not counted
+    const ValueNumbers numbers = valueOf(comps, settings);
+    QCOMPARE(numbers.included, 10);
+    QCOMPARE(numbers.outliers, QList<qint64>({200000}));
+    QCOMPARE(numbers.medianCents, std::optional<qint64>(14500));
+    QCOMPARE(numbers.p25Cents, std::optional<qint64>(12250));
+    QCOMPARE(numbers.p75Cents, std::optional<qint64>(16750));
+    QCOMPARE(numbers.confidence, QStringLiteral("High"));
+    QCOMPARE(numbers.unconfirmed, 1);
+    QCOMPARE(numbers.unconfirmedMedianCents, std::optional<qint64>(50000));
+    QCOMPARE(valueOf({{2000, 500, true}, {3000, 500, true}}, settings).confidence, QStringLiteral("Low"));
+    QCOMPARE(valueOf({}, settings).medianCents, std::nullopt);
     QCOMPARE(confidenceName(1, settings), QStringLiteral("Not enough data"));
     QCOMPARE(confidenceName(5, settings), QStringLiteral("Medium"));
 }
@@ -470,7 +457,7 @@ void TestMatching::shippingCheck()
     const app::ValueSettings settings;
     QList<Comp> comps;
     for (const qint64 shipping : {800, 931, 1000})
-        comps.append({10000, shipping, true, Condition::Working});
+        comps.append({10000, shipping, true});
     // Case 4: $122.80 against a median of $9.31 -> flagged.
     const ShippingCheck high = checkShipping(12280, comps, 931, settings);
     QCOMPARE(high.compMedianCents, std::optional<qint64>(931));
@@ -479,10 +466,10 @@ void TestMatching::shippingCheck()
     // A heavy item: $58 against a median of $40 of its comps -> not flagged.
     QList<Comp> heavy;
     for (const qint64 shipping : {3500, 4000, 4500})
-        heavy.append({50000, shipping, true, Condition::Working});
+        heavy.append({50000, shipping, true});
     QVERIFY(!checkShipping(5800, heavy, std::nullopt, settings).flagged);
     // Unconfirmed sales do not count for the median shipping.
-    heavy.append({50000, 100, false, Condition::Working});
+    heavy.append({50000, 100, false});
     QCOMPARE(checkShipping(5800, heavy, std::nullopt, settings).compsWithShipping, 3);
 }
 

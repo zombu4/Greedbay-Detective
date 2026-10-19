@@ -33,8 +33,6 @@ std::optional<MatchWords> MatchWords::fromJson(const QByteArray &json, QString *
         return std::nullopt;
     }
     MatchWords words;
-    const QJsonObject conditions = root.value(QStringLiteral("conditions")).toObject();
-    const QJsonObject ebay = root.value(QStringLiteral("ebayConditions")).toObject();
     auto wordsOf = [&root](const char *key) { return root.value(QLatin1String(key)).toObject().value(QStringLiteral("words")); };
     const struct {
         QJsonValue value;
@@ -52,13 +50,6 @@ std::optional<MatchWords> MatchWords::fromJson(const QByteArray &json, QString *
         {wordsOf("accessory"), &words.accessory, "accessory"},
         {wordsOf("withItem"), &words.withItem, "withItem"},
         {wordsOf("companion"), &words.companion, "companion"},
-        {conditions.value(QStringLiteral("nonWorking")), &words.nonWorking, "conditions.nonWorking"},
-        {conditions.value(QStringLiteral("untested")), &words.untested, "conditions.untested"},
-        {conditions.value(QStringLiteral("new")), &words.newWords, "conditions.new"},
-        {conditions.value(QStringLiteral("working")), &words.working, "conditions.working"},
-        {ebay.value(QStringLiteral("new")), &words.ebayNew, "ebayConditions.new"},
-        {ebay.value(QStringLiteral("used")), &words.ebayUsed, "ebayConditions.used"},
-        {ebay.value(QStringLiteral("nonWorking")), &words.ebayNonWorking, "ebayConditions.nonWorking"},
     };
     for (const auto &entry : lists) {
         if (!readList(entry.value, entry.list)) {

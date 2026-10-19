@@ -90,7 +90,8 @@ std::optional<KnownModels> KnownModels::fromJson(const QByteArray &json, bool re
                 return fail(QStringLiteral("a name of brand %1 has no text or no search flag").arg(brand.id));
             if (requireSources && !hasSource(name))
                 return fail(QStringLiteral("the brand name %1 has no source").arg(text));
-            brand.names.append({text, name.value(QStringLiteral("search")).toBool()});
+            brand.names.append({text, name.value(QStringLiteral("search")).toBool(),
+                                name.value(QStringLiteral("onlyFor")).toString().simplified()});
         }
         if (brand.names.isEmpty())
             return fail(QStringLiteral("brand %1 has no name").arg(brand.id));
@@ -110,6 +111,12 @@ std::optional<KnownModels> KnownModels::fromJson(const QByteArray &json, bool re
             if (requireSources && !hasSource(product))
                 return fail(QStringLiteral("the product name of %1 has no source").arg(model.model));
             model.productName = product.value(QStringLiteral("name")).toString().simplified();
+        }
+        const QJsonObject category = object.value(QStringLiteral("category")).toObject();
+        if (!category.isEmpty()) {
+            if (requireSources && !hasSource(category))
+                return fail(QStringLiteral("the category of %1 has no source").arg(model.model));
+            model.category = category.value(QStringLiteral("name")).toString().simplified();
         }
         for (const QJsonValue &memberValue : object.value(QStringLiteral("family")).toArray()) {
             const QJsonObject member = memberValue.toObject();

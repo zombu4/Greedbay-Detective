@@ -26,33 +26,53 @@ struct Row {
 // Every row of `result`, matched against its identity.
 QList<Row> classifyRows(const LookupResult &result, const MatchWords &words);
 
-// The numbers (owner rules 11, 12, 15, 16, 18, 20; DESIGN 3.4), from the
-// included rows only:
-//   sold      per condition level, from the sold search (confirmed prices;
-//             unconfirmed Best Offer sales counted apart)
-//   research  per condition level, from Product Research rows: one value per
-//             listing = average sold price + average shipping
+// The numbers, from the included rows only (owner decision 2026-10-19: no
+// condition grading - one set of numbers over all same-item rows; rules 11,
+// 12, 16, 20; DESIGN 3.4):
+//   sold      from the sold search (confirmed prices; unconfirmed Best Offer
+//             sales counted apart)
+//   research  from Product Research rows: one value per listing = average
+//             sold price + average shipping
 //   shipping  the listing's shipping against the included sold comps and
 //             eBay's Product Research average shipping
 //   ebay      eBay's own Product Research summary, only as a labeled side
 //             figure (it may mix models, rule 20)
+//   forSale   totals of the included for-sale rows other than the pasted
+//             listing, lowest first; cheaperForSale counts those below the
+//             pasted listing's total
 struct Valuation {
-    Match listing; // the listing's own condition
-    QList<ConditionNumbers> sold;
-    QList<ConditionNumbers> research;
+    ValueNumbers sold;
+    ValueNumbers research;
     ShippingCheck shipping;
     std::optional<qint64> ebayAverageSoldCents;
+    QList<qint64> forSale;
+    int cheaperForSale = 0;
 };
 
-Valuation valuate(const LookupResult &result, const QList<Row> &rows, const MatchWords &words,
-                  const ValueSettings &settings);
+Valuation valuate(const LookupResult &result, const QList<Row> &rows, const ValueSettings &settings);
+
+// A row's total (price + shipping; for Product Research average sold +
+// average shipping), its eBay condition text as eBay gives it (empty for
+// Product Research rows) and its title.
+std::optional<qint64> rowTotal(const LookupResult &result, const Row &row);
+QString rowCondition(const LookupResult &result, const Row &row);
+QString rowTitle(const LookupResult &result, const Row &row);
+
+// The rows in report order: by bucket (same item first), then by total,
+// lowest first; rows without a total last.
+QList<qsizetype> rowOrder(const LookupResult &result, const QList<Row> &rows);
+
+// How many of the cheapest included for-sale rows are marked.
+constexpr int kCheapestMarked = 3;
 
 // "$1,234.56"; "-$12.00" for a negative amount.
 QString money(qint64 cents);
 
-// The identity, the queries, the numbers and every row by bucket, as plain
-// text. `expectation`: what the user thinks it is worth (shown next to the
-// market numbers, rule 12; empty for none). Titles are cut to 60 characters.
+// The identity, the queries, the numbers, the pasted listing against the
+// sold range and the cheapest same-item listings for sale now, and every row
+// by bucket sorted by total, as plain text. `expectation`: what the user
+// thinks it is worth (shown next to the market numbers, rule 12; empty for
+// none). Titles are cut to 60 characters.
 QString reportText(const LookupResult &result, const QList<Row> &rows, const Valuation &valuation,
                    const QString &expectation);
 

@@ -26,6 +26,9 @@ namespace app::lookup {
 struct BrandName {
     QString name;
     bool search = true;
+    // When set, the name applies only to models of this category (owner
+    // decision 2026-10-19: Agilent/Keysight only for HP test equipment).
+    QString onlyFor;
 };
 
 struct Brand {
@@ -37,6 +40,7 @@ struct KnownModel {
     QString brandId;
     QString model;
     QString productName;
+    QString category; // e.g. "test equipment"; empty when not recorded
     QStringList family;
     QStringList notes;
 };
