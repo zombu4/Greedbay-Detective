@@ -1,0 +1,166 @@
+; The Windows setup program of the app, for CPack's NSIS generator
+; (cmake/packaging.cmake puts this folder on CMAKE_MODULE_PATH, where CPack
+; looks for NSIS.template.in before its own). Written for this app; it uses
+; the placeholders CPack's NSIS generator fills (the @CPACK_...@ names of
+; CMake 4.4's own template, Modules/Internal/CPack/NSIS.template.in).
+;
+; Per user, no administrator rights (owner decision Q9): RequestExecutionLevel
+; user, and the shell context stays "current" (NSIS: "If set to 'current'
+; (the default), the current user's shell folders are used"), so the program
+; folder ($LOCALAPPDATA\Programs\<App>), the Start menu entries and the Apps &
+; features entry (HKCU) are the user's own.
+;
+; The uninstaller (PLAN 9.2): asks "Keep your saved lookups and history?"
+; (a silent uninstall keeps them), then has the app remove the user's data
+; ("<App>.exe --uninstall-data=keep|delete", src/app/main.cpp, the same
+; tested code as the in-app uninstall: it refuses while the app runs or when
+; the folder is not the app's, and never follows a link), then removes the
+; program by the installer's own file list, its Start menu entries and its
+; Apps & features entry.
+
+  !define VERSION "@CPACK_PACKAGE_VERSION@"
+  !define PATCH "@CPACK_PACKAGE_VERSION_PATCH@"
+  !define INST_DIR "@CPACK_TEMPORARY_DIRECTORY@"
+  !define UNINSTALL_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\@CPACK_PACKAGE_INSTALL_REGISTRY_KEY@"
+  !define SETTINGS_KEY "Software\@CPACK_PACKAGE_VENDOR@\@CPACK_PACKAGE_INSTALL_REGISTRY_KEY@"
+
+  ; APP_EXE (the program in bin\), APP_SHOWN (its display name), APP_DATA
+  ; (the work folder's name under $LOCALAPPDATA).
+@CPACK_NSIS_DEFINES@
+
+;--------------------------------
+; Variables
+
+  Var MUI_TEMP
+  Var STARTMENU_FOLDER
+  Var DATA_CHOICE
+
+;--------------------------------
+; General
+
+  !include "MUI2.nsh"
+
+  Name "@CPACK_NSIS_PACKAGE_NAME@"
+  OutFile "@CPACK_TOPLEVEL_DIRECTORY@/@CPACK_OUTPUT_FILE_NAME@"
+  InstallDir "@CPACK_NSIS_INSTALL_ROOT@\@CPACK_PACKAGE_INSTALL_DIRECTORY@"
+  SetCompressor @CPACK_NSIS_COMPRESSOR@
+  RequestExecutionLevel user
+
+@CPACK_NSIS_MANIFEST_DPI_AWARE_CODE@
+@CPACK_NSIS_BRANDING_TEXT_CODE@
+@CPACK_NSIS_CRC_CHECK_CODE@
+
+;--------------------------------
+; Pages
+
+@CPACK_NSIS_INSTALLER_MUI_ICON_CODE@
+@CPACK_NSIS_INSTALLER_ICON_CODE@
+@CPACK_NSIS_INSTALLER_MUI_WELCOMEFINISH_CODE@
+@CPACK_NSIS_INSTALLER_MUI_UNWELCOMEFINISH_CODE@
+@CPACK_NSIS_INSTALLER_MUI_FINISHPAGE_RUN_CODE@
+
+  !insertmacro MUI_PAGE_WELCOME
+  !insertmacro MUI_PAGE_DIRECTORY
+
+  !define MUI_STARTMENUPAGE_REGISTRY_ROOT "SHCTX"
+  !define MUI_STARTMENUPAGE_REGISTRY_KEY "${SETTINGS_KEY}"
+  !define MUI_STARTMENUPAGE_REGISTRY_VALUENAME "Start Menu Folder"
+  !insertmacro MUI_PAGE_STARTMENU Application $STARTMENU_FOLDER
+
+  !insertmacro MUI_PAGE_INSTFILES
+  !insertmacro MUI_PAGE_FINISH
+
+  !insertmacro MUI_UNPAGE_CONFIRM
+  !insertmacro MUI_UNPAGE_INSTFILES
+
+  !insertmacro MUI_LANGUAGE "English"
+
+;--------------------------------
+; Install
+
+Section "-Core installation"
+  ; An earlier version's program files go first, so none of them stays
+  ; behind (the uninstaller only knows this version's list): only when the
+  ; chosen folder already holds this app's program, so no other folder is
+  ; ever cleared. The user's data folder is not touched.
+  IfFileExists "$INSTDIR\bin\${APP_EXE}" 0 noEarlierVersion
+    RMDir /r "$INSTDIR\bin"
+  noEarlierVersion:
+
+  SetOutPath "$INSTDIR"
+  @CPACK_NSIS_EXTRA_PREINSTALL_COMMANDS@
+  @CPACK_NSIS_FULL_INSTALL@
+
+  WriteRegStr SHCTX "${SETTINGS_KEY}" "" $INSTDIR
+  WriteUninstaller "$INSTDIR\@CPACK_NSIS_UNINSTALL_NAME@.exe"
+
+  ; Apps & features.
+  WriteRegStr SHCTX "${UNINSTALL_KEY}" "DisplayName" "@CPACK_NSIS_DISPLAY_NAME@"
+  WriteRegStr SHCTX "${UNINSTALL_KEY}" "DisplayVersion" "@CPACK_PACKAGE_VERSION@"
+  WriteRegStr SHCTX "${UNINSTALL_KEY}" "Publisher" "@CPACK_PACKAGE_VENDOR@"
+  WriteRegStr SHCTX "${UNINSTALL_KEY}" "DisplayIcon" "$INSTDIR\bin\${APP_EXE}"
+  WriteRegStr SHCTX "${UNINSTALL_KEY}" "InstallLocation" "$INSTDIR"
+  WriteRegStr SHCTX "${UNINSTALL_KEY}" "UninstallString" "$\"$INSTDIR\@CPACK_NSIS_UNINSTALL_NAME@.exe$\""
+  WriteRegStr SHCTX "${UNINSTALL_KEY}" "QuietUninstallString" "$\"$INSTDIR\@CPACK_NSIS_UNINSTALL_NAME@.exe$\" /S"
+  WriteRegDWORD SHCTX "${UNINSTALL_KEY}" "NoModify" 1
+  WriteRegDWORD SHCTX "${UNINSTALL_KEY}" "NoRepair" 1
+
+  !insertmacro MUI_STARTMENU_WRITE_BEGIN Application
+    CreateDirectory "$SMPROGRAMS\$STARTMENU_FOLDER"
+@CPACK_NSIS_CREATE_ICONS@
+@CPACK_NSIS_CREATE_ICONS_EXTRA@
+    CreateShortCut "$SMPROGRAMS\$STARTMENU_FOLDER\Uninstall.lnk" "$INSTDIR\@CPACK_NSIS_UNINSTALL_NAME@.exe"
+    WriteRegStr SHCTX "${UNINSTALL_KEY}" "StartMenu" "$STARTMENU_FOLDER"
+  !insertmacro MUI_STARTMENU_WRITE_END
+
+@CPACK_NSIS_EXTRA_INSTALL_COMMANDS@
+SectionEnd
+
+;--------------------------------
+; Uninstall
+
+Section "Uninstall"
+  ; The user's data: kept unless the user says otherwise.
+  StrCpy $DATA_CHOICE "keep"
+  MessageBox MB_YESNO|MB_ICONQUESTION "Keep your saved lookups and history?$\n$\nYes: they stay in $LOCALAPPDATA\${APP_DATA}, and installing ${APP_SHOWN} again uses them. Settings, logs, the app's browser profiles (with your eBay sign-in) and plugins are deleted.$\n$\nNo: everything ${APP_SHOWN} saved is deleted." /SD IDYES IDYES dataChosen
+    StrCpy $DATA_CHOICE "delete"
+  dataChosen:
+
+  ClearErrors
+  ExecWait '"$INSTDIR\bin\${APP_EXE}" --uninstall-data=$DATA_CHOICE' $0
+  IfErrors dataNotRun
+  StrCmp $0 "0" dataDone
+  StrCmp $0 "2" 0 dataPartial
+    MessageBox MB_OK|MB_ICONSTOP "${APP_SHOWN} is running, or its data folder is not its own, so nothing was removed. Close ${APP_SHOWN}, then uninstall again." /SD IDOK
+    Abort
+  dataPartial:
+    MessageBox MB_OK|MB_ICONEXCLAMATION "Some of ${APP_SHOWN}'s data could not be removed from $LOCALAPPDATA\${APP_DATA}. The program is removed now; delete what is left of that folder yourself." /SD IDOK
+    Goto dataDone
+  dataNotRun:
+    MessageBox MB_YESNO|MB_ICONEXCLAMATION "${APP_SHOWN} could not be started to remove its data. Remove the program anyway? Your data then stays in $LOCALAPPDATA\${APP_DATA}." /SD IDNO IDYES dataDone
+    Abort
+  dataDone:
+
+@CPACK_NSIS_EXTRA_UNINSTALL_COMMANDS@
+
+  ; The program: the installer's own file list.
+@CPACK_NSIS_DELETE_FILES@
+@CPACK_NSIS_DELETE_DIRECTORIES@
+
+  Delete "$INSTDIR\@CPACK_NSIS_UNINSTALL_NAME@.exe"
+  RMDir "$INSTDIR"
+
+  ; The Start menu entries.
+  ReadRegStr $MUI_TEMP SHCTX "${UNINSTALL_KEY}" "StartMenu"
+  StrCmp $MUI_TEMP "" startMenuDone
+    Delete "$SMPROGRAMS\$MUI_TEMP\Uninstall.lnk"
+@CPACK_NSIS_DELETE_ICONS@
+@CPACK_NSIS_DELETE_ICONS_EXTRA@
+    RMDir "$SMPROGRAMS\$MUI_TEMP"
+  startMenuDone:
+
+  ; Apps & features and the installer's own settings.
+  DeleteRegKey SHCTX "${UNINSTALL_KEY}"
+  DeleteRegKey SHCTX "${SETTINGS_KEY}"
+  DeleteRegKey /ifempty SHCTX "Software\@CPACK_PACKAGE_VENDOR@"
+SectionEnd

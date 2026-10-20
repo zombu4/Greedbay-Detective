@@ -1,0 +1,84 @@
+# Release on a v* tag (PLAN 10). Owner decisions: a v* tag builds all three
+# installers, tests them, with zero warnings and errors, then publishes the
+# release with checksums and the changelog; vX.Y.Z-rcN tags test this
+# pipeline and are published as pre-releases (Q25 changed). The version is
+# defined once, in CMakeLists.txt.
+#
+#   check    the tag is v<version> or v<version>-rcN, CHANGELOG.md has a
+#            section for the version, the commit is on main, and a final
+#            release has a LICENSE file (ci/release-check.sh)
+#   build    the CI workflow itself (ci.yml): build, test, the installers,
+#            their install tests, each kept as an artifact
+#   publish  those artifacts, SHA256SUMS of them, and the changelog section
+#            as the notes (gh release create)
+# Third-party actions are pinned to full commit SHAs.
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: check the tag
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out (all history, for the main-branch check)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Tag, version, changelog, license, main
+        env:
+          TAG: ${{ github.ref_name }}
+        run: sh ci/release-check.sh "$TAG"
+
+  build:
+    needs: check
+    uses: ./.github/workflows/ci.yml
+
+  publish:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      # "contents: write allows the action to create a release" (GitHub docs).
+      contents: write
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Download the installers
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: installer-*
+          path: dist
+          merge-multiple: true
+
+      - name: Checksums and release notes
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -eu
+          count=$(find dist -maxdepth 1 -type f | wc -l)
+          [ "$count" -eq 3 ] || { echo "expected 3 installers, found $count"; exit 1; }
+          (cd dist && sha256sum -- * > SHA256SUMS && cat SHA256SUMS)
+          sh ci/changelog-section.sh "$TAG" > "$RUNNER_TEMP/notes.md"
+          cat "$RUNNER_TEMP/notes.md"
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -eu
+          set -- "$TAG" dist/* --verify-tag --title "$TAG" --notes-file "$RUNNER_TEMP/notes.md"
+          case "$TAG" in
+            *-rc*) set -- "$@" --prerelease ;;
+          esac
+          gh release create "$@"

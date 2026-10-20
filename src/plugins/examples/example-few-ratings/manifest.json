@@ -1,0 +1,10 @@
+{
+    "id": "example-few-ratings",
+    "name": "Few seller ratings (example)",
+    "version": "1.0.0",
+    "author": "Greedbay Detective",
+    "description": "Example flagger: warns when the seller of the listing you checked has fewer than 10 ratings.",
+    "pluginApiVersion": 1,
+    "type": "flagger",
+    "permissions": ["listing"]
+}

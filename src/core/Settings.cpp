@@ -20,6 +20,9 @@ const QString kConfidenceMediumKey = QStringLiteral("value/confidenceMedium");
 const QString kConfidenceLowKey = QStringLiteral("value/confidenceLow");
 const QString kShippingRatioKey = QStringLiteral("shipping/flagRatio");
 const QString kShippingMinKey = QStringLiteral("shipping/flagMinAboveCents");
+const QString kEnabledPluginsKey = QStringLiteral("plugins/enabled");
+const QString kPluginFailurePrefix = QStringLiteral("plugins/failed/");
+const QString kPluginTimeLimitKey = QStringLiteral("plugins/callTimeLimitMs");
 constexpr int kMinPageDelayMs = 1000;
 
 // The stored value as a finite number > 0, or `fallback`.
@@ -112,6 +115,71 @@ bool Settings::setPageDelay(int minMs, int maxMs)
         return false;
     m_settings.setValue(kPageDelayMinKey, minMs);
     m_settings.setValue(kPageDelayMaxKey, maxMs);
+    return true;
+}
+
+bool Settings::isPluginId(const QString &id)
+{
+    if (id.isEmpty() || id.size() > 64 || id.front() == QLatin1Char('-'))
+        return false;
+    for (const QChar c : id) {
+        const bool allowed = (c >= QLatin1Char('a') && c <= QLatin1Char('z')) || (c >= QLatin1Char('0') && c <= QLatin1Char('9'))
+                             || c == QLatin1Char('-');
+        if (!allowed)
+            return false;
+    }
+    return true;
+}
+
+QStringList Settings::enabledPlugins() const
+{
+    QStringList ids;
+    for (const QString &id : m_settings.value(kEnabledPluginsKey).toStringList()) {
+        if (isPluginId(id) && !ids.contains(id))
+            ids.append(id);
+    }
+    return ids;
+}
+
+bool Settings::setPluginEnabled(const QString &id, bool enabled)
+{
+    if (!isPluginId(id))
+        return false;
+    QStringList ids = enabledPlugins();
+    ids.removeAll(id);
+    if (enabled)
+        ids.append(id);
+    m_settings.setValue(kEnabledPluginsKey, ids);
+    return true;
+}
+
+QString Settings::pluginFailure(const QString &id) const
+{
+    return isPluginId(id) ? m_settings.value(kPluginFailurePrefix + id).toString() : QString();
+}
+
+bool Settings::setPluginFailure(const QString &id, const QString &reason)
+{
+    if (!isPluginId(id))
+        return false;
+    if (reason.isEmpty())
+        m_settings.remove(kPluginFailurePrefix + id);
+    else
+        m_settings.setValue(kPluginFailurePrefix + id, reason);
+    return true;
+}
+
+int Settings::pluginCallTimeLimitMs() const
+{
+    const int ms = storedInt(m_settings, kPluginTimeLimitKey);
+    return ms >= kMinPluginCallTimeLimitMs && ms <= kMaxPluginCallTimeLimitMs ? ms : kDefaultPluginCallTimeLimitMs;
+}
+
+bool Settings::setPluginCallTimeLimitMs(int ms)
+{
+    if (ms < kMinPluginCallTimeLimitMs || ms > kMaxPluginCallTimeLimitMs)
+        return false;
+    m_settings.setValue(kPluginTimeLimitKey, ms);
     return true;
 }
 

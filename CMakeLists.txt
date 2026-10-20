@@ -29,12 +29,33 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 include(cmake/warnings.cmake)
 
 find_package(Qt6 6.12 REQUIRED COMPONENTS Core Gui Network Qml Quick QuickControls2 Sql Test WebSockets Widgets)
+# Qt's private ZIP reader (plugin install from a .zip, src/plugins). Private
+# Qt API carries no compatibility promise. Qt warns that a project using it
+# "will therefore be tied to this specific Qt module build version": that
+# holds here by design - the app builds against the one pinned Qt build
+# (ci/qt-6.12.0.sha256) and every installer ships that same Qt with it
+# (cmake/packaging.cmake), so it never runs against another. Qt's switch for
+# that notice: "You can disable this warning by setting
+# QT_NO_PRIVATE_MODULE_WARNING to ON."
+set(QT_NO_PRIVATE_MODULE_WARNING ON)
+find_package(Qt6 6.12 REQUIRED COMPONENTS CorePrivate)
 # REQUIRES 6.12: every Qt CMake policy of 6.12 set to NEW (no policy
 # warnings, which the presets make errors).
 qt_standard_project_setup(REQUIRES 6.12)
 
 enable_testing()
 
+# Where the Linux package installs the app (cmake/packaging.cmake); the app
+# knows it, to remove its own package at an in-app uninstall. It is also the
+# default install prefix on Linux (a prefix given by the user stays).
+set(APP_LINUX_INSTALL_PREFIX "/opt/${APP_PACKAGE_NAME}")
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
+    set_property(CACHE CMAKE_INSTALL_PREFIX PROPERTY VALUE "${APP_LINUX_INSTALL_PREFIX}")
+endif()
+include(GNUInstallDirs)
+
 add_subdirectory(src)
 add_subdirectory(tools/devwindow)
 add_subdirectory(tests)
+
+include(cmake/packaging.cmake)

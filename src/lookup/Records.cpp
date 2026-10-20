@@ -114,7 +114,12 @@ ItemRecord ItemRecord::fromJson(const QJsonObject &data)
     record.shippingCents = wholeNumber(data.value(QStringLiteral("shippingCents")));
     // eBay's visible condition text, not the schema.org code.
     record.condition = data.value(QStringLiteral("conditionText")).toString();
-    record.sellerName = data.value(QStringLiteral("seller")).toObject().value(QStringLiteral("name")).toString();
+    const QJsonObject seller = data.value(QStringLiteral("seller")).toObject();
+    record.sellerName = seller.value(QStringLiteral("name")).toString();
+    record.sellerFeedbackCount = count(seller.value(QStringLiteral("feedbackCount")));
+    if (const QJsonValue percent = seller.value(QStringLiteral("positivePercent")); percent.isDouble()
+        && percent.toDouble() >= 0 && percent.toDouble() <= 100)
+        record.sellerPositivePercent = percent.toDouble();
     record.imageUrl = data.value(QStringLiteral("imageUrl")).toString();
     record.auction = data.value(QStringLiteral("auction")).toBool();
     record.bids = count(data.value(QStringLiteral("bids")));

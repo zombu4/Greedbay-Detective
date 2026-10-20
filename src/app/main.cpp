@@ -1,8 +1,18 @@
 // The app's entry point: the work folder (default location), the
 // single-instance lock, logging, the database (schema upgrades with backup),
-// then the Qt Quick user interface (src/ui/qml, logic in src/ui).
+// then the Qt Quick user interface (src/ui/qml, logic in src/ui). After the
+// user chose "Uninstall..." (macOS, Linux), the data and the program are
+// removed once all of that is closed (core/Uninstall).
+//
+// "--uninstall-data=keep" or "--uninstall-data=delete" as the only argument:
+// no window; removes the user's data the same way and exits (the Windows
+// uninstaller calls it, packaging/windows/NSIS.template.in). Exit codes: 0
+// done (or nothing saved), 2 refused (the app runs, or the folder is not
+// the app's), 3 some of it could not be removed.
 #include "core/Logging.h"
+#include "core/PathChecks.h"
 #include "core/SingleInstance.h"
+#include "core/Uninstall.h"
 #include "core/Version.h"
 #include "core/WorkFolder.h"
 #include "db/Database.h"
@@ -17,6 +27,8 @@
 #include <QQuickStyle>
 #include <QtQml/qqmlextensionplugin.h>
 
+#include <cstdio>
+#include <cstring>
 #include <optional>
 
 Q_IMPORT_QML_PLUGIN(AppUiPlugin)
@@ -56,11 +68,78 @@ QString databaseProblem(const app::DatabaseResult &result, const app::WorkFolder
     }
 }
 
+// What an uninstall removed, kept and could not remove, in plain words.
+QString reportText(const app::Uninstall::Report &report)
+{
+    QStringList lines;
+    if (!report.removed.isEmpty())
+        lines << QStringLiteral("Removed:") << report.removed;
+    if (!report.kept.isEmpty())
+        lines << QString() << QStringLiteral("Kept (your saved lookups and history):") << report.kept;
+    if (!report.failed.isEmpty())
+        lines << QString() << QStringLiteral("Could not be removed:") << report.failed;
+    if (lines.isEmpty())
+        lines << QStringLiteral("There was nothing to remove.");
+    return lines.join(QLatin1Char('\n'));
+}
+
+// The user's data, without a window (--uninstall-data). Never creates a
+// work folder that is not there.
+int uninstallData(const QString &identifier, bool keepHistory)
+{
+    const QString path = app::WorkFolder::defaultPath(identifier);
+    if (path.isEmpty() || !app::somethingAt(path))
+        return 0;
+    QString error;
+    const std::optional<app::WorkFolder> folder = app::WorkFolder::open(path, identifier, &error);
+    const QString refusal = folder ? app::Uninstall::check(*folder) : error;
+    if (!refusal.isEmpty()) {
+        std::fprintf(stderr, "%s\n", qPrintable(refusal));
+        return 2;
+    }
+    const app::Uninstall::Report report = app::Uninstall::run(*folder, keepHistory);
+    std::fprintf(stdout, "%s\n", qPrintable(reportText(report)));
+    return report.ok() ? 0 : 3;
+}
+
+// The end of an in-app uninstall (macOS, Linux): the data, then the program,
+// then a window that says what was done.
+int finishUninstall(const app::WorkFolder &folder, bool keepHistory)
+{
+    QString heading = QStringLiteral("Greedbay Detective was uninstalled");
+    QString text;
+    const QString refusal = app::Uninstall::check(folder);
+    if (!refusal.isEmpty()) {
+        heading = QStringLiteral("Nothing was uninstalled");
+        text = refusal;
+    } else {
+        const app::Uninstall::Report report = app::Uninstall::run(folder, keepHistory);
+        text = reportText(report);
+        if (report.ok()) {
+            bool removed = false;
+            text += QStringLiteral("\n\n") + app::Uninstall::removeProgram(QString::fromLatin1(app::version::kPackageName),
+                                                                           QStringLiteral(APP_LINUX_PACKAGE_BIN_DIR), &removed);
+        } else {
+            heading = QStringLiteral("The uninstall did not finish");
+            text += QStringLiteral("\n\nThe program was left installed, because not all of your data could be removed.");
+        }
+    }
+    QQmlApplicationEngine engine;
+    engine.setInitialProperties({{QStringLiteral("message"), text}, {QStringLiteral("heading"), heading}});
+    engine.loadFromModule(kModule, "StartupError");
+    if (engine.rootObjects().isEmpty())
+        return 1;
+    QGuiApplication::exec();
+    return 0;
+}
+
 } // namespace
 
 int main(int argc, char *argv[])
 {
     const QString identifier = QString::fromLatin1(app::version::kIdentifier);
+    if (argc == 2 && (std::strcmp(argv[1], "--uninstall-data=keep") == 0 || std::strcmp(argv[1], "--uninstall-data=delete") == 0))
+        return uninstallData(identifier, std::strcmp(argv[1], "--uninstall-data=keep") == 0);
     QString error;
     const std::optional<app::WorkFolder> folder =
         app::WorkFolder::open(app::WorkFolder::defaultPath(identifier), identifier, &error);
@@ -97,6 +176,7 @@ int main(int argc, char *argv[])
         return showStartupError(engine, error);
 
     int code = 1;
+    std::optional<bool> uninstallKeep;
     {
         if (!app::ui::loadFonts(&error))
             qWarning().noquote() << "ui:" << error << "- the system font is used instead";
@@ -127,11 +207,18 @@ int main(int argc, char *argv[])
                         ui.loadFromModule(kModule, "Main");
                         code = ui.rootObjects().isEmpty() ? 1 : QGuiApplication::exec();
                     }
+                    uninstallKeep = backend.uninstallRequest();
                 }
                 app::Database::close(QString::fromLatin1(kConnection));
             }
         }
     }
     app::Logging::uninstall();
+    if (uninstallKeep) {
+        // Everything in the work folder is closed now: the views, the
+        // database, the log; the lock goes last.
+        instance.release();
+        return finishUninstall(*folder, *uninstallKeep);
+    }
     return code;
 }

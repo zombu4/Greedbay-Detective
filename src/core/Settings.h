@@ -2,6 +2,7 @@
 
 #include <QSettings>
 #include <QString>
+#include <QStringList>
 
 namespace app {
 
@@ -112,6 +113,31 @@ public:
     // Returns false and stores nothing when a value is out of range (factor
     // and ratio must be > 0 and finite, the minimum >= 0).
     bool setValueSettings(const ValueSettings &values);
+
+    // Plugins (DESIGN 5, PLAN 15). Key "plugins/enabled": the ids of the
+    // enabled plugins. None by default: a plugin stays disabled until the
+    // user enables it. Values that are no plugin id (isPluginId) are skipped.
+    QStringList enabledPlugins() const;
+    // Returns false and stores nothing for an id that is no plugin id.
+    bool setPluginEnabled(const QString &id, bool enabled);
+    // Key "plugins/failed/<id>": why the app disabled the plugin after a
+    // failure; empty when it did not. An empty reason removes the key.
+    QString pluginFailure(const QString &id) const;
+    bool setPluginFailure(const QString &id, const QString &reason);
+    // Key "plugins/callTimeLimitMs": the longest one plugin call may run
+    // before it is stopped. Default 1000; a value outside
+    // kMinPluginCallTimeLimitMs..kMaxPluginCallTimeLimitMs reads as the
+    // default.
+    static constexpr int kDefaultPluginCallTimeLimitMs = 1000;
+    static constexpr int kMinPluginCallTimeLimitMs = 100;
+    static constexpr int kMaxPluginCallTimeLimitMs = 60000;
+    int pluginCallTimeLimitMs() const;
+    // Returns false and stores nothing outside the range above.
+    bool setPluginCallTimeLimitMs(int ms);
+
+    // A plugin id: 1 to 64 characters, lowercase a-z, 0-9 and "-", starting
+    // with a letter or digit.
+    static bool isPluginId(const QString &id);
 
     // Writes pending changes to disk. True when QSettings reports no error.
     bool sync();

@@ -3,6 +3,8 @@
 qt_add_library(appcore STATIC
     core/BrowserProfiles.cpp
     core/BrowserProfiles.h
+    core/ExportFiles.cpp
+    core/ExportFiles.h
     core/Logging.cpp
     core/Logging.h
     core/PageBudget.cpp
@@ -12,6 +14,8 @@ qt_add_library(appcore STATIC
     core/Settings.h
     core/SingleInstance.cpp
     core/SingleInstance.h
+    core/Uninstall.cpp
+    core/Uninstall.h
     core/WorkFolder.cpp
     core/WorkFolder.h
     db/Database.cpp
@@ -47,6 +51,7 @@ qt_add_resources(appcore "migrations"
         db/migrations/0001_init.sql
         db/migrations/0002_saved_lookups.sql
         db/migrations/0003_formats.sql
+        db/migrations/0004_seller_ratings.sql
 )
 
 # appbrowser: drives the user's installed browser over the DevTools protocol
@@ -88,10 +93,14 @@ qt_add_resources(appbrowser "extractors"
 qt_add_library(applookup STATIC
     lookup/AuctionTime.cpp
     lookup/AuctionTime.h
+    lookup/History.cpp
+    lookup/History.h
     lookup/Identity.cpp
     lookup/Identity.h
     lookup/KnownModels.cpp
     lookup/KnownModels.h
+    lookup/LookupExport.cpp
+    lookup/LookupExport.h
     lookup/LookupReport.cpp
     lookup/LookupReport.h
     lookup/LookupRunner.cpp
@@ -125,6 +134,39 @@ qt_add_resources(applookup "lookup_data"
         lookup/data/match-words.json
 )
 
+# appplugins: JavaScript plugins (DESIGN 5, PLAN 15): the manifest, the
+# catalog of built-in examples and installed plugins, and the host that runs
+# the enabled ones, each in a QJSEngine of its own.
+qt_add_library(appplugins STATIC
+    plugins/PluginCatalog.cpp
+    plugins/PluginCatalog.h
+    plugins/PluginHost.cpp
+    plugins/PluginHost.h
+    plugins/PluginManifest.cpp
+    plugins/PluginManifest.h
+)
+
+target_link_libraries(appplugins PUBLIC appcore applookup Qt6::Qml PRIVATE Qt6::CorePrivate)
+
+app_enable_warnings(appplugins)
+
+# The example plugins, one per type, ship inside the app as
+# :/plugins/<id>/manifest.json and main.js (built-in, disabled until the
+# user enables them).
+qt_add_resources(appplugins "plugin_examples"
+    PREFIX "/plugins"
+    BASE "plugins/examples"
+    FILES
+        plugins/examples/example-csv-export/main.js
+        plugins/examples/example-csv-export/manifest.json
+        plugins/examples/example-few-ratings/main.js
+        plugins/examples/example-few-ratings/manifest.json
+        plugins/examples/example-no-reproductions/main.js
+        plugins/examples/example-no-reproductions/manifest.json
+        plugins/examples/example-recent-median/main.js
+        plugins/examples/example-recent-median/manifest.json
+)
+
 # appui: what the Qt Quick views use (src/ui/*.cpp: the lookup session,
 # results, recent lookups, settings) and the views themselves
 # (src/ui/qml/*.qml), as the static QML module GreedbayDetective.Ui with its
@@ -137,10 +179,14 @@ qt_add_library(appui STATIC
     ui/Fonts.h
     ui/Format.cpp
     ui/Format.h
+    ui/HistoryController.cpp
+    ui/HistoryController.h
     ui/LookupSession.cpp
     ui/LookupSession.h
     ui/PhotoProvider.cpp
     ui/PhotoProvider.h
+    ui/PluginsController.cpp
+    ui/PluginsController.h
     ui/RecentModel.cpp
     ui/RecentModel.h
     ui/ResultsController.cpp
@@ -149,7 +195,7 @@ qt_add_library(appui STATIC
     ui/SettingsController.h
 )
 
-target_link_libraries(appui PUBLIC appbrowser applookup Qt6::Gui Qt6::Network Qt6::Qml Qt6::Quick Qt6::QuickControls2)
+target_link_libraries(appui PUBLIC appbrowser applookup appplugins Qt6::Gui Qt6::Network Qt6::Qml Qt6::Quick Qt6::QuickControls2)
 # The generated QML type registration includes the headers by file name
 # (<Backend.h>).
 target_include_directories(appui PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/ui")
@@ -178,6 +224,7 @@ set(app_qml_files
     ui/qml/LinkText.qml
     ui/qml/Main.qml
     ui/qml/Pill.qml
+    ui/qml/PriceChart.qml
     ui/qml/PriceHistoryScreen.qml
     ui/qml/ProgressPanel.qml
     ui/qml/RangeBar.qml
@@ -234,4 +281,5 @@ set_target_properties(${APP_NAME} PROPERTIES
     MACOSX_BUNDLE_BUNDLE_VERSION "${PROJECT_VERSION}"
     MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}"
 )
+target_compile_definitions(${APP_NAME} PRIVATE APP_LINUX_PACKAGE_BIN_DIR="${APP_LINUX_INSTALL_PREFIX}/bin")
 app_enable_warnings(${APP_NAME})

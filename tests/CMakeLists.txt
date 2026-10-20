@@ -69,6 +69,15 @@ target_link_libraries(tst_lookupstore PRIVATE applookup)
 app_add_unit_test(tst_ui tst_ui.cpp)
 target_link_libraries(tst_ui PRIVATE appui appuiplugin)
 
+# Plugins: manifest, install, sandbox, limits, examples; and export files.
+app_add_unit_test(tst_plugins tst_plugins.cpp support/TestFiles.h)
+target_link_libraries(tst_plugins PRIVATE appplugins Qt6::CorePrivate)
+
+# Uninstall of the work folder (core/Uninstall).
+app_add_unit_test(tst_uninstall tst_uninstall.cpp support/TestFiles.h)
+target_compile_definitions(tst_uninstall PRIVATE LOCKHOLDER_PATH="$<TARGET_FILE:lockholder>")
+add_dependencies(tst_uninstall lockholder)
+
 app_add_unit_test(tst_browserlogic tst_browserlogic.cpp)
 target_link_libraries(tst_browserlogic PRIVATE appbrowser)
 

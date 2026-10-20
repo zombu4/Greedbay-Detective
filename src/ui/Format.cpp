@@ -25,6 +25,13 @@ QString whenText(const QDateTime &time, const QDateTime &now)
     return english.toString(local.date(), QStringLiteral("MMM d, yyyy"));
 }
 
+QString dateText(const QDate &date)
+{
+    if (!date.isValid())
+        return QStringLiteral("-");
+    return QLocale(QLocale::English, QLocale::UnitedStates).toString(date, QStringLiteral("MMM d, yyyy"));
+}
+
 QString countText(qsizetype count, const QString &singular, const QString &plural)
 {
     return QStringLiteral("%1 %2").arg(count).arg(count == 1 ? singular : plural);

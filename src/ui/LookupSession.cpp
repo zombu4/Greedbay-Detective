@@ -6,6 +6,7 @@
 #include "ebay/SearchUrls.h"
 #include "lookup/LookupReport.h"
 #include "lookup/LookupRunner.h"
+#include "plugins/PluginHost.h"
 
 #include <QBuffer>
 #include <QImage>
@@ -377,7 +378,10 @@ void LookupSession::saveLookup(lookup::LookupResult result)
     m_savedOnce = true;
     m_step = StepSaving;
     emit progressChanged();
-    const QList<lookup::Row> rows = lookup::classifyRows(result, *m_words);
+    QList<lookup::Row> rows = lookup::classifyRows(result, *m_words);
+    // The built-in matcher first, then the matcher plugins on its rows.
+    if (m_plugins)
+        m_plugins->applyMatchers(result, &rows);
     const lookup::Valuation valuation =
         lookup::valuate(result, rows, Settings(m_folder.settingsPath()).valueSettings());
     QString error;

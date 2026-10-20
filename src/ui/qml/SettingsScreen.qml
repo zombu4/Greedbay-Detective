@@ -1,7 +1,7 @@
 // Settings (inbox phase 6 step 7, PLAN 14): browser, work folder, page pace
 // and daily cap, search depth, sold history window, the value numbers,
-// update check, sign out of eBay; export and uninstall come in a later
-// phase. Every Save stores at once; a refusal says why.
+// update check, sign out of eBay, plugins (DESIGN 5), export and uninstall
+// (DESIGN 8, PLAN 9). Every Save stores at once; a refusal says why.
 import QtQuick
 import QtQuick.Controls.Basic
 import QtQuick.Layouts
@@ -9,6 +9,8 @@ import QtQuick.Layouts
 Item {
     id: screen
     required property SettingsController settings
+    required property Backend backend
+    readonly property PluginsController plugins: backend.plugins
 
     component Section: Card {
         id: section
@@ -65,9 +67,10 @@ Item {
         font.pixelSize: Theme.bodySize
     }
 
-    function report(result, target) {
+    // `done`: what to say when it worked (default "Saved.").
+    function report(result, target, done) {
         target.ok = result.length === 0
-        target.message = result.length === 0 ? "Saved." : result
+        target.message = result.length === 0 ? (done || "Saved.") : result
     }
 
     ScrollView {
@@ -284,13 +287,184 @@ Item {
             }
 
             Section {
-                heading: "Your data"
-                note: "Coming in a later phase."
+                heading: "Plugins"
+                note: "Plugins add rules, figures, warnings or file formats. Each one runs in a sandbox: it gets only the "
+                      + "data its permissions name, cannot read your files or go online, and is stopped after the time "
+                      + "limit. A plugin is off until you turn it on; one that fails is turned off and says why."
+                Repeater {
+                    model: screen.plugins.plugins
+                    Card {
+                        id: plugin
+                        required property var modelData
+                        Layout.fillWidth: true
+                        fill: Theme.raised
+                        ColumnLayout {
+                            anchors.fill: parent
+                            spacing: 6
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: 8
+                                Text {
+                                    Layout.fillWidth: true
+                                    text: plugin.modelData.name
+                                    elide: Text.ElideRight
+                                    font.family: Theme.sans
+                                    font.pixelSize: Theme.bodySize + 1
+                                    font.weight: Font.DemiBold
+                                    color: Theme.text
+                                }
+                                Pill {
+                                    text: plugin.modelData.builtIn ? "BUILT-IN EXAMPLE" : "INSTALLED"
+                                    kind: "neutral"
+                                }
+                                Pill {
+                                    text: plugin.modelData.enabled ? "ON" : "OFF"
+                                    kind: plugin.modelData.enabled ? "accent" : "neutral"
+                                }
+                                AppButton {
+                                    text: plugin.modelData.enabled ? "Turn off" : "Turn on..."
+                                    Accessible.name: (plugin.modelData.enabled ? "Turn off " : "Turn on ") + plugin.modelData.name
+                                    onClicked: {
+                                        if (plugin.modelData.enabled)
+                                            screen.report(screen.plugins.setEnabled(plugin.modelData.id, false), pluginsResult, "Turned off.")
+                                        else
+                                            enableDialog.ask(plugin.modelData)
+                                    }
+                                }
+                                AppButton {
+                                    visible: !plugin.modelData.builtIn
+                                    text: "Remove"
+                                    Accessible.name: "Remove " + plugin.modelData.name
+                                    onClicked: screen.report(screen.plugins.remove(plugin.modelData.id), pluginsResult, "Removed.")
+                                }
+                            }
+                            FieldLabel {
+                                Layout.fillWidth: true
+                                wrapMode: Text.WordWrap
+                                text: "Version " + plugin.modelData.version + " by " + plugin.modelData.author + ". "
+                                      + plugin.modelData.typeText + "."
+                            }
+                            FieldLabel {
+                                Layout.fillWidth: true
+                                visible: text.length > 0
+                                wrapMode: Text.WordWrap
+                                text: plugin.modelData.description
+                                color: Theme.secondaryText
+                            }
+                            Result {
+                                message: plugin.modelData.failure.length > 0
+                                         ? "Turned off after a problem: " + plugin.modelData.failure : ""
+                                ok: false
+                            }
+                        }
+                    }
+                }
+                Repeater {
+                    model: screen.plugins.problems
+                    Result {
+                        required property string modelData
+                        message: modelData
+                        ok: false
+                    }
+                }
+                // Install: drop a plugin folder or .zip here, or type its path.
+                Rectangle {
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 64
+                    radius: Theme.controlRadius
+                    color: drop.containsDrag ? Theme.border : "transparent"
+                    border.color: drop.containsDrag ? Theme.accent : Theme.inputBorder
+                    FieldLabel {
+                        anchors.centerIn: parent
+                        text: "Drop a plugin folder or .zip file here to install it"
+                    }
+                    DropArea {
+                        id: drop
+                        anchors.fill: parent
+                        onDropped: (event) => {
+                            if (!event.hasUrls)
+                                return
+                            event.accept()
+                            screen.report(screen.plugins.install(event.urls[0].toString()), pluginsResult,
+                                          "Installed. It is off until you turn it on.")
+                        }
+                    }
+                }
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 12
+                    AppTextField {
+                        id: pluginPath
+                        Layout.fillWidth: true
+                        mono: true
+                        placeholderText: "or type the path of a plugin folder or .zip file"
+                        Accessible.name: "Path of a plugin folder or zip file"
+                        onAccepted: installButton.clicked()
+                    }
+                    AppButton {
+                        id: installButton
+                        text: "Install"
+                        enabled: pluginPath.text.trim().length > 0
+                        onClicked: screen.report(screen.plugins.install(pluginPath.text), pluginsResult,
+                                                 "Installed. It is off until you turn it on.")
+                    }
+                }
+                FieldLabel {
+                    Layout.fillWidth: true
+                    wrapMode: Text.WordWrap
+                    text: "Installed plugins are kept in " + screen.plugins.pluginsFolder + "."
+                }
                 RowLayout {
                     spacing: 12
-                    AppButton { text: "Export data"; enabled: false }
-                    AppButton { text: "Uninstall"; enabled: false }
+                    FieldLabel { text: "Time limit per plugin call (ms)" }
+                    NumberBox {
+                        id: timeLimit
+                        from: screen.plugins.minTimeLimitMs
+                        to: screen.plugins.maxTimeLimitMs
+                        stepSize: 100
+                        value: screen.plugins.timeLimitMs
+                        Accessible.name: "Time limit per plugin call in milliseconds"
+                    }
+                    AppButton {
+                        text: "Save"
+                        onClicked: screen.report(screen.plugins.setTimeLimitMs(timeLimit.value), pluginsResult)
+                    }
                 }
+                Result { id: pluginsResult }
+            }
+
+            Section {
+                heading: "Your data"
+                note: "Export saves every lookup in your Downloads folder: a CSV list, and a JSON file with every row. "
+                      + "Uninstall removes the app and what it saved; you choose whether your saved lookups stay."
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 12
+                    AppButton {
+                        text: "Export data"
+                        onClicked: {
+                            const reply = screen.backend.exportData()
+                            exportResult.ok = reply.ok
+                            exportResult.message = reply.message
+                            exportResult.path = reply.path
+                        }
+                    }
+                    LinkText {
+                        visible: exportResult.path.length > 0
+                        text: "Show in folder"
+                        onActivated: screen.backend.showFolderOf(exportResult.path)
+                    }
+                    Item { Layout.fillWidth: true }
+                    AppButton {
+                        text: "Uninstall..."
+                        onClicked: uninstallDialog.open()
+                    }
+                }
+                Result {
+                    id: exportResult
+                    property string path
+                }
+                Result { id: uninstallResult }
             }
 
             Section {
@@ -316,6 +490,150 @@ Item {
             }
 
             Item { Layout.preferredHeight: 24 }
+        }
+    }
+
+    // Turning a plugin on: its permissions first, in plain words.
+    Dialog {
+        id: enableDialog
+        property var plugin: ({})
+        function ask(entry) {
+            plugin = entry
+            open()
+        }
+        anchors.centerIn: parent
+        width: Math.min(560, screen.width - 56)
+        modal: true
+        title: "Turn on " + (plugin.name || "")
+        background: Rectangle {
+            color: Theme.surface
+            radius: Theme.cardRadius
+            border.color: Theme.border
+        }
+        header: Text {
+            padding: 20
+            text: enableDialog.title
+            font.family: Theme.sans
+            font.pixelSize: Theme.sectionSize
+            font.weight: Font.DemiBold
+            color: Theme.text
+        }
+        contentItem: ColumnLayout {
+            spacing: 8
+            FieldLabel {
+                Layout.fillWidth: true
+                wrapMode: Text.WordWrap
+                text: "This plugin may:"
+            }
+            Repeater {
+                model: enableDialog.plugin.permissions || []
+                Text {
+                    required property string modelData
+                    Layout.fillWidth: true
+                    text: "- " + modelData
+                    wrapMode: Text.WordWrap
+                    font.family: Theme.sans
+                    font.pixelSize: Theme.bodySize
+                    color: Theme.text
+                }
+            }
+            FieldLabel {
+                Layout.fillWidth: true
+                wrapMode: Text.WordWrap
+                text: "It cannot read your files, go online or start programs."
+            }
+        }
+        footer: RowLayout {
+            spacing: 12
+            Item { Layout.fillWidth: true }
+            AppButton {
+                Layout.bottomMargin: 20
+                text: "Cancel"
+                onClicked: enableDialog.close()
+            }
+            AppButton {
+                Layout.rightMargin: 20
+                Layout.bottomMargin: 20
+                text: "Turn on"
+                primary: true
+                onClicked: {
+                    enableDialog.close()
+                    screen.report(screen.plugins.setEnabled(enableDialog.plugin.id, true), pluginsResult, "Turned on.")
+                }
+            }
+        }
+    }
+
+    // Uninstall (PLAN 9): keep the saved lookups and history, or delete
+    // everything; what happens to the program on this system.
+    Dialog {
+        id: uninstallDialog
+        anchors.centerIn: parent
+        width: Math.min(600, screen.width - 56)
+        modal: true
+        title: "Uninstall Greedbay Detective"
+        background: Rectangle {
+            color: Theme.surface
+            radius: Theme.cardRadius
+            border.color: Theme.border
+        }
+        header: Text {
+            padding: 20
+            text: uninstallDialog.title
+            font.family: Theme.sans
+            font.pixelSize: Theme.sectionSize
+            font.weight: Font.DemiBold
+            color: Theme.text
+        }
+        contentItem: ColumnLayout {
+            spacing: 10
+            RadioButton {
+                id: keepHistory
+                checked: true
+                text: "Keep my saved lookups and history"
+                font.family: Theme.sans
+                font.pixelSize: Theme.bodySize
+            }
+            FieldLabel {
+                Layout.fillWidth: true
+                Layout.leftMargin: 32
+                wrapMode: Text.WordWrap
+                text: "Kept: the saved lookups, their backups, and the brands and models you confirmed; installing the "
+                      + "app again uses them. Deleted: settings, logs, the app's browser profiles with your eBay "
+                      + "sign-in and cookies, installed plugins and temporary files."
+            }
+            RadioButton {
+                text: "Delete everything the app saved"
+                font.family: Theme.sans
+                font.pixelSize: Theme.bodySize
+            }
+            FieldLabel {
+                Layout.fillWidth: true
+                wrapMode: Text.WordWrap
+                text: screen.backend.uninstallNote + " Files you exported to Downloads stay."
+                color: Theme.secondaryText
+            }
+        }
+        footer: RowLayout {
+            spacing: 12
+            Item { Layout.fillWidth: true }
+            AppButton {
+                Layout.bottomMargin: 20
+                text: "Cancel"
+                onClicked: uninstallDialog.close()
+            }
+            AppButton {
+                Layout.rightMargin: 20
+                Layout.bottomMargin: 20
+                text: "Uninstall"
+                primary: true
+                onClicked: {
+                    uninstallDialog.close()
+                    const refusal = screen.backend.uninstall(keepHistory.checked)
+                    uninstallResult.ok = refusal.length === 0
+                    uninstallResult.message = refusal
+                }
+            }
         }
     }
 }

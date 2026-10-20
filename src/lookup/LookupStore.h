@@ -5,6 +5,7 @@
 #include "lookup/LookupRunner.h"
 
 #include <QByteArray>
+#include <QDate>
 #include <QDateTime>
 #include <QList>
 #include <QString>
@@ -32,6 +33,7 @@ struct SavedLookup {
 struct LookupSummary {
     qint64 id = 0;
     QDateTime createdAt; // UTC
+    QString input; // the link or item number the lookup was started with
     QString itemId;
     QString title;
     QString conditionText; // eBay's condition text of the listing
@@ -47,6 +49,20 @@ struct LookupSummary {
     int forSaleCount = 0;
     int cheaperForSale = 0;
     std::optional<qint64> cheapestForSaleCents;
+};
+
+// A sale row of a saved lookup, for the price history: a sold-search row
+// whose price is the price paid (not an unconfirmed Best Offer; its sold
+// date), or a Product Research row of exactly one sale (its last sold date;
+// its average is that one sale's price). Total = price + shipping; none when
+// either is unknown.
+struct HistorySaleRow {
+    qint64 lookupId = 0;
+    QString itemId;
+    QString title;
+    QDate soldOn;
+    std::optional<qint64> totalCents;
+    bool included = false; // counted in its lookup (the user's ticks)
 };
 
 // Saves and reads lookups in the app's database (the open QSQLITE connection
@@ -78,8 +94,13 @@ public:
 
     std::optional<SavedLookup> load(qint64 lookupId, QString *error) const;
 
-    // The newest `limit` lookups, newest first.
+    // The newest `limit` lookups, newest first; every lookup when `limit` is
+    // 0 or less.
     std::optional<QList<LookupSummary>> recent(int limit, QString *error) const;
+
+    // The sale rows (see HistorySaleRow) of the lookups `lookupIds`, newest
+    // lookup first, in each lookup in their stored order.
+    std::optional<QList<HistorySaleRow>> historySales(const QList<qint64> &lookupIds, QString *error) const;
 
     // Records an identity the user entered or corrected for a listing.
     bool saveUserIdentity(const QString &itemId, const ConfirmedIdentity &identity, std::optional<qint64> lookupId,

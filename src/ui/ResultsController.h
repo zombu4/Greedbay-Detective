@@ -7,9 +7,15 @@
 #include <QObject>
 #include <QSet>
 #include <QStringList>
+#include <QVariantList>
+#include <QVariantMap>
 #include <QtQmlIntegration/qqmlintegration.h>
 
 #include <functional>
+
+namespace app::plugins {
+class PluginHost;
+}
 
 namespace app::ui {
 
@@ -165,6 +171,14 @@ class ResultsController : public QObject {
     Q_PROPERTY(QString emptyMessage READ emptyMessage NOTIFY changed)
     // Side lines.
     Q_PROPERTY(QStringList sideLines READ sideLines NOTIFY changed)
+    // Plugins (DESIGN 5): flags from flaggers [{plugin, text, kind}],
+    // figures from valuators [{plugin, label, value, note}], the enabled
+    // exporters [{id, name}], and what went wrong with a plugin (it was
+    // disabled).
+    Q_PROPERTY(QVariantList pluginFlags READ pluginFlags NOTIFY changed)
+    Q_PROPERTY(QVariantList pluginValues READ pluginValues NOTIFY changed)
+    Q_PROPERTY(QVariantList exporters READ exporters NOTIFY changed)
+    Q_PROPERTY(QStringList pluginNotices READ pluginNotices NOTIFY changed)
     // Tabs.
     Q_PROPERTY(RowsModel *sameItem READ sameItem CONSTANT)
     Q_PROPERTY(RowsModel *notThisItem READ notThisItem CONSTANT)
@@ -186,6 +200,15 @@ public:
 
     // Ticks or unticks row `row` (RowsModel::RowRole).
     Q_INVOKABLE void setIncluded(int row, bool included);
+
+    // The plugins whose flags, figures and exporters the screen shows; may be
+    // null (none). `host` must outlive the controller.
+    void setPlugins(plugins::PluginHost *host) { m_plugins = host; }
+    // Saves the shown lookup as JSON (lookup::lookupJson) in the Downloads
+    // folder; or runs exporter plugin `pluginId` and saves its file there.
+    // {ok, message, path}: the path written, or why nothing was.
+    Q_INVOKABLE QVariantMap saveJson();
+    Q_INVOKABLE QVariantMap exportWith(const QString &pluginId);
 
     bool hasLookup() const { return m_saved.id != 0; }
     QString statusText() const;
@@ -246,6 +269,10 @@ public:
     QString cheapestLabel() const;
     QStringList sideLines() const;
     QString emptyMessage() const;
+    QVariantList pluginFlags() const { return m_pluginFlags; }
+    QVariantList pluginValues() const { return m_pluginValues; }
+    QVariantList exporters() const { return m_exporters; }
+    QStringList pluginNotices() const { return m_pluginNotices; }
     RowsModel *sameItem() const { return m_sameItem; }
     RowsModel *notThisItem() const { return m_notThisItem; }
 
@@ -264,9 +291,18 @@ private:
 
     // Why this listing is likely broken, or "".
     QString brokenReason() const;
+    // The plugins' flags, figures and exporters for the rows as they are now.
+    void runPlugins();
+    // Saves `data` as `fileName` in the Downloads folder: {ok, message, path}.
+    QVariantMap saveFile(const QString &fileName, const QByteArray &data) const;
 
     lookup::LookupStore m_store;
     const lookup::MatchWords *m_words;
+    plugins::PluginHost *m_plugins = nullptr;
+    QVariantList m_pluginFlags;
+    QVariantList m_pluginValues;
+    QVariantList m_exporters;
+    QStringList m_pluginNotices;
     std::function<ValueSettings()> m_valueSettings;
     std::function<QString(const QString &)> m_photoSourceOf;
     lookup::SavedLookup m_saved;

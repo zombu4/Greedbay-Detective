@@ -1,4 +1,8 @@
-# Build and test on every push and pull request.
+# Build and test on every push and pull request; then make this system's
+# installer (cmake/packaging.cmake), test it (tests/install: install, run,
+# uninstall, the listed paths gone) and keep it as an artifact. The release
+# workflow (release.yml) runs this same workflow on a v* tag and publishes
+# those installers.
 #
 # Every tool is pinned and checked before use:
 #   - CMake 4.4.4, Ninja 1.13.2 (macOS, Linux) and NSIS 3.13 (Windows) against
@@ -16,6 +20,7 @@ name: ci
 on:
   push:
   pull_request:
+  workflow_call:
 
 permissions:
   contents: read
@@ -197,14 +202,16 @@ jobs:
       # (https://doc.qt.io/qt-6/linux.html), and xvfb: a virtual display, so
       # the browser the extractor test drives can open its window. Packages
       # come from the Ubuntu archive, checked by apt's signatures; their
-      # installed versions are printed.
-      - name: Install the OpenGL development files and a virtual display (Linux)
+      # installed versions are printed. dpkg-dev (dpkg-shlibdeps) and file:
+      # CPack's DEB generator uses both to work out the package's
+      # dependencies (CMake 4.4 CPackDeb.cmake).
+      - name: Install the OpenGL development files, a virtual display and the packaging tools (Linux)
         if: runner.os == 'Linux'
         run: |
           set -eu
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends libgl1-mesa-dev xvfb xauth
-          dpkg-query -W libgl1-mesa-dev xvfb xauth
+          sudo apt-get install -y --no-install-recommends libgl1-mesa-dev xvfb xauth dpkg-dev file
+          dpkg-query -W libgl1-mesa-dev xvfb xauth dpkg-dev file
 
       # The bundled IBM Plex fonts must be the files of IBM's release
       # (resources/fonts/README.md).
@@ -243,3 +250,50 @@ jobs:
           else
             ctest --preset "${{ matrix.preset }}-release" --verbose --timeout 120
           fi
+
+      # APP_NAME, APP_PACKAGE_NAME, APP_LINUX_INSTALL_PREFIX, APP_VERSION as
+      # CMake set them (cmake/packaging.cmake).
+      - name: Read the package names
+        run: cat "build/${{ matrix.preset }}/package-info.env" >> "$GITHUB_ENV"
+
+      - name: Package
+        timeout-minutes: 30
+        run: |
+          set -eu
+          cd "build/${{ matrix.preset }}"
+          cpack -C Release
+
+      - name: Install test (macOS)
+        if: runner.os == 'macOS'
+        timeout-minutes: 15
+        run: |
+          set -eu
+          set -- "build/${{ matrix.preset }}/${APP_PACKAGE_NAME}-${APP_VERSION}-"*.dmg
+          sh tests/install/macos.sh "$1" "$APP_NAME"
+
+      - name: Install test (Linux)
+        if: runner.os == 'Linux'
+        timeout-minutes: 15
+        run: |
+          set -eu
+          set -- "build/${{ matrix.preset }}/${APP_PACKAGE_NAME}-${APP_VERSION}-"*.deb
+          sh tests/install/linux.sh "$1" "$APP_NAME" "$APP_PACKAGE_NAME" "$APP_LINUX_INSTALL_PREFIX"
+
+      - name: Install test (Windows)
+        if: runner.os == 'Windows'
+        timeout-minutes: 15
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $setup = Get-Item "build/${{ matrix.preset }}/$env:APP_PACKAGE_NAME-$env:APP_VERSION-*.exe"
+          ./tests/install/windows.ps1 -Setup $setup.FullName -Identifier $env:APP_NAME
+
+      - name: Keep the installer
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: installer-${{ matrix.name }}
+          if-no-files-found: error
+          path: |
+            build/${{ matrix.preset }}/${{ env.APP_PACKAGE_NAME }}-${{ env.APP_VERSION }}-*.dmg
+            build/${{ matrix.preset }}/${{ env.APP_PACKAGE_NAME }}-${{ env.APP_VERSION }}-*.exe
+            build/${{ matrix.preset }}/${{ env.APP_PACKAGE_NAME }}-${{ env.APP_VERSION }}-*.deb

@@ -255,6 +255,33 @@ Item {
                 }
             }
 
+            // Plugins (DESIGN 5): what went wrong with one (it was disabled),
+            // and the flaggers' warnings and notes, each with its plugin's name.
+            Repeater {
+                model: screen.results.pluginNotices
+                Muted {
+                    required property string modelData
+                    Layout.fillWidth: true
+                    text: "Plugin: " + modelData
+                    color: Theme.warnLabel
+                }
+            }
+            Flow {
+                Layout.fillWidth: true
+                visible: screen.results.pluginFlags.length > 0
+                spacing: Theme.gap
+                Repeater {
+                    model: screen.results.pluginFlags
+                    FlagCard {
+                        required property var modelData
+                        width: Math.min(420, parent.width)
+                        kind: modelData.kind
+                        label: modelData.plugin.toUpperCase()
+                        lines: [modelData.text]
+                    }
+                }
+            }
+
             // Every search found nothing: say so instead of empty tables.
             FlagCard {
                 Layout.fillWidth: true
@@ -342,6 +369,59 @@ Item {
                             text: modelData
                         }
                     }
+                    // Valuator plugins: figures next to the app's own, never
+                    // in their place.
+                    Flow {
+                        Layout.fillWidth: true
+                        visible: screen.results.pluginValues.length > 0
+                        spacing: 40
+                        Repeater {
+                            model: screen.results.pluginValues
+                            KeyNumber {
+                                required property var modelData
+                                label: modelData.label + " (plugin: " + modelData.plugin + ")"
+                                    + (modelData.note.length > 0 ? " - " + modelData.note : "")
+                                value: modelData.value
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Save this lookup: as JSON (built in), or with an exporter plugin.
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 12
+                AppButton {
+                    text: "Save as JSON"
+                    Accessible.name: "Save this lookup as a JSON file in Downloads"
+                    onClicked: exportResult.show(screen.results.saveJson())
+                }
+                Repeater {
+                    model: screen.results.exporters
+                    AppButton {
+                        required property var modelData
+                        text: "Save with " + modelData.name
+                        onClicked: exportResult.show(screen.results.exportWith(modelData.id))
+                    }
+                }
+                Muted {
+                    id: exportResult
+                    property string path
+                    property bool ok: true
+                    function show(reply) {
+                        ok = reply.ok
+                        path = reply.ok ? reply.path : ""
+                        text = reply.message
+                    }
+                    Layout.fillWidth: true
+                    visible: text.length > 0
+                    color: ok ? Theme.secondaryText : Theme.warnLabel
+                }
+                LinkText {
+                    visible: exportResult.path.length > 0
+                    text: "Show in folder"
+                    onActivated: screen.backend.showFolderOf(exportResult.path)
                 }
             }
 

@@ -23,6 +23,8 @@ namespace app {
 //                            one subfolder per browser (browser/<id>/), plus
 //                            their lock files (browser/<id>.lock)
 //   tmp/                     temporary files of this process
+//   plugins/                 plugins the user installed, one subfolder per
+//                            plugin (plugins/<id>/manifest.json, main.js)
 class WorkFolder {
 public:
     // The default location: <GenericDataLocation>/<appIdentifier>, which is
@@ -73,6 +75,7 @@ public:
     QString knownModelsPath() const;
     QString browserProfilesDir() const;
     QString tmpDir() const;
+    QString pluginsDir() const;
 
     static constexpr const char *kMarkerFileName = ".workfolder";
     static constexpr const char *kLockFileName = ".lock";

@@ -1,0 +1,10 @@
+{
+    "id": "example-no-reproductions",
+    "name": "Reproductions are not the item (example)",
+    "version": "1.0.0",
+    "author": "Greedbay Detective",
+    "description": "Example matcher: rows whose title says reproduction, replica, repro, clone or remake are moved to 'not this item'.",
+    "pluginApiVersion": 1,
+    "type": "matcher",
+    "permissions": ["rows"]
+}

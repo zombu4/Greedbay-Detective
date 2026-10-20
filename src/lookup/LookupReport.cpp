@@ -116,6 +116,58 @@ QString rowTitle(const LookupResult &result, const Row &row)
     return {};
 }
 
+QString rowItemId(const LookupResult &result, const Row &row)
+{
+    switch (row.source) {
+    case Row::Source::Sold:
+        return result.sold.at(row.index).itemId;
+    case Row::Source::Active:
+        return result.active.at(row.index).itemId;
+    case Row::Source::Research:
+        return result.research.at(row.index).itemId;
+    }
+    return {};
+}
+
+QString rowDate(const LookupResult &result, const Row &row)
+{
+    switch (row.source) {
+    case Row::Source::Sold:
+        return result.sold.at(row.index).soldDate;
+    case Row::Source::Research:
+        return result.research.at(row.index).lastSoldDate;
+    case Row::Source::Active:
+        break;
+    }
+    return {};
+}
+
+QString rowSeller(const LookupResult &result, const Row &row)
+{
+    switch (row.source) {
+    case Row::Source::Sold:
+        return result.sold.at(row.index).sellerName;
+    case Row::Source::Active:
+        return result.active.at(row.index).sellerName;
+    case Row::Source::Research:
+        break;
+    }
+    return {};
+}
+
+QString rowSourceName(Row::Source source)
+{
+    switch (source) {
+    case Row::Source::Sold:
+        return QStringLiteral("sold");
+    case Row::Source::Active:
+        return QStringLiteral("active");
+    case Row::Source::Research:
+        break;
+    }
+    return QStringLiteral("research");
+}
+
 QList<qsizetype> rowOrder(const LookupResult &result, const QList<Row> &rows)
 {
     QList<qsizetype> order;
@@ -138,11 +190,15 @@ QList<qsizetype> rowOrder(const LookupResult &result, const QList<Row> &rows)
 QList<Row> classifyRows(const LookupResult &result, const MatchWords &words)
 {
     QList<Row> rows;
+    // Accessory words of the pasted listing's own title name the item ("a
+    // probe" when the listing is a probe, S13).
+    Identity identity = result.identity;
+    identity.ownWords = itemOwnWords(result.item.title, identity, words);
     auto add = [&](Row::Source source, qsizetype index, const QString &title) {
         Row row;
         row.source = source;
         row.index = index;
-        row.match = matchRow(title, result.identity, words);
+        row.match = matchRow(title, identity, words);
         row.included = row.match.bucket == Bucket::SameItem;
         rows.append(row);
     };

@@ -1,15 +1,22 @@
 #include "ui/Backend.h"
 
+#include "core/ExportFiles.h"
 #include "core/PageBudget.h"
 #include "core/Settings.h"
 #include "core/Version.h"
 #include "ebay/SearchUrls.h"
+#include "lookup/LookupExport.h"
 #include "ui/PhotoProvider.h"
 
 #include <QClipboard>
+#include <QDateTime>
 #include <QDesktopServices>
+#include <QDir>
+#include <QFileInfo>
 #include <QGuiApplication>
 #include <QImage>
+#include <QProcess>
+#include <QUrl>
 
 #include <utility>
 
@@ -17,7 +24,7 @@ namespace app::ui {
 
 Backend::Backend(WorkFolder folder, const QString &connectionName, QObject *parent)
     : QObject(parent), m_folder(std::move(folder)), m_store(connectionName), m_photos(new PhotoProvider),
-      m_results(nullptr), m_recent(new RecentModel(this)), m_settings(nullptr)
+      m_results(nullptr), m_recent(new RecentModel(this)), m_history(nullptr), m_settings(nullptr)
 {
     QString error;
     m_known = lookup::KnownModels::builtIn(&error);
@@ -35,9 +42,27 @@ Backend::Backend(WorkFolder folder, const QString &connectionName, QObject *pare
     m_results = new ResultsController(
         m_store, m_words ? &*m_words : nullptr, [settingsPath]() { return Settings(settingsPath).valueSettings(); },
         [this](const QString &itemId) { return photoSourceOf(itemId); }, this);
-    // The Home cards show the numbers stored with each lookup.
+    // The Home cards and the price history show the numbers stored with each
+    // lookup.
     connect(m_results, &ResultsController::stored, this, &Backend::refreshRecent);
+    m_history = new HistoryController(m_store, m_known && m_words ? &*m_known : nullptr, m_words ? &*m_words : nullptr, this);
+    // "Re-check now": a new lookup of the item's newest listing.
+    connect(m_history, &HistoryController::recheckRequested, this, [this](const QString &input) {
+        if (!check(input, false))
+            emit sessionFailed(m_session ? m_session->errorText() : m_fatalError);
+    });
     m_settings = new SettingsController(m_folder, [this]() { return m_session && m_session->isRunning(); }, this);
+
+    // Plugins: only the enabled ones run; matchers on each lookup before it
+    // is saved, flaggers, valuators and exporters on the Results screen.
+    m_pluginCatalog = std::make_unique<plugins::PluginCatalog>(m_folder);
+    m_pluginHost = std::make_unique<plugins::PluginHost>(
+        *m_pluginCatalog, [settingsPath]() { return Settings(settingsPath).pluginCallTimeLimitMs(); });
+    m_pluginHost->reload();
+    m_plugins = new PluginsController(m_folder, *m_pluginCatalog, *m_pluginHost, this);
+    m_results->setPlugins(m_pluginHost.get());
+    if (m_session)
+        m_session->setPlugins(m_pluginHost.get());
 
     if (m_session) {
         connect(m_session, &LookupSession::saved, this, [this](qint64 lookupId) {
@@ -86,6 +111,7 @@ void Backend::refreshRecent()
         m_notice = QStringLiteral("The recent lookups cannot be read: %1").arg(error);
         emit noticeChanged();
     }
+    m_history->refresh();
 }
 
 QString Backend::pagesTodayText() const
@@ -101,6 +127,40 @@ QString Backend::pagesTodayText() const
 QString Backend::appName() const
 {
     return QString::fromLatin1(version::kDisplayName);
+}
+
+QString Backend::uninstallNote() const
+{
+#if defined(Q_OS_MACOS)
+    return QStringLiteral("The app closes, removes your data as you choose, moves itself to the Trash and shows what was "
+                          "done.");
+#elif defined(Q_OS_WIN)
+    return QStringLiteral("The app closes and starts its uninstaller, which asks the same question, removes your data as "
+                          "you choose and removes the program.");
+#else
+    return QStringLiteral("The app closes, removes your data as you choose, then removes its package (it asks for your "
+                          "password) and shows what was done.");
+#endif
+}
+
+QString Backend::uninstall(bool keepHistory)
+{
+    if (m_session && m_session->isRunning())
+        return QStringLiteral("A lookup is running: uninstall after it has finished.");
+#if defined(Q_OS_WIN)
+    Q_UNUSED(keepHistory);
+    // The installer puts the program in <install>\bin and its uninstaller in
+    // <install> (packaging/windows/NSIS.template.in).
+    const QString uninstaller = QDir::cleanPath(QCoreApplication::applicationDirPath() + QStringLiteral("/../Uninstall.exe"));
+    if (!QFileInfo(uninstaller).isFile())
+        return QStringLiteral("There is no uninstaller next to this copy of the app (%1).").arg(QDir::toNativeSeparators(uninstaller));
+    if (!QProcess::startDetached(uninstaller, {}))
+        return QStringLiteral("The uninstaller cannot be started (%1).").arg(QDir::toNativeSeparators(uninstaller));
+#else
+    m_uninstallKeep = keepHistory;
+#endif
+    QCoreApplication::quit();
+    return {};
 }
 
 QString Backend::tagline() const
@@ -151,6 +211,47 @@ QString Backend::clipboardText() const
 {
     const QClipboard *clipboard = QGuiApplication::clipboard();
     return clipboard ? clipboard->text() : QString();
+}
+
+QVariantMap Backend::exportData()
+{
+    auto reply = [](bool ok, const QString &message, const QString &path = QString()) {
+        return QVariantMap{{QStringLiteral("ok"), ok}, {QStringLiteral("message"), message}, {QStringLiteral("path"), path}};
+    };
+    QString error;
+    const std::optional<QList<lookup::LookupSummary>> summaries = m_store.recent(0, &error);
+    if (!summaries)
+        return reply(false, QStringLiteral("The saved lookups cannot be read: %1").arg(error));
+    QList<lookup::SavedLookup> lookups;
+    for (const lookup::LookupSummary &summary : *summaries) {
+        std::optional<lookup::SavedLookup> lookup = m_store.load(summary.id, &error);
+        if (!lookup)
+            return reply(false, QStringLiteral("Lookup %1 cannot be read: %2").arg(summary.id).arg(error));
+        lookups.append(std::move(*lookup));
+    }
+    const QString stem = QStringLiteral("%1-lookups-%2")
+                             .arg(QString::fromLatin1(version::kPackageName),
+                                  QDateTime::currentDateTimeUtc().toString(QStringLiteral("yyyyMMdd-HHmmss")));
+    const QString folder = exportFolder();
+    const std::optional<QString> csv = saveExport(folder, stem + QStringLiteral(".csv"), lookup::lookupsCsv(*summaries), &error);
+    if (!csv)
+        return reply(false, QStringLiteral("Not saved: %1").arg(error));
+    const std::optional<QString> json = saveExport(folder, stem + QStringLiteral(".json"), lookup::lookupsJson(lookups), &error);
+    if (!json)
+        return reply(false, QStringLiteral("Saved %1, but not the JSON file: %2").arg(QDir::toNativeSeparators(*csv), error), *csv);
+    return reply(true,
+                 QStringLiteral("Saved %1 as %2 and %3")
+                     .arg(summaries->size() == 1 ? QStringLiteral("1 lookup") : QStringLiteral("%1 lookups").arg(summaries->size()),
+                          QDir::toNativeSeparators(*csv), QDir::toNativeSeparators(*json)),
+                 *csv);
+}
+
+void Backend::showFolderOf(const QString &path) const
+{
+    const QFileInfo info(path);
+    if (path.isEmpty() || !info.exists())
+        return;
+    QDesktopServices::openUrl(QUrl::fromLocalFile(info.absolutePath()));
 }
 
 QString Backend::photoSourceOf(const QString &itemId)

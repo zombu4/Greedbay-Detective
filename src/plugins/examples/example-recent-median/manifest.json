@@ -1,0 +1,10 @@
+{
+    "id": "example-recent-median",
+    "name": "Median of the last 30 days (example)",
+    "version": "1.0.0",
+    "author": "Greedbay Detective",
+    "description": "Example valuator: the median total of the counted sold rows of the last 30 days, shown next to the app's own numbers.",
+    "pluginApiVersion": 1,
+    "type": "valuator",
+    "permissions": ["rows"]
+}

@@ -21,6 +21,9 @@ class BrowserController;
 namespace app::lookup {
 class LookupRunner;
 }
+namespace app::plugins {
+class PluginHost;
+}
 
 namespace app::ui {
 
@@ -113,6 +116,11 @@ public:
                   const lookup::LookupStore *store, QObject *parent = nullptr);
     ~LookupSession() override;
 
+    // The enabled matcher plugins run on every lookup's rows before it is
+    // saved (DESIGN 5). `host` may be null (no plugins); it must outlive the
+    // session.
+    void setPlugins(plugins::PluginHost *host) { m_plugins = host; }
+
     // False (and errorText) when a lookup runs, the input is not an eBay
     // item address or number (nothing is saved, owner decision Q21), no
     // supported browser is installed, or the browser cannot be started.
@@ -193,6 +201,7 @@ private:
     lookup::KnownModels *m_known;
     const lookup::MatchWords *m_words;
     const lookup::LookupStore *m_store;
+    plugins::PluginHost *m_plugins = nullptr;
     browser::BrowserController *m_controller = nullptr;
     lookup::LookupRunner *m_runner = nullptr;
     QNetworkAccessManager *m_network = nullptr;

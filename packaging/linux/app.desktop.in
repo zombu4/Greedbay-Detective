@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=@APP_DISPLAY_NAME@
+Comment=@PROJECT_DESCRIPTION@
+Exec=@APP_LINUX_INSTALL_PREFIX@/bin/@APP_NAME@
+Terminal=false
+Categories=Utility;

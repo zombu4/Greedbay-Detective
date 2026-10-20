@@ -4,14 +4,20 @@
 #include "lookup/KnownModels.h"
 #include "lookup/LookupStore.h"
 #include "lookup/MatchWords.h"
+#include "plugins/PluginCatalog.h"
+#include "plugins/PluginHost.h"
+#include "ui/HistoryController.h"
 #include "ui/LookupSession.h"
+#include "ui/PluginsController.h"
 #include "ui/RecentModel.h"
 #include "ui/ResultsController.h"
 #include "ui/SettingsController.h"
 
 #include <QObject>
+#include <QVariantMap>
 #include <QtQmlIntegration/qqmlintegration.h>
 
+#include <memory>
 #include <optional>
 
 namespace app::ui {
@@ -20,7 +26,8 @@ class PhotoProvider;
 
 // Everything the QML views use (the app's logic is all in C++; QML is only
 // the view, DESIGN 4.1): the lookup session, the results of the lookup
-// shown, the recent lookups, the settings, and a few actions. Main.qml gets
+// shown, the recent lookups, the price history, the settings and plugins,
+// and a few actions. Main.qml gets
 // it as its required property "backend".
 //
 // The database connection `connectionName` must be open (db/Database) for
@@ -32,12 +39,17 @@ class Backend : public QObject {
     Q_PROPERTY(LookupSession *session READ session CONSTANT)
     Q_PROPERTY(ResultsController *results READ results CONSTANT)
     Q_PROPERTY(RecentModel *recent READ recent CONSTANT)
+    Q_PROPERTY(HistoryController *history READ history CONSTANT)
+    Q_PROPERTY(PluginsController *plugins READ plugins CONSTANT)
     Q_PROPERTY(SettingsController *settings READ settings CONSTANT)
     Q_PROPERTY(QString pagesTodayText READ pagesTodayText NOTIFY pagesChanged)
     // Problems found at start that the user should know about (the user's
     // known-models file is damaged, the recent lookups cannot be read).
     Q_PROPERTY(QString notice READ notice NOTIFY noticeChanged)
     Q_PROPERTY(QString appName READ appName CONSTANT)
+    // What "Uninstall..." does with the program on this system, in plain
+    // words (the Settings screen shows it before the user decides).
+    Q_PROPERTY(QString uninstallNote READ uninstallNote CONSTANT)
     Q_PROPERTY(QString tagline READ tagline CONSTANT)
 public:
     Backend(WorkFolder folder, const QString &connectionName, QObject *parent = nullptr);
@@ -54,10 +66,13 @@ public:
     LookupSession *session() const { return m_session; }
     ResultsController *results() const { return m_results; }
     RecentModel *recent() const { return m_recent; }
+    HistoryController *history() const { return m_history; }
+    PluginsController *plugins() const { return m_plugins; }
     SettingsController *settings() const { return m_settings; }
     QString pagesTodayText() const;
     QString notice() const { return m_notice; }
     QString appName() const;
+    QString uninstallNote() const;
     QString tagline() const;
 
     // Starts a lookup for a pasted link or item number; `reviewFirst`: let
@@ -76,6 +91,23 @@ public:
     Q_INVOKABLE QString listingFromText(const QString &text) const;
     // The clipboard's text (for a paste outside a text field).
     Q_INVOKABLE QString clipboardText() const;
+    // "Export data" (DESIGN 8): every saved lookup as CSV (one line each)
+    // and as JSON (with every row), saved in the Downloads folder.
+    // {ok, message, path}: `path` is the CSV file's.
+    Q_INVOKABLE QVariantMap exportData();
+    // Shows the folder holding `path` in the system's file manager.
+    Q_INVOKABLE void showFolderOf(const QString &path) const;
+
+    // "Uninstall..." (PLAN 9, owner decision: full uninstall with a prompt
+    // to keep saved history). Refused while a lookup runs (the reason is
+    // returned). macOS and Linux: records the choice and quits; main() then
+    // removes the data (core/Uninstall) once the database, the log and the
+    // lock are closed, removes the program and shows what was done. Windows:
+    // starts the installer's uninstaller, which asks the same question and
+    // removes the data and the program, and quits. Empty when it went ahead.
+    Q_INVOKABLE QString uninstall(bool keepHistory);
+    // The choice uninstall() recorded (macOS and Linux), if any.
+    std::optional<bool> uninstallRequest() const { return m_uninstallKeep; }
 
 signals:
     void pagesChanged();
@@ -103,6 +135,12 @@ private:
     LookupSession *m_session = nullptr;
     ResultsController *m_results;
     RecentModel *m_recent;
+    HistoryController *m_history;
+    // Plugins: the catalog, then the host that runs the enabled ones.
+    std::unique_ptr<plugins::PluginCatalog> m_pluginCatalog;
+    std::unique_ptr<plugins::PluginHost> m_pluginHost;
+    PluginsController *m_plugins = nullptr;
+    std::optional<bool> m_uninstallKeep;
     SettingsController *m_settings;
 };
 

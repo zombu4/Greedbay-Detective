@@ -70,9 +70,12 @@ ApplicationWindow {
         ResultsScreen {
             backend: window.backend
         }
-        PriceHistoryScreen {}
+        PriceHistoryScreen {
+            backend: window.backend
+        }
         SettingsScreen {
             settings: window.backend.settings
+            backend: window.backend
         }
     }
 
@@ -91,8 +94,10 @@ ApplicationWindow {
         onActivated: window.checkListing(window.backend.clipboardText())
     }
 
+    // Not on Settings, where a dropped folder or .zip installs a plugin.
     DropArea {
         anchors.fill: parent
+        enabled: window.screen !== 3
         onDropped: (drop) => {
             const text = drop.hasUrls ? drop.urls[0].toString() : drop.text
             if (window.checkListing(text))

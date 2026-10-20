@@ -28,6 +28,7 @@ const char *const kSubfolders[] = {
     "logs",
     "browser",
     "tmp",
+    "plugins",
 };
 
 // The marker holds one UUID and a newline; anything longer is malformed.
@@ -209,5 +210,6 @@ QString WorkFolder::pageCountPath() const { return m_path + QStringLiteral("/pag
 QString WorkFolder::knownModelsPath() const { return m_path + QStringLiteral("/known-models.json"); }
 QString WorkFolder::browserProfilesDir() const { return m_path + QStringLiteral("/browser"); }
 QString WorkFolder::tmpDir() const { return m_path + QStringLiteral("/tmp"); }
+QString WorkFolder::pluginsDir() const { return m_path + QStringLiteral("/plugins"); }
 
 } // namespace app

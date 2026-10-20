@@ -71,6 +71,10 @@ struct ItemRecord {
     std::optional<qint64> shippingCents;
     QString condition; // as eBay shows it (item extractor's conditionText)
     QString sellerName;
+    // The seller card's feedback score and positive percentage, when the
+    // page showed them.
+    std::optional<int> sellerFeedbackCount;
+    std::optional<double> sellerPositivePercent;
     // Format (owner decision 2026-10-19 "Buy It Now vs auction"): an auction
     // (the bid block or "Place bid"), its bid count, "Ends in" ("3d 22h") and
     // the weekday and time ("Friday, 06:28 PM") as shown, the end resolved

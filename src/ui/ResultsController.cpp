@@ -1,8 +1,13 @@
 #include "ui/ResultsController.h"
 
+#include "core/ExportFiles.h"
 #include "lookup/AuctionTime.h"
+#include "lookup/LookupExport.h"
+#include "plugins/PluginHost.h"
 #include "ui/Format.h"
 
+#include <QDir>
+#include <QJsonDocument>
 #include <QJsonObject>
 #include <QLocale>
 #include <QTimeZone>
@@ -142,11 +147,70 @@ bool ResultsController::show(qint64 lookupId, QString *error)
     m_saved = std::move(*saved);
     m_storeError.clear();
     m_photoSource = m_photoSourceOf(m_saved.result.item.itemId);
+    m_pluginNotices.clear();
     recompute();
+    runPlugins();
     m_sameItem->reset(entries(true));
     m_notThisItem->reset(entries(false));
     emit changed();
     return true;
+}
+
+void ResultsController::runPlugins()
+{
+    m_pluginFlags.clear();
+    m_pluginValues.clear();
+    m_exporters.clear();
+    if (!m_plugins || !hasLookup())
+        return;
+    for (const plugins::PluginFlag &flag : m_plugins->flags(m_saved.result, m_saved.rows)) {
+        m_pluginFlags.append(QVariantMap{{QStringLiteral("plugin"), flag.pluginName},
+                                         {QStringLiteral("text"), flag.text},
+                                         {QStringLiteral("kind"), flag.kind}});
+    }
+    for (const plugins::PluginValue &value : m_plugins->values(m_saved.result, m_saved.rows)) {
+        m_pluginValues.append(QVariantMap{{QStringLiteral("plugin"), value.pluginName},
+                                          {QStringLiteral("label"), value.label},
+                                          {QStringLiteral("value"), moneyText(value.cents)},
+                                          {QStringLiteral("note"), value.note}});
+    }
+    for (const plugins::PluginManifest &exporter : m_plugins->exporters())
+        m_exporters.append(QVariantMap{{QStringLiteral("id"), exporter.id}, {QStringLiteral("name"), exporter.name}});
+    m_pluginNotices.append(m_plugins->takeFailures());
+}
+
+QVariantMap ResultsController::saveFile(const QString &fileName, const QByteArray &data) const
+{
+    QString error;
+    const std::optional<QString> path = saveExport(exportFolder(), fileName, data, &error);
+    if (!path)
+        return {{QStringLiteral("ok"), false}, {QStringLiteral("message"), QStringLiteral("Not saved: %1").arg(error)}};
+    return {{QStringLiteral("ok"), true},
+            {QStringLiteral("message"), QStringLiteral("Saved as %1").arg(QDir::toNativeSeparators(*path))},
+            {QStringLiteral("path"), *path}};
+}
+
+QVariantMap ResultsController::saveJson()
+{
+    if (!hasLookup())
+        return {{QStringLiteral("ok"), false}, {QStringLiteral("message"), QStringLiteral("No lookup is shown.")}};
+    const QString name = m_saved.result.item.itemId.isEmpty() ? QString::number(m_saved.id) : m_saved.result.item.itemId;
+    return saveFile(QStringLiteral("lookup-%1-%2.json").arg(name, m_saved.createdAt.toUTC().toString(QStringLiteral("yyyyMMdd-HHmmss"))),
+                    QJsonDocument(lookup::lookupJson(m_saved)).toJson(QJsonDocument::Indented));
+}
+
+QVariantMap ResultsController::exportWith(const QString &pluginId)
+{
+    if (!hasLookup() || !m_plugins)
+        return {{QStringLiteral("ok"), false}, {QStringLiteral("message"), QStringLiteral("No lookup is shown.")}};
+    QString error;
+    const std::optional<plugins::PluginExport> file = m_plugins->exportLookup(pluginId, m_saved.result, m_saved.rows, &error);
+    if (!file) {
+        runPlugins();
+        emit changed();
+        return {{QStringLiteral("ok"), false}, {QStringLiteral("message"), QStringLiteral("Not saved: %1").arg(error)}};
+    }
+    return saveFile(file->fileName, file->data);
 }
 
 void ResultsController::photoChanged()
@@ -161,6 +225,7 @@ void ResultsController::setIncluded(int row, bool included)
         return;
     m_saved.rows[row].included = included;
     recompute();
+    runPlugins();
     QString error;
     m_storeError = m_store.updateIncluded(m_saved.id, m_saved.result, m_saved.rows, m_valuation, &error)
                        ? QString()

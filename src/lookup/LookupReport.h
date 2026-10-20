@@ -63,6 +63,13 @@ Valuation valuate(const LookupResult &result, const QList<Row> &rows, const Valu
 std::optional<qint64> rowTotal(const LookupResult &result, const Row &row);
 QString rowCondition(const LookupResult &result, const Row &row);
 QString rowTitle(const LookupResult &result, const Row &row);
+// A row's item number, its date (sold rows: the sold date; Product Research
+// rows: the last sold date; for-sale rows: none), its seller (none for
+// Product Research rows), and its source as "sold", "active" or "research".
+QString rowItemId(const LookupResult &result, const Row &row);
+QString rowDate(const LookupResult &result, const Row &row);
+QString rowSeller(const LookupResult &result, const Row &row);
+QString rowSourceName(Row::Source source);
 
 // The rows in report order: by bucket (same item first), then by total,
 // lowest first; rows without a total last.

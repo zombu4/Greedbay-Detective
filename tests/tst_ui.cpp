@@ -10,6 +10,7 @@
 #include "lookup/LookupReport.h"
 #include "lookup/LookupStore.h"
 #include "ui/Backend.h"
+#include "ui/HistoryController.h"
 #include "ui/Fonts.h"
 #include "ui/PhotoProvider.h"
 
@@ -23,6 +24,7 @@
 #include <QQuickItem>
 #include <QQuickStyle>
 #include <QQuickWindow>
+#include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QTest>
 #include <QtQml/qqmlextensionplugin.h>
@@ -103,6 +105,7 @@ private slots:
     void manySuggestionsShortList();
     void nothingFoundIsSaid();
     void auctionsAndFormats();
+    void priceHistoryScreen();
 };
 
 void TestUi::initTestCase()
@@ -418,7 +421,22 @@ void TestUi::panelsLoad()
                                              {"activeDepth", 240},
                                              {"researchDepth", 0},
                                              {"error", "Enter at least one search, one per line."}}));
-    QVERIFY(loadItem("PriceHistoryScreen", {}));
+    QVERIFY(loadItem("PriceChart", {{"sales", QVariantList{QVariantMap{{"time", 1.0e12}, {"cents", 9000.0}, {"label", "$90.00"}},
+                                                           QVariantMap{{"time", 1.1e12}, {"cents", 11200.0}, {"label", "$112.00"}}}},
+                                    {"checks", QVariantList{QVariantMap{{"lookupId", 1}, {"time", 1.05e12}, {"cents", 16500.0},
+                                                                        {"checked", "today 10:00"}, {"total", "$165.00"}}}},
+                                    {"minTime", 0.9e12},
+                                    {"maxTime", 1.2e12},
+                                    {"minCents", 8000.0},
+                                    {"maxCents", 17500.0},
+                                    {"bandLow", 9500.0},
+                                    {"bandHigh", 10600.0},
+                                    {"median", 10050.0},
+                                    {"medianLabel", "median $100.50"},
+                                    {"startLabel", "Jul 22, 2026"},
+                                    {"endLabel", "Oct 20, 2026"},
+                                    {"lowLabel", "$80.00"},
+                                    {"highLabel", "$175.00"}}));
     // The editor and the startup window are windows / popups of their own.
     {
         QQmlEngine engine;
@@ -603,6 +621,60 @@ void TestUi::auctionsAndFormats()
     QVERIFY(!results->isAuction());
     QCOMPARE(results->formatText(), QStringLiteral("-"));
     QVERIFY(results->auctionLines().isEmpty());
+}
+
+// The Price history screen's controller over the saved lookup (no dates are
+// checked here: they depend on the day the test runs; History is tested with
+// a fixed day in tst_lookupstore).
+void TestUi::priceHistoryScreen()
+{
+    QString error;
+    const std::optional<app::lookup::KnownModels> known = app::lookup::KnownModels::builtIn(&error);
+    const std::optional<app::lookup::MatchWords> words = app::lookup::MatchWords::builtIn(&error);
+    QVERIFY2(known && words, qPrintable(error));
+    const LookupStore store(QStringLiteral("app"));
+    app::ui::HistoryController history(store, &*known, &*words);
+    history.refresh();
+    QVERIFY2(history.message().isEmpty(), qPrintable(history.message()));
+    // Every checked item is a pill; the saved Acme Q9 lookup is one of them
+    // (other tests save more lookups before this one).
+    QString acmeQ9;
+    for (const QVariant &item : history.items()) {
+        if (item.toMap().value(QStringLiteral("name")).toString() == QLatin1String("Acme Q9"))
+            acmeQ9 = item.toMap().value(QStringLiteral("key")).toString();
+    }
+    QVERIFY(!acmeQ9.isEmpty());
+    history.select(acmeQ9);
+    QCOMPARE(history.currentKey(), acmeQ9);
+    QCOMPARE(history.heading(), QStringLiteral("Acme Q9 - sold prices over time"));
+    QCOMPARE(history.windowDays(), 90);
+    // The saved lookup is one of the item's checks, with its listing total.
+    bool found = false;
+    for (const QVariant &check : history.checks()) {
+        const QVariantMap entry = check.toMap();
+        if (entry.value(QStringLiteral("lookupId")).toLongLong() == m_lookupId) {
+            found = true;
+            QCOMPARE(entry.value(QStringLiteral("total")).toString(), QStringLiteral("$165.00"));
+        }
+    }
+    QVERIFY(found);
+    // Only the offered windows.
+    history.setWindow(365);
+    QCOMPARE(history.windowDays(), 365);
+    history.setWindow(7);
+    QCOMPARE(history.windowDays(), 365);
+    // "Re-check now" asks for a new lookup of the newest listing.
+    QVERIFY(history.canRecheck());
+    QSignalSpy spy(&history, &app::ui::HistoryController::recheckRequested);
+    history.recheck();
+    QCOMPARE(spy.size(), 1);
+    QVERIFY(!spy.first().first().toString().isEmpty());
+    // No data: a sentence, no item.
+    app::ui::HistoryController empty(store, nullptr, nullptr);
+    empty.refresh();
+    QVERIFY(empty.items().isEmpty());
+    QVERIFY(!empty.message().isEmpty());
+    QVERIFY(!empty.canRecheck());
 }
 
 int main(int argc, char *argv[])

@@ -6,6 +6,7 @@
 // seller and number is invented.
 #include "db/Database.h"
 #include "db/Migrations.h"
+#include "lookup/History.h"
 #include "lookup/LookupReport.h"
 #include "lookup/LookupRunner.h"
 #include "lookup/LookupStore.h"
@@ -18,6 +19,8 @@
 #include <QSqlQuery>
 #include <QTemporaryDir>
 #include <QTest>
+
+#include <algorithm>
 
 using namespace app::lookup;
 using app::Database;
@@ -39,7 +42,7 @@ QJsonObject itemData()
                        {"currency", "USD"},
                        {"shippingCents", 4500},
                        {"conditionText", "Used"},
-                       {"seller", QJsonObject{{"name", "examplestore"}}},
+                       {"seller", QJsonObject{{"name", "examplestore"}, {"feedbackCount", 7}, {"positivePercent", 98.5}}},
                        {"specifics", QJsonArray{QJsonObject{{"label", "Brand"}, {"value", "Acme"}},
                                                 QJsonObject{{"label", "Model"}, {"value", "Q9"}}}}};
 }
@@ -148,6 +151,7 @@ private slots:
     void recentList();
     void statusesMapBothWays();
     void identitiesAndPhotos();
+    void priceHistory();
     void upgradesVersion1();
 };
 
@@ -230,6 +234,8 @@ void TestLookupStore::roundTrip()
     QCOMPARE(back.item.shippingCents, result.item.shippingCents);
     QCOMPARE(back.item.condition, QStringLiteral("Used"));
     QCOMPARE(back.item.sellerName, QStringLiteral("examplestore"));
+    QCOMPARE(back.item.sellerFeedbackCount, std::optional<int>(7));
+    QCOMPARE(back.item.sellerPositivePercent, std::optional<double>(98.5));
     QCOMPARE(back.item.specifics.size(), 2);
     QCOMPARE(back.item.specific(QStringLiteral("Model")), QStringLiteral("Q9"));
     QCOMPARE(back.identity.brandName, result.identity.brandName);
@@ -399,10 +405,67 @@ void TestLookupStore::identitiesAndPhotos()
 // A version-1 database with one lookup of every kind of row becomes version
 // 2: backed up first, the rows copied as described in 0002_saved_lookups.sql,
 // the version-1 tables gone.
+void TestLookupStore::priceHistory()
+{
+    QVERIFY(Database::open(QStringLiteral("main"), m_db, m_backups, QStringLiteral(TEST_APP_NAME), shippedMigrations()).ok());
+    const LookupResult result = runLookup();
+    QList<Row> rows = classifyRows(result, m_words);
+    const Valuation valuation = valuate(result, rows, app::ValueSettings());
+    const LookupStore store(QStringLiteral("main"));
+    QString error;
+    const std::optional<qint64> older = store.save(QStringLiteral("a"), result, rows, valuation, Depths{1, 1, 1}, 90, &error);
+    const std::optional<qint64> newer = store.save(QStringLiteral("b"), result, rows, valuation, Depths{1, 1, 1}, 90, &error);
+    QVERIFY2(older && newer, qPrintable(error));
+    QCOMPARE(store.recent(0, &error)->first().input, QStringLiteral("b"));
+
+    // Both lookups are one item.
+    const std::optional<QList<LookupSummary>> all = store.recent(0, &error);
+    const QList<HistoryItem> items = historyItems(*all, m_known);
+    QCOMPARE(items.size(), 1);
+    QCOMPARE(items.first().checks.size(), 2);
+    QCOMPARE(items.first().checks.first().id, *newer);
+
+    // Sale rows: the confirmed sold rows and the one-sale research row, newest
+    // lookup first.
+    std::optional<QList<HistorySaleRow>> sales = store.historySales({*newer, *older}, &error);
+    QVERIFY2(sales, qPrintable(error));
+    QCOMPARE(sales->size(), 10); // 4 confirmed sold + 1 research, twice
+    QCOMPARE(sales->first().lookupId, *newer);
+    // Each listing once; the manual is not counted; totals incl. shipping.
+    HistoryPoints points = historyPoints(*sales, QDate(2026, 10, 20), 90);
+    QCOMPARE(points.sales.size(), 4);
+    QCOMPARE(points.sales.first().soldOn, QDate(2026, 9, 12));
+    QCOMPARE(points.sales.first().totalCents, 11000);
+    QCOMPARE(points.medianCents, std::optional<qint64>(10500));
+    QCOMPARE(points.p25Cents, std::optional<qint64>(9750));
+    QCOMPARE(points.p75Cents, std::optional<qint64>(11050));
+    // A shorter window leaves the September sale out.
+    QCOMPARE(historyPoints(*sales, QDate(2026, 10, 20), 30).sales.size(), 3);
+
+    // The newest lookup's ticks decide: unticking a sale there removes it.
+    rows[0].included = false;
+    QVERIFY2(store.updateIncluded(*newer, result, rows, valuate(result, rows, app::ValueSettings()), &error), qPrintable(error));
+    sales = store.historySales({*newer, *older}, &error);
+    points = historyPoints(*sales, QDate(2026, 10, 20), 90);
+    QCOMPARE(points.sales.size(), 3);
+    QVERIFY(std::none_of(points.sales.cbegin(), points.sales.cend(),
+                         [](const HistorySale &sale) { return sale.itemId == QLatin1String("200000000001"); }));
+
+    // One item under any brand name or family member (the built-in data).
+    const std::optional<KnownModels> builtIn = KnownModels::builtIn(&error);
+    QVERIFY2(builtIn, qPrintable(error));
+    QCOMPARE(historyKey(QStringLiteral("HP"), QStringLiteral("8904A"), *builtIn),
+             historyKey(QStringLiteral("Hewlett Packard"), QStringLiteral("8904a"), *builtIn));
+    QCOMPARE(historyKey(QStringLiteral("Marconi"), QStringLiteral("2022D"), *builtIn),
+             historyKey(QStringLiteral("Marconi"), QStringLiteral("2022"), *builtIn));
+    QVERIFY(historyKey(QStringLiteral("Sencore"), QStringLiteral("PR57"), *builtIn)
+            != historyKey(QStringLiteral("Sencore"), QStringLiteral("PR570"), *builtIn));
+}
+
 void TestLookupStore::upgradesVersion1()
 {
     const QList<app::Migration> all = shippedMigrations();
-    QCOMPARE(all.size(), 3);
+    QCOMPARE(all.size(), 4);
     const Database::Result created =
         Database::open(QStringLiteral("v1"), m_db, m_backups, QStringLiteral(TEST_APP_NAME), all.mid(0, 1));
     QVERIFY2(created.ok(), qPrintable(created.error));
@@ -446,7 +509,7 @@ void TestLookupStore::upgradesVersion1()
     QVERIFY2(upgraded.ok(), qPrintable(upgraded.error));
     QCOMPARE(upgraded.outcome, Database::Outcome::Upgraded);
     QCOMPARE(upgraded.fromVersion, 1);
-    QCOMPARE(upgraded.toVersion, 3);
+    QCOMPARE(upgraded.toVersion, 4);
     QVERIFY(QFileInfo::exists(upgraded.backupPath));
     QCOMPARE(scalar(QStringLiteral("v2"), QStringLiteral("PRAGMA integrity_check")).toString(), QStringLiteral("ok"));
     for (const char *table : {"lookup", "listing", "research_summary", "valuation", "excluded_listing"}) {

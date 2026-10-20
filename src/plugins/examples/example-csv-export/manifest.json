@@ -1,0 +1,10 @@
+{
+    "id": "example-csv-export",
+    "name": "Rows as CSV (example)",
+    "version": "1.0.0",
+    "author": "Greedbay Detective",
+    "description": "Example exporter: saves the lookup's rows (where, total, eBay condition, date, counted or not, title) as a CSV file.",
+    "pluginApiVersion": 1,
+    "type": "exporter",
+    "permissions": ["listing", "rows", "export"]
+}
