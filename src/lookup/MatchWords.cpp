@@ -1,5 +1,7 @@
 #include "lookup/MatchWords.h"
 
+#include "lookup/Text.h"
+
 #include <QFile>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -34,6 +36,9 @@ std::optional<MatchWords> MatchWords::fromJson(const QByteArray &json, QString *
     }
     MatchWords words;
     auto wordsOf = [&root](const char *key) { return root.value(QLatin1String(key)).toObject().value(QStringLiteral("words")); };
+    auto patternsOf = [&root](const char *key) {
+        return root.value(QLatin1String(key)).toObject().value(QStringLiteral("patterns"));
+    };
     const struct {
         QJsonValue value;
         QStringList *list;
@@ -41,12 +46,20 @@ std::optional<MatchWords> MatchWords::fromJson(const QByteArray &json, QString *
     } lists[] = {
         {wordsOf("specUnits"), &words.specUnits, "specUnits"},
         {wordsOf("specPrefixes"), &words.specPrefixes, "specPrefixes"},
-        {root.value(QStringLiteral("notModels")).toObject().value(QStringLiteral("patterns")), &words.notModels, "notModels"},
+        {wordsOf("specUnitsGlued"), &words.specUnitsGlued, "specUnitsGlued"},
+        {wordsOf("specUnitsInPairs"), &words.specUnitsInPairs, "specUnitsInPairs"},
+        {patternsOf("notModels"), &words.notModels, "notModels"},
+        {wordsOf("optionWords"), &words.optionWords, "optionWords"},
+        {wordsOf("modelWords"), &words.modelWords, "modelWords"},
+        {wordsOf("notCodePrefixes"), &words.notCodePrefixes, "notCodePrefixes"},
+        {wordsOf("tubeTypes"), &words.tubeTypes, "tubeTypes"},
         {wordsOf("notBrands"), &words.notBrands, "notBrands"},
         {wordsOf("lot"), &words.lot, "lot"},
         {wordsOf("documentation"), &words.documentation, "documentation"},
         {wordsOf("partFits"), &words.partFits, "partFits"},
         {wordsOf("partWords"), &words.partWords, "partWords"},
+        {wordsOf("partOnly"), &words.partOnly, "partOnly"},
+        {patternsOf("partPatterns"), &words.partPatterns, "partPatterns"},
         {wordsOf("kitWords"), &words.kitWords, "kitWords"},
         {wordsOf("kitParts"), &words.kitParts, "kitParts"},
         {wordsOf("kitFor"), &words.kitFor, "kitFor"},
@@ -54,8 +67,15 @@ std::optional<MatchWords> MatchWords::fromJson(const QByteArray &json, QString *
         {wordsOf("likelyBroken"), &words.likelyBroken, "likelyBroken"},
         {wordsOf("partsConditions"), &words.partsConditions, "partsConditions"},
         {wordsOf("accessory"), &words.accessory, "accessory"},
+        {wordsOf("notAccessory"), &words.notAccessory, "notAccessory"},
         {wordsOf("withItem"), &words.withItem, "withItem"},
         {wordsOf("companion"), &words.companion, "companion"},
+        {wordsOf("merchandise"), &words.merchandise, "merchandise"},
+        {wordsOf("systemCategories"), &words.systemCategories, "systemCategories"},
+        {wordsOf("itemNouns"), &words.itemNouns, "itemNouns"},
+        {wordsOf("media"), &words.media, "media"},
+        {wordsOf("systemAccessory"), &words.systemAccessory, "systemAccessory"},
+        {wordsOf("reissue"), &words.reissue, "reissue"},
     };
     for (const auto &entry : lists) {
         if (!readList(entry.value, entry.list)) {
@@ -63,12 +83,16 @@ std::optional<MatchWords> MatchWords::fromJson(const QByteArray &json, QString *
             return std::nullopt;
         }
     }
-    for (const QString &pattern : std::as_const(words.notModels)) {
-        if (!QRegularExpression(pattern).isValid()) {
-            *error = QStringLiteral("the notModels pattern %1 is not a valid regular expression").arg(pattern);
-            return std::nullopt;
+    for (const QStringList *patterns : {&words.notModels, &words.partPatterns}) {
+        for (const QString &pattern : *patterns) {
+            if (!QRegularExpression(pattern).isValid()) {
+                *error = QStringLiteral("the pattern %1 is not a valid regular expression").arg(pattern);
+                return std::nullopt;
+            }
         }
     }
+    for (const QString &type : std::as_const(words.tubeTypes))
+        words.tubeCodes.insert(normalizeCode(type));
     return words;
 }
 

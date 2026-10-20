@@ -112,6 +112,10 @@
                 {
                     "name": "Heathnco",
                     "search": false
+                },
+                {
+                    "name": "Heath Kit",
+                    "search": false
                 }
             ]
         },
@@ -3612,7 +3616,7 @@
         },
         {
             "brand": "heathkit",
-            "model": "10-30",
+            "model": "IO-30",
             "family": [],
             "notes": []
         },
@@ -3636,7 +3640,7 @@
         },
         {
             "brand": "heathkit",
-            "model": "10W-12",
+            "model": "IO-12",
             "family": [],
             "notes": []
         },
@@ -3648,7 +3652,7 @@
         },
         {
             "brand": "heathkit",
-            "model": "0-12",
+            "model": "O-12",
             "family": [],
             "notes": []
         },
@@ -3816,7 +3820,7 @@
         },
         {
             "brand": "tektronix",
-            "model": "TTSG131A",
+            "model": "TSG131A",
             "family": [],
             "notes": []
         },

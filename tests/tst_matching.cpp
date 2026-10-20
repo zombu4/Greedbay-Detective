@@ -46,16 +46,20 @@ private:
 
 private slots:
     void initTestCase();
-    void dataFilesNameTheirSources();
+    void dataFiles();
     void userFileSavesAndReloads();
     void userFileIsNotTrustedBlindly();
     void titleWords();
     void specifications_data();
     void specifications();
+    void modelLike_data();
+    void modelLike();
     void identityPerCase();
     void identityWithoutKnownBrand();
+    void identityBrandScan();
     void rows_data();
     void rows();
+    void ownWordsOfTheListing();
     void valueOverAllRows();
     void partsKitIsNotCheapest();
     void heathZenithFamily();
@@ -74,7 +78,7 @@ void TestMatching::initTestCase()
     m_words = *words;
 }
 
-void TestMatching::dataFilesNameTheirSources()
+void TestMatching::dataFiles()
 {
     // The shipped data reads with every source required (builtIn did).
     QCOMPARE(m_known.brands().size(), 80);
@@ -99,6 +103,17 @@ void TestMatching::dataFilesNameTheirSources()
     QVERIFY(!m_known.brandByName(QStringLiteral("Knight")));
     QCOMPARE(m_known.brandByName(QStringLiteral("Allied Knight"))->id, QStringLiteral("knight"));
     QVERIFY(!m_known.findModel(QStringLiteral("sencore"), QStringLiteral("PR5700")));
+    // Seller spellings replaced by the sourced ones (owner decision 2026-10-20).
+    for (const char *code : {"O-12", "IO-12", "IO-30"}) {
+        QVERIFY2(m_known.findModel(QStringLiteral("heathkit"), QLatin1String(code)), code);
+    }
+    QVERIFY(m_known.findModel(QStringLiteral("tektronix"), QStringLiteral("TSG131A")));
+    QVERIFY(!m_known.findModel(QStringLiteral("tektronix"), QStringLiteral("TTSG131A")));
+    QVERIFY(!m_known.findModel(QStringLiteral("heathkit"), QStringLiteral("10W-12")));
+    // "Heath Kit" is a name of Heathkit, never searched (S8).
+    const Brand *heathKit = m_known.brandByName(QStringLiteral("heath kit"));
+    QVERIFY(heathKit);
+    QCOMPARE(heathKit->id, QStringLiteral("heathkit"));
     // The shipped data holds only what the app reads: no "source" or
     // "decision" fields at any level, in either file.
     QFile builtInFile(QStringLiteral(":/lookup/known-models.json"));
@@ -223,6 +238,84 @@ void TestMatching::specifications_data()
     QTest::newRow("IM-13") << "Heathkit IM-13 VTVM" << "IM-13" << false;
     QTest::newRow("8904A") << "HP 8904A synthesizer" << "8904A" << false;
     QTest::newRow("2022D") << "Marconi 2022D" << "2022D" << false;
+    // Brand-scan S1 and retro-scan R5, R9.
+    QTest::newRow("10-WATT") << "amplifier 10-WATT" << "10-WATT" << true;
+    QTest::newRow("2KW") << "linear amplifier 2KW" << "2KW" << true;
+    QTest::newRow("2M/6M") << "transceiver 2M/6M" << "2M/6M" << true;
+    QTest::newRow("3.5MM") << "jack 3.5MM" << "3.5MM" << true;
+    QTest::newRow("2-CHANNEL") << "scope 2-CHANNEL" << "2-CHANNEL" << true;
+    QTest::newRow("4CH") << "scope 4CH" << "4CH" << true;
+    QTest::newRow("2-PORT") << "analyzer 2-PORT" << "2-PORT" << true;
+    QTest::newRow("16BIT") << "generator 16BIT" << "16BIT" << true;
+    QTest::newRow("250MSa/s") << "generator 250MSa/s" << "250MSa/s" << true;
+    QTest::newRow("20GSa/s") << "scope 20GSa/s" << "20GSa/s" << true;
+    QTest::newRow("0-8V/3A") << "supply 0-8V/3A" << "0-8V/3A" << true;
+    QTest::newRow("+-25V/1A") << "supply +-25V/1A" << "+-25V/1A" << true;
+    QTest::newRow("0-15A") << "supply 0-15A" << "0-15A" << true;
+    QTest::newRow("1HP") << "motor 1HP" << "1HP" << true;
+    QTest::newRow("30DB") << "attenuator 30DB" << "30DB" << true;
+    QTest::newRow("100MH") << "inductor 100MH" << "100MH" << true;
+    QTest::newRow("30MF") << "capacitor 30MF" << "30MF" << true;
+    QTest::newRow("10-CIRCUIT") << "switch 10-CIRCUIT" << "10-CIRCUIT" << true;
+    QTest::newRow("5-20MM") << "fuse 5-20MM" << "5-20MM" << true;
+    QTest::newRow("64GB") << "console 64GB" << "64GB" << true;
+    QTest::newRow("1TB") << "drive 1TB" << "1TB" << true;
+    QTest::newRow("512KB") << "memory 512KB" << "512KB" << true;
+    QTest::newRow("11OZ") << "mug 11OZ" << "11OZ" << true;
+    QTest::newRow("270GSM") << "print 270GSM" << "270GSM" << true;
+    QTest::newRow("5FT") << "cable 5FT" << "5FT" << true;
+    QTest::newRow("6PIN") << "cable 6PIN" << "6PIN" << true;
+    QTest::newRow("14-PIN") << "socket 14-PIN" << "14-PIN" << true;
+    // A and M count only in ranges and pairs; K sizes stay (ZX Spectrum 48K).
+    QTest::newRow("30A alone") << "supply 30A" << "30A" << false;
+    QTest::newRow("48K") << "Sinclair ZX Spectrum 48K" << "48K" << false;
+    QTest::newRow("10-30") << "Heathkit oscilloscope 10-30" << "10-30" << false;
+    QTest::newRow("E3634A") << "HP E3634A 0-25V/7A" << "E3634A" << false;
+    QTest::newRow("64/128") << "Enterprise 64/128" << "64/128" << false;
+}
+
+void TestMatching::modelLike_data()
+{
+    QTest::addColumn<QString>("title");
+    QTest::addColumn<QString>("word");
+    QTest::addColumn<bool>("modelLike");
+    // Connectors, buses, video and size specs, versions (S1, R5, R9, R10).
+    QTest::newRow("APC-7") << "adapter APC-7 to N" << "APC-7" << false;
+    QTest::newRow("10-IN-1") << "tool 10-IN-1" << "10-IN-1" << false;
+    QTest::newRow("1080P") << "console HDMI 1080P" << "1080P" << false;
+    QTest::newRow("3D") << "glasses 3D" << "3D" << false;
+    QTest::newRow("2.4G") << "wireless 2.4G" << "2.4G" << false;
+    QTest::newRow("DB9") << "cable DB9" << "DB9" << false;
+    QTest::newRow("DB-25") << "cable DB-25" << "DB-25" << false;
+    QTest::newRow("RS232") << "port RS232" << "RS232" << false;
+    QTest::newRow("RS-423") << "port RS-423" << "RS-423" << false;
+    QTest::newRow("S-100") << "bus S-100" << "S-100" << false;
+    QTest::newRow("PS/2") << "keyboard PS/2" << "PS/2" << false;
+    QTest::newRow("V1.15") << "ROM V1.15" << "V1.15" << false;
+    QTest::newRow("REV.6A") << "board REV.6A" << "REV.6A" << false;
+    QTest::newRow("MOS3.20") << "ROM MOS3.20" << "MOS3.20" << false;
+    QTest::newRow("H150MM") << "stand H150MM" << "H150MM" << false;
+    // Option codes (S2).
+    QTest::newRow("Opt 1E5") << "HP 8904A Opt 1E5" << "1E5" << false;
+    QTest::newRow("Opt 1E5 1EA") << "HP 8904A Opt 1E5 1EA" << "1EA" << false;
+    QTest::newRow("Option H05") << "HP 8904A Option H05" << "H05" << false;
+    // Models stay models.
+    QTest::newRow("E3634A") << "HP E3634A supply" << "E3634A" << true;
+    QTest::newRow("DSOX1204G") << "Keysight DSOX1204G scope" << "DSOX1204G" << true;
+    QTest::newRow("IM-13") << "Heathkit IM-13" << "IM-13" << true;
+    QTest::newRow("48K") << "ZX Spectrum 48K" << "48K" << true;
+    QTest::newRow("model after option word") << "Opt 1E5 HP 8904A" << "8904A" << true;
+}
+
+void TestMatching::modelLike()
+{
+    QFETCH(QString, title);
+    QFETCH(QString, word);
+    QFETCH(bool, modelLike);
+    const QStringList words = app::lookup::titleWords(title);
+    const qsizetype at = words.indexOf(word);
+    QVERIFY2(at >= 0, qPrintable(words.join(QLatin1Char('|'))));
+    QCOMPARE(isModelLike(words, at, m_words), modelLike);
 }
 
 void TestMatching::specifications()
@@ -384,6 +477,39 @@ void TestMatching::identityWithoutKnownBrand()
     QVERIFY2(none.reason.contains(QStringLiteral("no brand")), qPrintable(none.reason));
 }
 
+void TestMatching::identityBrandScan()
+{
+    const QList<ItemRecord::Specific> acme{{QStringLiteral("Brand"), QStringLiteral("Acme")}};
+    auto modelOf = [this, &acme](const char *title) {
+        const Identity identity = identify(item(QLatin1String(title), acme), m_known, m_words);
+        return identity.confident ? identity.model : QString();
+    };
+    // S17: digits only right after the brand (or "<brand> model") is the model.
+    QCOMPARE(modelOf("Acme 2445 oscilloscope 150MHz"), QStringLiteral("2445"));
+    QCOMPARE(modelOf("Acme model 2445 scope"), QStringLiteral("2445"));
+    QCOMPARE(modelOf("Acme oscilloscope 2445"), QString());
+    QCOMPARE(modelOf("Acme 100 W amplifier"), QString());
+    // S18: a short letter word and a number written apart, right after the brand.
+    QCOMPARE(modelOf("Acme TC 154 tube checker"), QStringLiteral("TC154"));
+    QCOMPARE(modelOf("Acme No 5 tester"), QString());
+    // S4: a seller's code at the end of the title.
+    QCOMPARE(modelOf("Acme M7X meter GB925"), QStringLiteral("M7X"));
+    QCOMPARE(modelOf("Acme meter M7X GB925"), QString());
+    // S3: tube types give way to another candidate; alone they are the model.
+    QCOMPARE(modelOf("Acme XR-5 amplifier with 12AX7 tubes"), QStringLiteral("XR-5"));
+    QCOMPARE(modelOf("Acme 12AX7 vacuum tube"), QStringLiteral("12AX7"));
+    // S2: option codes.
+    QCOMPARE(modelOf("Acme M7X meter Opt 1E5 1EA"), QStringLiteral("M7X"));
+    // S15: "Knight" alone names no brand.
+    const Identity knight = identify(item(QStringLiteral("Jedi Knight Outfit VC23")), m_known, m_words);
+    QVERIFY(!knight.confident);
+    QVERIFY(knight.brandId.isEmpty());
+    // S8: "Heath Kit" names Heathkit.
+    const Identity heathKit = identify(item(QStringLiteral("Heath Kit IM-13 VTVM")), m_known, m_words);
+    QCOMPARE(heathKit.brandId, QStringLiteral("heathkit"));
+    QCOMPARE(heathKit.model, QStringLiteral("IM-13"));
+}
+
 void TestMatching::rows_data()
 {
     QTest::addColumn<QString>("brand");
@@ -523,6 +649,88 @@ void TestMatching::rows_data()
     QTest::newRow("9 unsure kit") << heathkit << ip20 << "Heathkit IP-20 power supply kit" << "" << Bucket::ToCheck;
     QTest::newRow("9 the device") << heathkit << ip20 << "Heathkit IP-20 regulated power supply" << "Used"
                                   << Bucket::SameItem;
+    // Brand-scan cases.
+    QTest::newRow("S1 specs") << "Acme" << "M7X" << "Acme M7X 2-CHANNEL 4CH 2-PORT amplifier 10-WATT" << ""
+                              << Bucket::SameItem;
+    QTest::newRow("S2 options") << "HP" << "8904A" << "HP 8904A synthesizer Opt 1E5 1EA" << "" << Bucket::SameItem;
+    QTest::newRow("S3 tubes") << heathkit << "AA-100" << "Heathkit AA-100 amplifier 12AX7 EL84" << "" << Bucket::SameItem;
+    QTest::newRow("S4 seller code") << sencore << "LC53" << "Sencore LC53 Z meter QA10 GB925" << "" << Bucket::SameItem;
+    QTest::newRow("S5 supply") << "HP" << "E3634A" << "HP E3634A DC power supply 0-25V/7A 0-50V/4A" << ""
+                               << Bucket::SameItem;
+    QTest::newRow("S5 generator") << "HP" << "33511B" << "HP 33511B waveform generator 20MHz 250MSa/s 16BIT" << ""
+                                  << Bucket::SameItem;
+    QTest::newRow("S6 front panel") << sencore << "LC53" << "Sencore LC53 front panel" << "" << Bucket::PartFits;
+    QTest::newRow("S6 crystal") << sencore << "LC53" << "Sencore LC53 crystal" << "" << Bucket::PartFits;
+    QTest::newRow("S6 dial glass") << heathkit << "SB-301" << "Heathkit SB-301 dial glass" << "" << Bucket::PartFits;
+    QTest::newRow("S6 knob") << heathkit << "SB-301" << "Heathkit SB-301 PARTS - knob" << "" << Bucket::PartFits;
+    QTest::newRow("S6 board") << heathkit << "IM-13" << "Heathkit IM-13 board" << "" << Bucket::PartFits;
+    QTest::newRow("S6 with front panel") << sencore << "LC53" << "Sencore LC53 Z meter with original front panel" << ""
+                                         << Bucket::SameItem;
+    QTest::newRow("S7 advertisement") << heathkit << "IM-13" << "Heathkit IM-13 advertisement" << ""
+                                      << Bucket::Documentation;
+    QTest::newRow("S7 data book") << sencore << "LC53" << "Sencore tube data book LC53" << "" << Bucket::Documentation;
+    QTest::newRow("S7 catalog") << heathkit << "IM-13" << "Heathkit catalog IM-13" << "" << Bucket::Documentation;
+    QTest::newRow("S8 Heath Kit") << heathkit << "IM-13" << "Heath Kit IM-13 VTVM" << "" << Bucket::SameItem;
+    QTest::newRow("S10 with tube set") << heathkit << "SB-301" << "Heathkit SB-301 receiver with NOS tube set" << ""
+                                       << Bucket::SameItem;
+    QTest::newRow("S10 tube kit") << heathkit << "SB-301" << "Heathkit SB-301 tube kit" << "" << Bucket::ToCheck;
+    QTest::newRow("S11 feet set") << sencore << "LC53" << "Sencore LC53 compatible rubber feet set" << ""
+                                  << Bucket::PartFits;
+    QTest::newRow("S11 bumper kit") << sencore << "LC53" << "Sencore LC53 bumper handle kit" << "" << Bucket::PartFits;
+    QTest::newRow("S12 original case") << heathkit << "IM-13" << "Heathkit IM-13 VTVM original case" << ""
+                                       << Bucket::SameItem;
+    QTest::newRow("S12 wood case") << heathkit << "IM-13" << "Heathkit IM-13 wood case" << "" << Bucket::SameItem;
+    QTest::newRow("S12 carrying case") << heathkit << "IM-13" << "Heathkit IM-13 carrying case" << ""
+                                       << Bucket::Accessory;
+    QTest::newRow("S16 station package") << heathkit << "IM-13" << "Heathkit IM-13 station package" << "" << Bucket::Lot;
+    QTest::newRow("S17 after brand") << "Acme" << "2445" << "Acme 2445 oscilloscope" << "" << Bucket::SameItem;
+    QTest::newRow("S17 after model word") << "Acme" << "2445" << "Acme model 2445 oscilloscope" << ""
+                                          << Bucket::SameItem;
+    QTest::newRow("S17 away from brand") << "Acme" << "2445" << "Acme oscilloscope 2445" << "" << Bucket::ToCheck;
+    QTest::newRow("S18 split code") << sencore << "TC154" << "Sencore TC 154 tube checker" << "" << Bucket::SameItem;
+    // Retro-scan cases.
+    const QString atari = QStringLiteral("Atari");
+    QTest::newRow("R1 cartridge") << atari << "2600" << "Berzerk Atari 2600 game cartridge" << "" << Bucket::Companion;
+    QTest::newRow("R1 CIB") << atari << "2600" << "Space Invaders Atari 2600 CIB with manual" << "" << Bucket::Companion;
+    QTest::newRow("R1 console with games") << atari << "2600" << "Atari 2600 console with 5 games" << ""
+                                           << Bucket::SameItem;
+    QTest::newRow("R1 product name") << atari << "2600" << "Atari 2600 Video Computer System" << "" << Bucket::SameItem;
+    QTest::newRow("R2 controllers") << atari << "2600" << "Atari 2600 paddle controllers original pair" << ""
+                                    << Bucket::Accessory;
+    QTest::newRow("R2 power supply") << atari << "2600" << "AC power supply adapter for the Atari 2600" << ""
+                                     << Bucket::Accessory;
+    QTest::newRow("R2 console with controllers") << atari << "2600" << "Atari 2600 console with 2 controllers" << ""
+                                                 << Bucket::SameItem;
+    QTest::newRow("R3 magazine") << atari << "ST" << "Atari ST Format magazine issue 13 with cover disk" << ""
+                                 << Bucket::Documentation;
+    QTest::newRow("R4 classic edition") << "Nintendo" << "NES" << "Nintendo NES Classic Edition" << "" << Bucket::NoMatch;
+    QTest::newRow("R4 flashback") << atari << "7800" << "Atari 7800 Flashback" << "" << Bucket::NoMatch;
+    QTest::newRow("R4 mini") << "Commodore" << "64" << "The C64 Mini Commodore" << "" << Bucket::NoMatch;
+    QTest::newRow("R5 size and video specs") << "Nintendo" << "Switch" << "Nintendo Switch 64GB 1080P console" << ""
+                                             << Bucket::SameItem;
+    QTest::newRow("R5 Spectrum 48K") << "Sinclair" << "ZX Spectrum" << "Sinclair ZX Spectrum 48K computer" << ""
+                                     << Bucket::SameItem;
+    QTest::newRow("R6 other system") << atari << "2600" << "Atari 2600 Commodore 64 dual interface" << ""
+                                     << Bucket::Accessory;
+    QTest::newRow("R7 other maker") << atari << "Lynx" << "Camputers Lynx 48K computer" << "" << Bucket::NoMatch;
+    QTest::newRow("R7 Enterprise") << "Commodore" << "64" << "Enterprise 64 and 128 computer" << "" << Bucket::NoMatch;
+    QTest::newRow("R8 inside a part number") << "IBM" << "1130" << "IBM ThinkPad T60 keyboard 02K1130" << ""
+                                             << Bucket::NoMatch;
+    QTest::newRow("R8 CPU") << "HP" << "2100" << "Intel Core i3-2100 CPU" << "" << Bucket::NoMatch;
+    QTest::newRow("R9 connectors") << "Commodore" << "64" << "Commodore 64 computer DB9 RS232 5FT 14-PIN" << ""
+                                   << Bucket::SameItem;
+    QTest::newRow("R10 chip") << "Commodore" << "64" << "Commodore 64 SID 8580R5" << "" << Bucket::PartFits;
+    QTest::newRow("R10 with the computer") << "Commodore" << "64" << "Commodore 64 computer 8580R5 SID" << ""
+                                           << Bucket::SameItem;
+    QTest::newRow("R10 board") << "Commodore" << "64" << "Commodore 64 board REV.6A" << "" << Bucket::PartFits;
+    QTest::newRow("R11 bundle") << atari << "2600" << "Atari 2600 bundle 10 games 2 joysticks" << "" << Bucket::SameItem;
+    QTest::newRow("R12 box only") << atari << "2600" << "Atari 2600 box only" << "" << Bucket::PartFits;
+    QTest::newRow("R12 poster") << atari << "2600" << "Atari 2600 poster" << "" << Bucket::NoMatch;
+    QTest::newRow("R12 shirt") << atari << "2600" << "Atari 2600 t-shirt" << "" << Bucket::NoMatch;
+    QTest::newRow("R13 game in the model") << "Nintendo" << "Game Boy" << "Nintendo Game Boy handheld" << ""
+                                           << Bucket::SameItem;
+    QTest::newRow("R13 game cartridge") << "Nintendo" << "Game Boy" << "Nintendo Game Boy Tetris game cartridge" << ""
+                                        << Bucket::Companion;
 }
 
 void TestMatching::rows()
@@ -538,6 +746,30 @@ void TestMatching::rows()
     const Match match = matchRow(title, identity, m_words);
     QVERIFY2(match.bucket == bucket, qPrintable(bucketName(match.bucket) + QStringLiteral(": ") + match.reasons.join(QStringLiteral("; "))));
     QVERIFY(!match.reasons.isEmpty());
+}
+
+void TestMatching::ownWordsOfTheListing()
+{
+    // S9: the product name holds a kit word; S13: the listing is a probe.
+    Identity testSet = identityFromUser({QStringLiteral("HP"), QStringLiteral("8920A"), QString()}, m_known,
+                                        QStringLiteral("user"));
+    QCOMPARE(matchRow(QStringLiteral("HP 8920A RF Communications Test Set"), testSet, m_words).bucket, Bucket::ToCheck);
+    testSet.productName = QStringLiteral("RF Communications Test Set");
+    QCOMPARE(matchRow(QStringLiteral("HP 8920A RF Communications Test Set"), testSet, m_words).bucket, Bucket::SameItem);
+
+    Identity probe = identityFromUser({QStringLiteral("HP"), QStringLiteral("N2894A"), QString()}, m_known,
+                                      QStringLiteral("user"));
+    const QString row = QStringLiteral("Agilent N2894A passive probe");
+    QCOMPARE(matchRow(row, probe, m_words).bucket, Bucket::Accessory);
+    probe.ownWords = itemOwnWords(QStringLiteral("HP N2894A passive probe 700MHz"), probe, m_words);
+    QCOMPARE(probe.ownWords, QStringList({"probe"}));
+    QCOMPARE(matchRow(row, probe, m_words).bucket, Bucket::SameItem);
+    // Leads that come with the listing are no own word.
+    QVERIFY(itemOwnWords(QStringLiteral("Sencore LC53 Z Meter with leads"),
+                         identityFromUser({QStringLiteral("Sencore"), QStringLiteral("LC53"), QString()}, m_known,
+                                          QStringLiteral("user")),
+                         m_words)
+                .isEmpty());
 }
 
 void TestMatching::valueOverAllRows()

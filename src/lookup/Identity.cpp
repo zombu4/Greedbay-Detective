@@ -2,6 +2,7 @@
 
 #include "lookup/Text.h"
 
+#include <QHash>
 #include <QRegularExpression>
 
 #include <algorithm>
@@ -23,11 +24,52 @@ QString unitAlternatives(const QStringList &units)
     return escaped.join(QLatin1Char('|'));
 }
 
-bool matchesAny(const QString &word, const QStringList &patterns)
+// Compiled once per pattern and thread (case-insensitive): the matcher runs
+// these for every word of every result row. Returned by value: copies share
+// the compiled pattern.
+QRegularExpression cachedRegex(const QString &pattern)
 {
-    return std::any_of(patterns.cbegin(), patterns.cend(), [&word](const QString &pattern) {
-        return QRegularExpression(pattern, QRegularExpression::CaseInsensitiveOption).match(word).hasMatch();
-    });
+    thread_local QHash<QString, QRegularExpression> cache;
+    auto it = cache.constFind(pattern);
+    if (it == cache.constEnd())
+        it = cache.insert(pattern, QRegularExpression(pattern, QRegularExpression::CaseInsensitiveOption));
+    return *it;
+}
+
+bool pureDigits(const QString &word)
+{
+    return !word.isEmpty() && std::all_of(word.cbegin(), word.cend(), [](QChar c) { return c.isDigit(); });
+}
+
+bool pureLetters(const QString &word)
+{
+    return !word.isEmpty() && std::all_of(word.cbegin(), word.cend(), [](QChar c) { return c.isLetter(); });
+}
+
+// A piece of a range or a slash pair: an optional sign ("+-", "±", "+"),
+// then a number with an optional unit, or two such numbers joined by a dash.
+// *sides: how many numbers; *unit: a unit is named. False when it is not
+// such a piece.
+bool isSpecPiece(QString piece, const QRegularExpression &number, const QRegularExpression &numberWithUnit, int *sides,
+                 bool *unit)
+{
+    for (const QString &sign : {QStringLiteral("+-"), QStringLiteral("\u00B1"), QStringLiteral("+")}) {
+        if (piece.startsWith(sign)) {
+            piece.remove(0, sign.size());
+            break;
+        }
+    }
+    static const QRegularExpression dash(QStringLiteral("[-\\x{2013}]"));
+    const QStringList parts = piece.split(dash);
+    if (parts.size() > 2)
+        return false;
+    for (const QString &part : parts) {
+        if (!number.match(part).hasMatch())
+            return false;
+        *unit = *unit || numberWithUnit.match(part).hasMatch();
+    }
+    *sides = static_cast<int>(parts.size());
+    return true;
 }
 
 bool isUnitWord(const QString &word, const QStringList &units)
@@ -92,10 +134,51 @@ QStringList longerModelsOf(const KnownModels &known, const KnownModel &model)
     return longer;
 }
 
+// Every other known model with a category, as phrases of normalized words:
+// the code alone when it has a letter and a digit and at least 3
+// characters (C64, A500, TI-99/4A), else "<brand name> <code>" for each
+// name of its brand ("Sega CD", "Atari 7800"), so plain words and numbers
+// count only with their maker (R6, R7).
+void setOtherModels(Identity *identity, const KnownModel &own, const KnownModels &known)
+{
+    identity->otherModels.clear();
+    identity->otherModelCategories.clear();
+    QStringList ownCodes{normalizeCode(own.model)};
+    for (const QString &member : own.family)
+        ownCodes.append(normalizeCode(member));
+    for (const Brand &brand : known.brands()) {
+        for (const KnownModel *other : known.modelsOf(brand.id)) {
+            if (other == &own || other->category.isEmpty())
+                continue;
+            QStringList codes{other->model};
+            codes.append(other->family);
+            for (const QString &code : std::as_const(codes)) {
+                if (ownCodes.contains(normalizeCode(code)))
+                    continue;
+                const QStringList codeWords = titleWords(code);
+                QList<QStringList> phrases;
+                if (hasLetterAndDigit(code) && normalizeCode(code).size() >= 3) {
+                    phrases.append(codeWords);
+                } else {
+                    for (const BrandName &name : brand.names)
+                        phrases.append(titleWords(name.name) + codeWords);
+                }
+                for (QStringList phrase : std::as_const(phrases)) {
+                    for (QString &word : phrase)
+                        word = normalizeCode(word);
+                    identity->otherModels.append(phrase);
+                    identity->otherModelCategories.append(other->category);
+                }
+            }
+        }
+    }
+}
+
 void setKnownModel(Identity *identity, const KnownModel &model, const KnownModels &known)
 {
     identity->model = model.model;
     identity->longerModels = longerModelsOf(known, model);
+    setOtherModels(identity, model, known);
     identity->family = model.family;
     identity->searchFamily = model.searchFamily;
     identity->productName = model.productName;
@@ -164,7 +247,8 @@ QList<QPair<const Brand *, QString>> brandsIn(const QString &text, const KnownMo
 // A known model of `brand` in `list`: one word or 2-4 neighbouring words
 // written together ("IM 13"), the longest first; in a title, a digits-only
 // model only right after a brand name or its product name.
-const KnownModel *knownModelIn(const QStringList &list, const Brand &brand, const KnownModels &known, bool inTitle)
+const KnownModel *knownModelIn(const QStringList &list, const Brand &brand, const KnownModels &known, bool inTitle,
+                               const MatchWords &words)
 {
     QStringList brandNames;
     for (const BrandName &name : brand.names)
@@ -176,7 +260,7 @@ const KnownModel *knownModelIn(const QStringList &list, const Brand &brand, cons
             if (!model)
                 continue;
             if (inTitle && isDigitsOnly(joined)
-                && !positionsAfterNames(list, brandNames + QStringList{model->productName}).contains(i))
+                && !positionsAfterNames(list, namesBeforeModel(brandNames + QStringList{model->productName}, words)).contains(i))
                 continue;
             return model;
         }
@@ -184,24 +268,95 @@ const KnownModel *knownModelIn(const QStringList &list, const Brand &brand, cons
     return nullptr;
 }
 
+// A number that is a known model of the brand without its letters ("53"
+// for LC53, owner case 2) is no candidate: the app asks and suggests that
+// model.
+bool shortOfKnownModel(const QString &candidate, const QString &brandId, const KnownModels &known)
+{
+    if (!pureDigits(candidate) || brandId.isEmpty())
+        return false;
+    for (const KnownModel *model : known.modelsOf(brandId)) {
+        QStringList codes{model->model};
+        codes.append(model->family);
+        for (const QString &code : std::as_const(codes)) {
+            const QString normalized = normalizeCode(code);
+            if (normalized.size() > candidate.size() && normalized.endsWith(candidate) && !pureDigits(normalized))
+                return true;
+        }
+    }
+    return false;
+}
+
+// Several candidates of one text: tube types are dropped when anything else
+// is left (S3); then, when the only other candidate is the text's last word
+// (a seller's stock code, S4) and the one left stands right after the
+// brand, that one.
+QStringList narrowed(QStringList candidates, const QStringList &afterBrand, const QStringList &textWords,
+                     const MatchWords &words)
+{
+    if (candidates.size() > 1) {
+        QStringList noTubes;
+        for (const QString &candidate : std::as_const(candidates)) {
+            if (!words.tubeCodes.contains(normalizeCode(candidate)))
+                noTubes.append(candidate);
+        }
+        if (!noTubes.isEmpty())
+            candidates = noTubes;
+    }
+    if (candidates.size() == 2 && !textWords.isEmpty()) {
+        const QString last = normalizeCode(textWords.last());
+        for (qsizetype k = 0; k < 2; ++k) {
+            const QString &kept = candidates.at(k);
+            const QString &other = candidates.at(1 - k);
+            if (afterBrand.contains(kept) && !afterBrand.contains(other) && normalizeCode(other) == last)
+                return {kept};
+        }
+    }
+    return candidates;
+}
+
 } // namespace
+
+QStringList namesBeforeModel(const QStringList &names, const MatchWords &matchWords)
+{
+    QStringList result;
+    for (const QString &name : names) {
+        if (name.simplified().isEmpty())
+            continue;
+        result.append(name);
+        for (const QString &word : matchWords.modelWords)
+            result.append(name + QLatin1Char(' ') + word);
+    }
+    return result;
+}
+
+bool matchesAnyPattern(const QString &word, const QStringList &patterns)
+{
+    return std::any_of(patterns.cbegin(), patterns.cend(),
+                       [&word](const QString &pattern) { return cachedRegex(pattern).match(word).hasMatch(); });
+}
 
 bool isSpecification(const QStringList &words, qsizetype index, const MatchWords &matchWords)
 {
     const QString word = words.at(index);
-    const QString units = unitAlternatives(matchWords.specUnits);
-    const QRegularExpression withUnit(QStringLiteral("^%1(?:%2)$").arg(kNumber, units), QRegularExpression::CaseInsensitiveOption);
-    const QRegularExpression part(QStringLiteral("^%1(?:%2)?$").arg(kNumber, units), QRegularExpression::CaseInsensitiveOption);
-    if (withUnit.match(word).hasMatch())
+    const QString units = unitAlternatives(matchWords.specUnits + matchWords.specUnitsGlued);
+    const QString pairUnits = unitAlternatives(matchWords.specUnits + matchWords.specUnitsGlued + matchWords.specUnitsInPairs);
+    // "1500V", "16GB", "2-CHANNEL".
+    if (cachedRegex(QStringLiteral("^%1-?(?:%2)$").arg(kNumber, units)).match(word).hasMatch())
         return true;
-    const QStringList sides = word.split(QRegularExpression(QStringLiteral("[-\\x{2013}]")));
-    if (sides.size() == 2 && part.match(sides.at(0)).hasMatch() && part.match(sides.at(1)).hasMatch()
-        && (withUnit.match(sides.at(0)).hasMatch() || withUnit.match(sides.at(1)).hasMatch()))
+    // A range ("0-1500V", "0-15A") or a slash pair ("2M/6M", "0-8V/3A").
+    const QRegularExpression number = cachedRegex(QStringLiteral("^%1(?:%2)?$").arg(kNumber, pairUnits));
+    const QRegularExpression numberWithUnit = cachedRegex(QStringLiteral("^%1(?:%2)$").arg(kNumber, pairUnits));
+    const QStringList pieces = word.split(QLatin1Char('/'));
+    bool unit = false;
+    bool allPieces = true;
+    int sides = 0;
+    for (const QString &piece : pieces)
+        allPieces = allPieces && isSpecPiece(piece, number, numberWithUnit, &sides, &unit);
+    if (allPieces && unit && (pieces.size() > 1 || sides == 2))
         return true;
     for (const QString &prefix : matchWords.specPrefixes) {
-        const QRegularExpression prefixed(QStringLiteral("^%1-%2(?:%3)?$").arg(QRegularExpression::escape(prefix), kNumber, units),
-                                          QRegularExpression::CaseInsensitiveOption);
-        if (prefixed.match(word).hasMatch())
+        if (cachedRegex(QStringLiteral("^%1-%2(?:%3)?$").arg(QRegularExpression::escape(prefix), kNumber, units)).match(word).hasMatch())
             return true;
     }
     return !word.isEmpty() && word.back().isDigit() && index + 1 < words.size()
@@ -211,26 +366,52 @@ bool isSpecification(const QStringList &words, qsizetype index, const MatchWords
 bool isModelLike(const QStringList &words, qsizetype index, const MatchWords &matchWords)
 {
     const QString &word = words.at(index);
-    return hasLetterAndDigit(word) && !isSpecification(words, index, matchWords) && !matchesAny(word, matchWords.notModels);
+    if (!hasLetterAndDigit(word) || isSpecification(words, index, matchWords) || matchesAnyPattern(word, matchWords.notModels))
+        return false;
+    // An option code: right after an option word, or after other codes that
+    // follow one ("Opt 1E5 1EA").
+    for (qsizetype k = index - 1; k >= 0 && k >= index - 4; --k) {
+        if (matchWords.optionWords.contains(words.at(k), Qt::CaseInsensitive))
+            return false;
+        if (!hasLetterAndDigit(words.at(k)) && !pureDigits(words.at(k)))
+            break;
+    }
+    return true;
 }
 
-QStringList modelCandidates(const QString &text, const QStringList &brandNames, const MatchWords &matchWords)
+QStringList modelCandidatesAfterBrand(const QString &text, const QStringList &brandNames, const MatchWords &matchWords,
+                                      QStringList *afterBrand)
 {
     const QStringList words = titleWords(text);
+    const QList<qsizetype> after = positionsAfterNames(words, namesBeforeModel(brandNames, matchWords));
     QStringList result;
     QStringList seen;
     for (qsizetype i = 0; i < words.size(); ++i) {
         const QString &word = words.at(i);
-        if (!isModelLike(words, i, matchWords))
+        QString candidate;
+        if (isModelLike(words, i, matchWords)) {
+            if (std::any_of(brandNames.cbegin(), brandNames.cend(),
+                            [&word](const QString &name) { return word.compare(name, Qt::CaseInsensitive) == 0; }))
+                continue;
+            candidate = word.toUpper();
+        } else if (after.contains(i) && pureDigits(word) && !isSpecification(words, i, matchWords)) {
+            // "Tektronix 2445", "Racal-Dana 1992" (S17).
+            candidate = word;
+        } else if (after.contains(i) && i + 1 < words.size() && word.size() <= 3 && pureLetters(word)
+                   && !matchWords.notCodePrefixes.contains(word, Qt::CaseInsensitive) && pureDigits(words.at(i + 1))
+                   && !isSpecification(words, i + 1, matchWords)) {
+            // "Sencore TC 154" -> TC154 (S18).
+            candidate = (word + words.at(i + 1)).toUpper();
+        }
+        if (candidate.isEmpty())
             continue;
-        if (std::any_of(brandNames.cbegin(), brandNames.cend(),
-                        [&word](const QString &name) { return word.compare(name, Qt::CaseInsensitive) == 0; }))
-            continue;
-        const QString code = normalizeCode(word);
+        const QString code = normalizeCode(candidate);
         if (seen.contains(code))
             continue;
         seen.append(code);
-        result.append(word.toUpper());
+        result.append(candidate);
+        if (after.contains(i))
+            afterBrand->append(candidate);
     }
     return result;
 }
@@ -281,7 +462,7 @@ Identity identify(const ItemRecord &item, const KnownModels &known, const MatchW
         const QList<QPair<const Brand *, QString>> named = brandsIn(item.title, known);
         const QStringList titleList = titleWords(item.title);
         for (const auto &entry : named) {
-            if (knownModelIn(titleList, *entry.first, known, true)) {
+            if (knownModelIn(titleList, *entry.first, known, true, words)) {
                 brand = entry.first;
                 found = entry.second;
                 break;
@@ -312,7 +493,7 @@ Identity identify(const ItemRecord &item, const KnownModels &known, const MatchW
     if (brand) {
         for (const auto &source : sources) {
             const bool inTitle = &source == &sources[std::size(sources) - 1];
-            if (const KnownModel *model = knownModelIn(titleWords(source.text), *brand, known, inTitle)) {
+            if (const KnownModel *model = knownModelIn(titleWords(source.text), *brand, known, inTitle, words)) {
                 setKnownModel(&identity, *model, known);
                 identity.source = QStringLiteral("known model");
             }
@@ -324,11 +505,14 @@ Identity identify(const ItemRecord &item, const KnownModels &known, const MatchW
     QStringList allCandidates;
     if (identity.model.isEmpty()) {
         for (const auto &source : sources) {
-            const QStringList candidates = modelCandidates(source.text, identity.matchNames, words);
-            for (const QString &candidate : candidates) {
+            QStringList afterBrand;
+            QStringList found = modelCandidatesAfterBrand(source.text, identity.matchNames, words, &afterBrand);
+            found.removeIf([&](const QString &candidate) { return shortOfKnownModel(candidate, identity.brandId, known); });
+            for (const QString &candidate : found) {
                 if (!allCandidates.contains(candidate))
                     allCandidates.append(candidate);
             }
+            const QStringList candidates = narrowed(found, afterBrand, titleWords(source.text), words);
             if (candidates.size() == 1 && identity.reason.isEmpty()) {
                 identity.model = candidates.first();
                 identity.source = QString::fromLatin1(source.source);

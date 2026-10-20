@@ -10,6 +10,9 @@ namespace {
 
 constexpr qsizetype kForReach = 3;
 
+// Stands in for a masked title word: no word list holds it.
+const QString kMasked = QStringLiteral("\u00B7");
+
 // The first word of `list` found in `words` as a phrase, with its position;
 // -1 when none.
 qsizetype firstPhrase(const QStringList &words, const QStringList &list, QString *which)
@@ -25,14 +28,19 @@ qsizetype firstPhrase(const QStringList &words, const QStringList &list, QString
     return best;
 }
 
-// Positions in `words` (title words) where the model or a family member
-// stands, alone or as 2-4 neighbouring words written together.
-QList<qsizetype> modelPositions(const QStringList &words, const Identity &identity)
+// Where the model or a family member stands in the title: one word or 2-4
+// neighbouring words written together.
+struct Span {
+    qsizetype at = 0;
+    qsizetype length = 1;
+};
+
+QList<Span> modelSpans(const QStringList &words, const Identity &identity)
 {
     QStringList codes{normalizeCode(identity.model)};
     for (const QString &member : identity.family)
         codes.append(normalizeCode(member));
-    QList<qsizetype> positions;
+    QList<Span> spans;
     for (qsizetype i = 0; i < words.size(); ++i) {
         // A longer known model of the brand covering this word ("Game Boy
         // Color" for "Game Boy", "Super NES" for "NES") is another model.
@@ -50,28 +58,18 @@ QList<qsizetype> modelPositions(const QStringList &words, const Identity &identi
         for (qsizetype n = 0; n < 4 && i + n < words.size(); ++n) {
             joined += normalizeCode(words.at(i + n));
             if (codes.contains(joined)) {
-                positions.append(i);
+                spans.append({i, n + 1});
                 break;
             }
         }
     }
-    return positions;
+    return spans;
 }
 
-// The whole code that modelPositions found at `at` (one word, or 2-4 words
-// written together), normalized.
-QString codeAt(const QStringList &words, qsizetype at, const Identity &identity)
+// The whole code of a span, normalized.
+QString codeOf(const QStringList &words, const Span &span)
 {
-    QStringList codes{normalizeCode(identity.model)};
-    for (const QString &member : identity.family)
-        codes.append(normalizeCode(member));
-    QString joined;
-    for (qsizetype n = 0; n < 4 && at + n < words.size(); ++n) {
-        joined += normalizeCode(words.at(at + n));
-        if (codes.contains(joined))
-            return joined;
-    }
-    return normalizeCode(words.at(at));
+    return normalizeCode(words.mid(span.at, span.length).join(QString()));
 }
 
 // Every word position covered by one of the brand's names.
@@ -90,8 +88,50 @@ QList<qsizetype> brandPositions(const QStringList &words, const Identity &identi
     return positions;
 }
 
-// Model codes in the title other than the item's own (rule 14).
-QStringList otherModelCodes(const QStringList &words, const Identity &identity, const MatchWords &matchWords)
+// Every word position covered by the product name ("Z Meter", "Test Set").
+QList<qsizetype> productNamePositions(const QStringList &words, const Identity &identity)
+{
+    QList<qsizetype> positions;
+    const QStringList parts = titleWords(identity.productName);
+    if (parts.isEmpty())
+        return positions;
+    for (const qsizetype at : phrasePositions(words, parts.join(QLatin1Char(' ')))) {
+        for (qsizetype k = 0; k < parts.size(); ++k)
+            positions.append(at + k);
+    }
+    return positions;
+}
+
+// `words` with the positions in `covered` replaced by kMasked.
+QStringList masked(QStringList words, const QList<qsizetype> &covered)
+{
+    for (const qsizetype at : covered)
+        words[at] = kMasked;
+    return words;
+}
+
+// The title's words for the word lists, lower case and split at "/", with
+// the brand names, the model and the product name masked: the lists never
+// fire inside them ("Heath Kit" holds no kit, "Game Boy" no game, the
+// product name "Test Set" no set; S8, S9, R13).
+QStringList listWithoutIdentity(const QStringList &codeList, const QList<qsizetype> &brands, const QList<Span> &models,
+                                const Identity &identity)
+{
+    QList<qsizetype> covered = brands;
+    for (const Span &span : models) {
+        for (qsizetype k = 0; k < span.length; ++k)
+            covered.append(span.at + k);
+    }
+    covered.append(productNamePositions(codeList, identity));
+    return listWords(masked(codeList, covered).join(QLatin1Char(' ')));
+}
+
+// Model codes in the title other than the item's own (rule 14). Tube types
+// are no other model (S3), nor is the title's last word when the model
+// stands before it: sellers end titles with their own stock codes (S4).
+// `modelAt`: where the model stands, -1 when not looked at.
+QStringList otherModelCodes(const QStringList &words, const Identity &identity, const MatchWords &matchWords,
+                            qsizetype modelAt)
 {
     QStringList own{normalizeCode(identity.model)};
     for (const QString &member : identity.family)
@@ -101,28 +141,95 @@ QStringList otherModelCodes(const QStringList &words, const Identity &identity, 
         if (!isModelLike(words, i, matchWords))
             continue;
         const QString code = normalizeCode(words.at(i));
-        if (!own.contains(code) && !others.contains(code))
-            others.append(code);
+        if (own.contains(code) || others.contains(code) || matchWords.tubeCodes.contains(code))
+            continue;
+        if (i == words.size() - 1 && modelAt >= 0 && modelAt < i)
+            continue;
+        others.append(code);
     }
     return others;
 }
 
-// The first word of `list` at a position not preceded, within three words,
-// by a with-item word ("with manual", "w/ Leads"); -1 when none.
-qsizetype firstNotWithItem(const QStringList &words, const QStringList &list, const MatchWords &matchWords, QString *which)
+// True when the phrase starting at `at` (of `length` words) lies inside one
+// of the notAccessory phrases ("original case").
+bool insideNotAccessory(const QStringList &list, qsizetype at, const MatchWords &matchWords)
 {
-    for (const QString &phrase : list) {
+    for (const QString &phrase : matchWords.notAccessory) {
+        const qsizetype length = phrase.split(QLatin1Char(' '), Qt::SkipEmptyParts).size();
+        for (const qsizetype start : phrasePositions(list, phrase)) {
+            if (start <= at && at < start + length)
+                return true;
+        }
+    }
+    return false;
+}
+
+// The first word of `phrases` at a position not preceded, within three
+// words, by a with-item word ("with manual", "w/ Leads"), not inside a
+// notAccessory phrase and not one of `ownWords`; -1 when none.
+qsizetype firstNotWithItem(const QStringList &words, const QStringList &phrases, const MatchWords &matchWords,
+                           QString *which, const QStringList &ownWords = {})
+{
+    for (const QString &phrase : phrases) {
+        if (ownWords.contains(phrase, Qt::CaseInsensitive))
+            continue;
         for (const qsizetype at : phrasePositions(words, phrase)) {
             bool withItem = false;
             for (qsizetype k = std::max<qsizetype>(0, at - 3); k < at && !withItem; ++k)
                 withItem = matchWords.withItem.contains(words.at(k), Qt::CaseInsensitive);
-            if (!withItem) {
+            if (!withItem && !insideNotAccessory(words, at, matchWords)) {
                 *which = phrase;
                 return at;
             }
         }
     }
     return -1;
+}
+
+// True when the identity is a computer, console or handheld (the lists
+// that apply only to those).
+bool isSystem(const Identity &identity, const MatchWords &matchWords)
+{
+    return !identity.category.isEmpty() && matchWords.systemCategories.contains(identity.category, Qt::CaseInsensitive);
+}
+
+// True when the title names the system itself ("console", "bundle") other
+// than right after a companion word ("for console", "for the system"): its
+// media and accessories then come with it (R2, R11).
+bool itemNamed(const QStringList &list, const MatchWords &matchWords)
+{
+    for (const QString &noun : matchWords.itemNouns) {
+        for (const qsizetype at : phrasePositions(list, noun)) {
+            const bool forIt = (at >= 1 && matchWords.companion.contains(list.at(at - 1), Qt::CaseInsensitive))
+                               || (at >= 2 && matchWords.companion.contains(list.at(at - 2), Qt::CaseInsensitive));
+            if (!forIt)
+                return true;
+        }
+    }
+    return false;
+}
+
+// Another system named in the title (R6): the first of the identity's
+// other models of a system category found in `words` (the title with the
+// model masked), as written there; empty when none.
+QString otherSystemIn(const QStringList &words, const Identity &identity, const MatchWords &matchWords)
+{
+    QStringList normalized;
+    for (const QString &word : words)
+        normalized.append(word == kMasked ? word : normalizeCode(word));
+    for (qsizetype p = 0; p < identity.otherModels.size(); ++p) {
+        if (!matchWords.systemCategories.contains(identity.otherModelCategories.at(p), Qt::CaseInsensitive))
+            continue;
+        const QStringList &phrase = identity.otherModels.at(p);
+        for (qsizetype i = 0; i + phrase.size() <= normalized.size(); ++i) {
+            bool all = !phrase.isEmpty();
+            for (qsizetype k = 0; k < phrase.size() && all; ++k)
+                all = normalized.at(i + k) == phrase.at(k);
+            if (all)
+                return words.mid(i, phrase.size()).join(QLatin1Char(' '));
+        }
+    }
+    return {};
 }
 
 } // namespace
@@ -141,8 +248,7 @@ Match matchRow(const QString &title, const Identity &identity, const MatchWords 
         return done(Bucket::UnknownItem);
     }
     const QStringList codeList = titleWords(title);
-    const QStringList list = listWords(title);
-    const QList<qsizetype> models = identity.model.isEmpty() ? QList<qsizetype>() : modelPositions(codeList, identity);
+    const QList<Span> models = identity.model.isEmpty() ? QList<Span>() : modelSpans(codeList, identity);
     QString brandWord;
     const QList<qsizetype> brands = brandPositions(codeList, identity, &brandWord);
     if (models.isEmpty()) {
@@ -151,38 +257,49 @@ Match matchRow(const QString &title, const Identity &identity, const MatchWords 
     }
     // A brand name may also stand inside a slash-joined word ("HP/Agilent").
     if (brands.isEmpty()) {
+        const QStringList split = listWords(title);
         for (const QString &name : identity.matchNames) {
-            if (!phrasePositions(list, titleWords(name.toLower()).join(QLatin1Char(' '))).isEmpty()) {
+            if (!phrasePositions(split, titleWords(name.toLower()).join(QLatin1Char(' '))).isEmpty()) {
                 brandWord = name;
                 break;
             }
         }
     }
-    const bool digitsOnly = isDigitsOnly(codeAt(codeList, models.first(), identity));
+    const QString code = codeOf(codeList, models.first());
+    const QString written = codeList.mid(models.first().at, models.first().length).join(QLatin1Char(' '));
+    const bool digitsOnly = isDigitsOnly(code);
+    const bool lettersOnly = std::none_of(code.cbegin(), code.cend(), [](QChar c) { return c.isDigit(); });
     if (brandWord.isEmpty() && digitsOnly) {
         // Owner decision 2026-10-19: a digits-only model counts only right
         // after a brand name; without the brand it is a year or a number.
-        reasons.append(QStringLiteral("%1 without the brand %2: a year or a number, not this item")
-                           .arg(codeList.at(models.first()), identity.brandName));
+        reasons.append(QStringLiteral("%1 without the brand %2: a year or a number, not this item").arg(written, identity.brandName));
+        return done(Bucket::NoMatch);
+    }
+    if (brandWord.isEmpty() && lettersOnly) {
+        // A plain-word model needs its maker ("Camputers Lynx" is no Atari
+        // Lynx, R7).
+        reasons.append(QStringLiteral("%1 without the brand %2: another maker's product, not this item").arg(written, identity.brandName));
         return done(Bucket::NoMatch);
     }
     if (brandWord.isEmpty()) {
         // The model without the brand: often another product with the same
         // code (cards, car parts), sometimes the item with a short title.
         // Shown for the user to decide, never counted by itself.
-        reasons.append(QStringLiteral("model %1 found, but the brand %2 is not in the title: check")
-                           .arg(codeList.at(models.first()), identity.brandName));
+        reasons.append(QStringLiteral("model %1 found, but the brand %2 is not in the title: check").arg(written, identity.brandName));
         return done(Bucket::ToCheck);
     }
+    // The title's words for the word lists, without the brand, the model and
+    // the product name.
+    const QStringList list = listWithoutIdentity(codeList, brands, models, identity);
     // A model of digits only ("2022") also stands for years and quantities:
-    // it counts only right after a brand name or the product name. Elsewhere
-    // the row is never counted: documentation stays documentation, anything
-    // else is for the user to check.
+    // it counts only right after a brand name or the product name (also
+    // "<name> model"). Elsewhere the row is never counted: documentation
+    // stays documentation, anything else is for the user to check.
     QString word;
     QStringList namesBefore = identity.matchNames;
     if (!identity.productName.isEmpty())
         namesBefore.append(identity.productName);
-    QList<qsizetype> afterNames = positionsAfterNames(codeList, namesBefore);
+    QList<qsizetype> afterNames = positionsAfterNames(codeList, namesBeforeModel(namesBefore, words));
     // A brand name inside a slash-joined word ("Marconi/IFR 2022").
     for (qsizetype k = 0; k < codeList.size(); ++k) {
         const QStringList parts = listWords(codeList.at(k));
@@ -191,8 +308,8 @@ Match matchRow(const QString &title, const Identity &identity, const MatchWords 
             }))
             afterNames.append(k + 1);
     }
-    if (digitsOnly && std::none_of(models.cbegin(), models.cend(), [&](qsizetype at) {
-            return brands.contains(at - 1) || afterNames.contains(at);
+    if (digitsOnly && std::none_of(models.cbegin(), models.cend(), [&](const Span &span) {
+            return brands.contains(span.at - 1) || afterNames.contains(span.at);
         })) {
         if (firstNotWithItem(list, words.documentation, words, &word) >= 0) {
             reasons.append(QStringLiteral("documentation (\"%1\"); %2 does not follow the brand name").arg(word, identity.model));
@@ -201,8 +318,17 @@ Match matchRow(const QString &title, const Identity &identity, const MatchWords 
         reasons.append(QStringLiteral("model %1 is digits only and does not follow the brand name: check").arg(identity.model));
         return done(Bucket::ToCheck);
     }
-    reasons.append(QStringLiteral("model %1 and brand %2 found").arg(codeList.at(models.first()), brandWord));
+    reasons.append(QStringLiteral("model %1 and brand %2 found").arg(written, brandWord));
 
+    const bool system = isSystem(identity, words);
+    if (system && firstPhrase(list, words.reissue, &word) >= 0) {
+        reasons.append(QStringLiteral("another model: a re-issue (\"%1\")").arg(word));
+        return done(Bucket::NoMatch);
+    }
+    if (firstPhrase(list, words.merchandise, &word) >= 0) {
+        reasons.append(QStringLiteral("merchandise (\"%1\"), not the item").arg(word));
+        return done(Bucket::NoMatch);
+    }
     if (firstPhrase(list, words.lot, &word) >= 0) {
         reasons.append(QStringLiteral("lot (\"%1\")").arg(word));
         return done(Bucket::Lot);
@@ -211,11 +337,33 @@ Match matchRow(const QString &title, const Identity &identity, const MatchWords 
         reasons.append(QStringLiteral("documentation (\"%1\")").arg(word));
         return done(Bucket::Documentation);
     }
+    // Parts before kits: "compatible ... feet set" is a part (S11).
+    if (firstPhrase(list, words.partFits, &word) >= 0) {
+        reasons.append(QStringLiteral("part or fits (\"%1\")").arg(word));
+        return done(Bucket::PartFits);
+    }
+    if (firstNotWithItem(list, words.partOnly, words, &word) >= 0) {
+        reasons.append(QStringLiteral("part (\"%1\")").arg(word));
+        return done(Bucket::PartFits);
+    }
+    // Chips, revisions and board locations: a part, unless the title names
+    // the system itself (R10).
+    const bool named = system && itemNamed(list, words);
+    if (!named) {
+        for (const QString &listWord : list) {
+            if (matchesAnyPattern(listWord, words.partPatterns)) {
+                reasons.append(QStringLiteral("part (chip, board or revision \"%1\")").arg(listWord));
+                return done(Bucket::PartFits);
+            }
+        }
+    }
 
     // Kits (owner case 9): a parts or repair kit for the model is a part;
-    // the brand's own complete kit is the item; any other kit is unsure.
+    // the brand's own complete kit is the item; any other kit is unsure. A
+    // kit word after a with-item word belongs to the item ("with NOS tube
+    // set", S10).
     QString kit;
-    if (firstPhrase(list, words.kitWords, &kit) >= 0) {
+    if (firstNotWithItem(list, words.kitWords, words, &kit) >= 0) {
         if (firstPhrase(list, words.kitParts, &word) >= 0) {
             reasons.append(QStringLiteral("parts kit (\"%1\" ... \"%2\")").arg(word, kit));
             return done(Bucket::PartFits);
@@ -233,13 +381,13 @@ Match matchRow(const QString &title, const Identity &identity, const MatchWords 
 
     // "... for <model>": a companion word followed within reach by the model
     // (brand names may stand between).
-    const QStringList others = otherModelCodes(codeList, identity, words);
+    const QStringList others = otherModelCodes(codeList, identity, words, models.first().at);
     for (const QString &companion : words.companion) {
         for (const qsizetype at : phrasePositions(codeList, companion)) {
-            const bool forModel = std::any_of(models.cbegin(), models.cend(), [at, &brands](qsizetype model) {
-                if (model <= at || model - at > kForReach + 1)
+            const bool forModel = std::any_of(models.cbegin(), models.cend(), [at, &brands](const Span &span) {
+                if (span.at <= at || span.at - at > kForReach + 1)
                     return false;
-                for (qsizetype k = at + 1; k < model; ++k) {
+                for (qsizetype k = at + 1; k < span.at; ++k) {
                     if (!brands.contains(k))
                         return false;
                 }
@@ -249,12 +397,13 @@ Match matchRow(const QString &title, const Identity &identity, const MatchWords 
                 continue;
             const QStringList before = codeList.mid(0, at);
             const QStringList beforeList = listWords(before.join(QLatin1Char(' ')));
-            const QStringList otherBefore = otherModelCodes(before, identity, words);
+            const QStringList otherBefore = otherModelCodes(before, identity, words, -1);
             if (!otherBefore.isEmpty()) {
                 reasons.append(QStringLiteral("companion: %1 ... \"%2\" %3").arg(otherBefore.first(), companion, identity.model));
                 return done(Bucket::Companion);
             }
-            if (firstPhrase(beforeList, words.accessory, &word) >= 0) {
+            if (firstPhrase(beforeList, words.accessory, &word) >= 0
+                || (system && firstPhrase(beforeList, words.systemAccessory, &word) >= 0)) {
                 reasons.append(QStringLiteral("accessory (\"%1\" ... \"%2\" %3)").arg(word, companion, identity.model));
                 return done(Bucket::Accessory);
             }
@@ -262,9 +411,21 @@ Match matchRow(const QString &title, const Identity &identity, const MatchWords 
             return done(Bucket::PartFits);
         }
     }
-    if (firstPhrase(list, words.partFits, &word) >= 0) {
-        reasons.append(QStringLiteral("part or fits (\"%1\")").arg(word));
-        return done(Bucket::PartFits);
+    if (system && !named && firstNotWithItem(list, words.media, words, &word) >= 0) {
+        reasons.append(QStringLiteral("software or media for the system (\"%1\")").arg(word));
+        return done(Bucket::Companion);
+    }
+    if (system) {
+        QList<qsizetype> modelPositions;
+        for (const Span &span : models) {
+            for (qsizetype k = 0; k < span.length; ++k)
+                modelPositions.append(span.at + k);
+        }
+        const QString other = otherSystemIn(masked(codeList, modelPositions), identity, words);
+        if (!other.isEmpty()) {
+            reasons.append(QStringLiteral("also names %1: for several systems").arg(other));
+            return done(Bucket::Accessory);
+        }
     }
     if (!others.isEmpty() && firstPhrase(list, words.partWords, &word) >= 0) {
         reasons.append(QStringLiteral("part (\"%1\" with other models: %2)").arg(word, others.join(QStringLiteral(", "))));
@@ -274,12 +435,34 @@ Match matchRow(const QString &title, const Identity &identity, const MatchWords 
         reasons.append(QStringLiteral("several other models: %1").arg(others.join(QStringLiteral(", "))));
         return done(Bucket::PartFits);
     }
-    if (firstNotWithItem(list, words.accessory, words, &word) >= 0) {
+    QStringList accessories = words.accessory;
+    if (system && !named)
+        accessories.append(words.systemAccessory);
+    if (firstNotWithItem(list, accessories, words, &word, identity.ownWords) >= 0) {
         reasons.append(QStringLiteral("accessory (\"%1\")").arg(word));
         return done(Bucket::Accessory);
     }
     reasons.append(QStringLiteral("same item"));
     return done(Bucket::SameItem);
+}
+
+QStringList itemOwnWords(const QString &title, const Identity &identity, const MatchWords &words)
+{
+    const QStringList codeList = titleWords(title);
+    const QList<Span> models = identity.model.isEmpty() ? QList<Span>() : modelSpans(codeList, identity);
+    QString brandWord;
+    const QList<qsizetype> brands = brandPositions(codeList, identity, &brandWord);
+    const QStringList list = listWithoutIdentity(codeList, brands, models, identity);
+    QStringList accessories = words.accessory;
+    if (isSystem(identity, words))
+        accessories.append(words.systemAccessory);
+    QStringList own;
+    for (const QString &phrase : std::as_const(accessories)) {
+        QString which;
+        if (firstNotWithItem(list, {phrase}, words, &which) >= 0)
+            own.append(phrase);
+    }
+    return own;
 }
 
 QString likelyBrokenReason(const QString &title, const QString &ebayCondition, const MatchWords &words)
