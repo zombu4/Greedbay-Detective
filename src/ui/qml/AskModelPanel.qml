@@ -13,6 +13,11 @@ ColumnLayout {
     property string reason
     property var specifics: []
     property var suggestions: []
+    // A brand with many known models: the first ones (the listing's own
+    // codes come first), all on request.
+    readonly property int shortList: 12
+    property bool showAllSuggestions: false
+    onSuggestionsChanged: showAllSuggestions = false
     property string brand
     property string model
     property string productName
@@ -84,7 +89,8 @@ ColumnLayout {
             color: Theme.mutedText
         }
         Repeater {
-            model: panel.suggestions
+            objectName: "suggestionPills"
+            model: panel.showAllSuggestions ? panel.suggestions : panel.suggestions.slice(0, panel.shortList)
             Pill {
                 required property string modelData
                 text: modelData
@@ -98,6 +104,11 @@ ColumnLayout {
                     onClicked: modelField.text = parent.modelData
                 }
             }
+        }
+        LinkText {
+            visible: !panel.showAllSuggestions && panel.suggestions.length > panel.shortList
+            text: "Show all " + panel.suggestions.length
+            onActivated: panel.showAllSuggestions = true
         }
     }
     GridLayout {

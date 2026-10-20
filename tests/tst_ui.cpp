@@ -100,6 +100,7 @@ private slots:
     void everyScreenLoads();
     void savedLookupReopens();
     void panelsLoad();
+    void manySuggestionsShortList();
     void nothingFoundIsSaid();
     void auctionsAndFormats();
 };
@@ -332,6 +333,30 @@ void TestUi::savedLookupReopens()
     for (const int r : soldRows)
         results->setIncluded(r, true);
     QCOMPARE(results->medianText(), QStringLiteral("$106.00"));
+}
+
+// A brand with many known models: the first 12 suggestions, all on request.
+void TestUi::manySuggestionsShortList()
+{
+    QStringList suggestions;
+    for (int i = 0; i < 20; ++i)
+        suggestions.append(QStringLiteral("M%1X").arg(i));
+    QQmlEngine engine;
+    QQmlComponent component(&engine);
+    component.loadFromModule(kModule, "AskModelPanel");
+    QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+    std::unique_ptr<QObject> panel(component.createWithInitialProperties({{"title", "Acme meter"},
+                                                                          {"suggestions", suggestions},
+                                                                          {"brand", "Acme"}}));
+    QVERIFY(panel);
+    QObject *pills = panel->findChild<QObject *>(QStringLiteral("suggestionPills"));
+    QVERIFY(pills);
+    QCOMPARE(pills->property("count").toInt(), 12);
+    panel->setProperty("showAllSuggestions", true);
+    QCOMPARE(pills->property("count").toInt(), 20);
+    panel->setProperty("suggestions", QStringList{"Z53", "M7"});
+    QCOMPARE(panel->property("showAllSuggestions").toBool(), false);
+    QCOMPARE(pills->property("count").toInt(), 2);
 }
 
 bool TestUi::loadItem(const char *type, const QVariantMap &properties)
