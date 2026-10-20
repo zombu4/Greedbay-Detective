@@ -24,11 +24,17 @@ endif()
 # Windows: the compiler runtime comes from InstallRequiredSystemLibraries
 # below (owner decision Q16: the Visual C++ runtime DLLs next to the
 # program), not from the deploy tool.
+# The database is SQLite (qsqlite); the other SQL drivers Qt ships are left
+# out: the Oracle one needs Oracle's client library (libclntsh), which the
+# .deb's dependency check cannot find. EXCLUDE_PLUGINS (since Qt 6.10) "only
+# work on Windows and Linux" (qt_deploy_runtime_dependencies docs); macOS's
+# deploy tool (macdeployqt) has no per-plugin choice.
 qt_generate_deploy_qml_app_script(
     TARGET ${APP_NAME}
     OUTPUT_SCRIPT app_deploy_script
     NO_TRANSLATIONS
     NO_COMPILER_RUNTIME
+    EXCLUDE_PLUGINS qsqlmimer qsqloci qsqlodbc qsqlpsql
 )
 install(SCRIPT "${app_deploy_script}")
 

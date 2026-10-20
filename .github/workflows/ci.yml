@@ -208,14 +208,18 @@ jobs:
       # come from the Ubuntu archive, checked by apt's signatures; their
       # installed versions are printed. dpkg-dev (dpkg-shlibdeps) and file:
       # CPack's DEB generator uses both to work out the package's
-      # dependencies (CMake 4.4 CPackDeb.cmake).
+      # dependencies (CMake 4.4 CPackDeb.cmake); dpkg-shlibdeps must find
+      # every library the bundled Qt xcb platform plugin uses (Qt's "Platform
+      # Plugin Dependencies", https://doc.qt.io/qt-6/linux-requirements.html),
+      # so their Ubuntu 24.04 packages are installed (packages.ubuntu.com).
       - name: Install the OpenGL development files, a virtual display and the packaging tools (Linux)
         if: runner.os == 'Linux'
         run: |
           set -eu
+          xcb="libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-render-util0 libxcb-shape0 libxcb-util1 libxcb-xkb1 libxkbcommon-x11-0"
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends libgl1-mesa-dev xvfb xauth dpkg-dev file
-          dpkg-query -W libgl1-mesa-dev xvfb xauth dpkg-dev file
+          sudo apt-get install -y --no-install-recommends libgl1-mesa-dev xvfb xauth dpkg-dev file $xcb
+          dpkg-query -W libgl1-mesa-dev xvfb xauth dpkg-dev file $xcb
 
       # The bundled IBM Plex fonts must be the files of IBM's release
       # (resources/fonts/README.md).
