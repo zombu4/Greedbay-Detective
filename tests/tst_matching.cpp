@@ -86,8 +86,23 @@ void TestMatching::initTestCase()
 void TestMatching::dataFiles()
 {
     // The shipped data reads with every source required (builtIn did).
-    QCOMPARE(m_known.brands().size(), 80);
+    QCOMPARE(m_known.brands().size(), 92);
     QVERIFY(m_known.findModel(QStringLiteral("marconi"), QStringLiteral("2022D")));
+    // The bench-scope makers (owner approval 2026-10-20): a product line is
+    // the product name, never a family; respellings only match.
+    const KnownModel *plugin = m_known.findModel(QStringLiteral("tektronix"), QStringLiteral("7A26"));
+    QVERIFY(plugin);
+    QCOMPARE(plugin->productName, QStringLiteral("7000 Series Plug-in"));
+    QVERIFY(plugin->family.isEmpty());
+    QCOMPARE(plugin->firstYear, 1974);
+    QCOMPARE(plugin->lastYear, 1991);
+    QVERIFY(m_known.findModel(QStringLiteral("fnirsi"), QStringLiteral("1014D")));
+    QVERIFY(m_known.findModel(QStringLiteral("rigol"), QStringLiteral("DS70000")));
+    const Brand *lecroy = m_known.brandByName(QStringLiteral("LeCroy"));
+    QVERIFY(lecroy);
+    QCOMPARE(lecroy->id, QStringLiteral("lecroy"));
+    for (const BrandName &name : lecroy->names)
+        QCOMPARE(name.search, name.name == QStringLiteral("Teledyne LeCroy"));
     QVERIFY(m_known.findModel(QStringLiteral("racaldana"), QStringLiteral("1992")));
     // Years (owner decision 2026-10-19): first and optional last year.
     const KnownModel *c64 = m_known.findModel(QStringLiteral("commodore"), QStringLiteral("64"));
