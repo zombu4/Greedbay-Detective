@@ -74,6 +74,9 @@ public:
 
     bool isRunning() const;
     bool isConnected() const { return m_connected; }
+    // What the last poll of the DevTools port got ("no answer yet",
+    // a network error, "answered").
+    QString lastPoll() const { return m_lastPoll; }
     qint64 processId() const;
     // Pushes queued messages out now (used before blocking waits).
     void flush();

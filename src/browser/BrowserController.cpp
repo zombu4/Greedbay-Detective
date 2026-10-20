@@ -138,7 +138,11 @@ BrowserController::BrowserController(WorkFolder folder, InstalledBrowser browser
         connect(timer, &QTimer::timeout, this, slot);
         return timer;
     };
-    m_startTimer = makeTimer([this]() { fail(QStringLiteral("the browser did not start in time")); });
+    m_startTimer = makeTimer([this]() {
+        fail(m_cdp && !m_cdp->isConnected()
+                 ? QStringLiteral("the browser did not start in time (DevTools port, last try: %1)").arg(m_cdp->lastPoll())
+                 : QStringLiteral("the browser did not start in time"));
+    });
     m_delayTimer = makeTimer([this]() { startLoad(); });
     m_loadTimer = makeTimer([this]() {
         if (!m_loading)
