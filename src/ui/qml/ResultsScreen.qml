@@ -79,6 +79,18 @@ Item {
                             Layout.fillWidth: true
                             text: screen.results.identitySource + "  ·  searches: " + screen.results.searches
                         }
+                        // Owner case 11: the identity does not match the listing's
+                        // own title; no numbers were computed from it.
+                        Text {
+                            Layout.fillWidth: true
+                            visible: text.length > 0
+                            text: screen.results.identityWarning
+                            wrapMode: Text.WordWrap
+                            font.family: Theme.sans
+                            font.pixelSize: Theme.bodySize
+                            font.weight: Font.DemiBold
+                            color: Theme.warnLabel
+                        }
                         Repeater {
                             model: screen.results.identityNotes
                             Muted {

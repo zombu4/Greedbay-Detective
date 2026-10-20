@@ -105,6 +105,9 @@ class ResultsController : public QObject {
     Q_PROPERTY(QString identitySource READ identitySource NOTIFY changed)
     Q_PROPERTY(QString searches READ searches NOTIFY changed)
     Q_PROPERTY(QStringList identityNotes READ identityNotes NOTIFY changed)
+    // Owner case 11: lookup::kIdentityMismatch when the identity did not
+    // match the listing's own title (no numbers then), else empty.
+    Q_PROPERTY(QString identityWarning READ identityWarning NOTIFY changed)
     Q_PROPERTY(QString brand READ brand NOTIFY changed)
     Q_PROPERTY(QString model READ model NOTIFY changed)
     Q_PROPERTY(QString productName READ productName NOTIFY changed)
@@ -218,6 +221,7 @@ public:
     QString identitySource() const;
     QString searches() const;
     QStringList identityNotes() const;
+    QString identityWarning() const;
     QString brand() const { return m_saved.result.identity.brandName; }
     QString model() const { return m_saved.result.identity.model; }
     QString productName() const { return m_saved.result.identity.productName; }

@@ -26,6 +26,18 @@ struct Row {
 // Every row of `result`, matched against its identity.
 QList<Row> classifyRows(const LookupResult &result, const MatchWords &words);
 
+// Owner case 11: the pasted listing is never "not this item".
+inline constexpr char kIdentityMismatch[] =
+    "The model doesn't match this listing's own title - check it (Wrong item? Correct it)";
+// After classifyRows (and the matcher plugins), before the numbers:
+//  - an identity the user set (source "user" or "saved"): the listing's own
+//    rows (its item number) count as the same item;
+//  - any other identity that the listing's own title does not match
+//    (matchRow gives "not this item") is wrong: no row is counted, so no
+//    numbers come from it, and kIdentityMismatch is added to result->notes.
+// False when the identity is wrong.
+bool checkOwnListing(LookupResult *result, QList<Row> *rows, const MatchWords &words);
+
 // The numbers, from the included rows only (owner decision 2026-10-19: no
 // condition grading - one set of numbers over all same-item rows; rules 11,
 // 12, 16, 20; DESIGN 3.4):

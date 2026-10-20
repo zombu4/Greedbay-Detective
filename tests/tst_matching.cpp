@@ -20,6 +20,8 @@
 #include <QTemporaryDir>
 #include <QTest>
 
+#include <algorithm>
+
 using namespace app::lookup;
 
 Q_DECLARE_METATYPE(app::lookup::Bucket)
@@ -57,6 +59,8 @@ private slots:
     void identityPerCase();
     void identityWithoutKnownBrand();
     void identityBrandScan();
+    void identityCase11();
+    void ownListingIsNeverNotThisItem();
     void rows_data();
     void rows();
     void productNameWords();
@@ -450,13 +454,21 @@ void TestMatching::identityPerCase()
     QVERIFY(!unbranded.confident);
     QVERIFY(unbranded.brandId.isEmpty());
 
-    // The item specifics name the model.
-    Identity bySpecifics = identify(item(QStringLiteral("Vintage Sencore analyzer"),
-                                         {{QStringLiteral("Brand"), QStringLiteral("Sencore")},
-                                          {QStringLiteral("Model"), QStringLiteral("LC53")}}),
-                                    m_known, m_words);
-    QCOMPARE(bySpecifics.model, QStringLiteral("LC53"));
-    QVERIFY(bySpecifics.confident);
+    // The item specifics name a model the title does not hold: not
+    // confident; the app asks and suggests it (owner case 11).
+    const Identity bySpecifics = identify(item(QStringLiteral("Vintage Sencore analyzer"),
+                                               {{QStringLiteral("Brand"), QStringLiteral("Sencore")},
+                                                {QStringLiteral("Model"), QStringLiteral("LC53")}}),
+                                          m_known, m_words);
+    QVERIFY(!bySpecifics.confident);
+    QVERIFY(bySpecifics.candidates.contains(QStringLiteral("LC53")));
+    // With the model in the title too, it is the known model.
+    const Identity bothSay = identify(item(QStringLiteral("Vintage Sencore LC53 analyzer"),
+                                           {{QStringLiteral("Brand"), QStringLiteral("Sencore")},
+                                            {QStringLiteral("Model"), QStringLiteral("LC53")}}),
+                                      m_known, m_words);
+    QVERIFY(bothSay.confident);
+    QCOMPARE(bothSay.model, QStringLiteral("LC53"));
 }
 
 void TestMatching::identityWithoutKnownBrand()
@@ -468,11 +480,16 @@ void TestMatching::identityWithoutKnownBrand()
     QVERIFY(acme.confident);
     QCOMPARE(acme.model, QStringLiteral("M7-X"));
     QCOMPARE(buildQueries(acme), QStringList({"Acme M7-X"}));
-    // Two model-like words: ask.
+    // Two model-like words: the one right after the brand (owner case 11).
     const Identity two = identify(item(QStringLiteral("Acme M7X B2 meter"), {{QStringLiteral("Brand"), QStringLiteral("Acme")}}),
                                   m_known, m_words);
-    QVERIFY(!two.confident);
-    QCOMPARE(two.candidates, QStringList({"M7X", "B2"}));
+    QVERIFY(two.confident);
+    QCOMPARE(two.model, QStringLiteral("M7X"));
+    // Two, neither right after the brand: ask.
+    const Identity neither = identify(item(QStringLiteral("Acme meter M7X B2"), {{QStringLiteral("Brand"), QStringLiteral("Acme")}}),
+                                      m_known, m_words);
+    QVERIFY(!neither.confident);
+    QCOMPARE(neither.candidates, QStringList({"M7X", "B2"}));
     // No brand at all: ask, even with a model word.
     const Identity none = identify(item(QStringLiteral("M7X bench meter")), m_known, m_words);
     QVERIFY(!none.confident);
@@ -510,6 +527,88 @@ void TestMatching::identityBrandScan()
     const Identity heathKit = identify(item(QStringLiteral("Heath Kit IM-13 VTVM")), m_known, m_words);
     QCOMPARE(heathKit.brandId, QStringLiteral("heathkit"));
     QCOMPARE(heathKit.model, QStringLiteral("IM-13"));
+}
+
+void TestMatching::identityCase11()
+{
+    using Specifics = QList<ItemRecord::Specific>;
+    auto identityOf = [this](const char *title, const Specifics &specifics) {
+        return identify(item(QLatin1String(title), specifics), m_known, m_words);
+    };
+    const ItemRecord::Specific brand{QStringLiteral("Brand"), QStringLiteral("Acme")};
+    // A seller's code in the MPN, not in the title: the title's model wins.
+    const Identity sku = identityOf("Acme QX200 digital scope 100MHz 2CH dual channel",
+                                    {brand, {QStringLiteral("MPN"), QStringLiteral("ZZ-b771")}, {QStringLiteral("Style"), QStringLiteral("100MHz 2CH")}});
+    QVERIFY(sku.confident);
+    QCOMPARE(sku.model, QStringLiteral("QX200"));
+    QCOMPARE(sku.source, QStringLiteral("title"));
+    QCOMPARE(buildQueries(sku), QStringList({"Acme QX200"}));
+    // The title alone.
+    QCOMPARE(identityOf("Acme QX200 scope", {brand}).model, QStringLiteral("QX200"));
+    // Model vs MPN, both in the title, neither right after the brand: the
+    // Model specific picks.
+    const Identity both = identityOf("Acme digital scope QX200 KQ9",
+                                     {brand, {QStringLiteral("Model"), QStringLiteral("QX200")}, {QStringLiteral("MPN"), QStringLiteral("KQ9")}});
+    QVERIFY(both.confident);
+    QCOMPARE(both.model, QStringLiteral("QX200"));
+    QCOMPARE(both.source, QStringLiteral("item specifics"));
+    // The MPN picks when the Model specific is not in the title.
+    const Identity mpn = identityOf("Acme digital scope QX200 KQ9",
+                                    {brand, {QStringLiteral("Model"), QStringLiteral("ZZ-B771")}, {QStringLiteral("MPN"), QStringLiteral("kq9")}});
+    QCOMPARE(mpn.model, QStringLiteral("KQ9"));
+    // A specific the title does not hold: ask, and suggest it.
+    const Identity missing = identityOf("Acme digital scope 100MHz", {brand, {QStringLiteral("Model"), QStringLiteral("QX200")}});
+    QVERIFY(!missing.confident);
+    QVERIFY2(missing.reason.contains(QStringLiteral("QX200")), qPrintable(missing.reason));
+    QVERIFY(missing.candidates.contains(QStringLiteral("QX200")));
+    // Specifications are never models, from the title or the Style field.
+    const Identity specs = identityOf("Acme scope 100MHz 2CH", {brand, {QStringLiteral("Style"), QStringLiteral("100MHz 2CH")}});
+    QVERIFY(!specs.confident);
+    QVERIFY(specs.model.isEmpty());
+    // The Condition specific keeps eBay's short name only.
+    const ItemRecord parsed = ItemRecord::fromJson(QJsonObject{
+        {QStringLiteral("specifics"), QJsonArray{QJsonObject{{QStringLiteral("label"), QStringLiteral("Condition")},
+                                                             {QStringLiteral("value"), QStringLiteral("New: A brand-new, unused item.")}}}}});
+    QCOMPARE(parsed.specific(QStringLiteral("Condition")), QStringLiteral("New"));
+}
+
+void TestMatching::ownListingIsNeverNotThisItem()
+{
+    // The pasted listing, also found among the for-sale rows.
+    LookupResult result;
+    result.item.itemId = QStringLiteral("100000000077");
+    result.item.title = QStringLiteral("Acme QX200 digital scope");
+    SearchRecord own;
+    own.itemId = result.item.itemId;
+    own.title = result.item.title;
+    own.priceCents = 10000;
+    own.shippingCents = 0;
+    SearchRecord other = own;
+    other.itemId = QStringLiteral("100000000078");
+    result.active = {own, other};
+    // An identity that does not match the listing's own title: wrong - no
+    // row counted, the warning noted.
+    result.identity = identityFromUser({QStringLiteral("Acme"), QStringLiteral("ZZ-B771"), QString()}, m_known, QStringLiteral("user"));
+    result.identity.source = QStringLiteral("item specifics");
+    QList<Row> rows = classifyRows(result, m_words);
+    QVERIFY(!checkOwnListing(&result, &rows, m_words));
+    QVERIFY(std::none_of(rows.cbegin(), rows.cend(), [](const Row &row) { return row.included; }));
+    QVERIFY(result.notes.contains(QString::fromLatin1(kIdentityMismatch)));
+    // The right identity: the listing is the same item, nothing noted.
+    result.notes.clear();
+    result.identity = identityFromUser({QStringLiteral("Acme"), QStringLiteral("QX200"), QString()}, m_known, QStringLiteral("title"));
+    rows = classifyRows(result, m_words);
+    QVERIFY(checkOwnListing(&result, &rows, m_words));
+    QCOMPARE(rows.first().match.bucket, Bucket::SameItem);
+    QVERIFY(result.notes.isEmpty());
+    // An identity the user set: the listing's own row counts as the same
+    // item even when its title lacks the code.
+    result.identity = identityFromUser({QStringLiteral("Acme"), QStringLiteral("QX201"), QString()}, m_known, QStringLiteral("user"));
+    rows = classifyRows(result, m_words);
+    QVERIFY(checkOwnListing(&result, &rows, m_words));
+    QCOMPARE(rows.first().match.bucket, Bucket::SameItem);
+    QVERIFY(rows.first().included);
+    QCOMPARE(rows.last().match.bucket, Bucket::NoMatch);
 }
 
 void TestMatching::rows_data()

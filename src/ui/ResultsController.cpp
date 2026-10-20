@@ -428,6 +428,12 @@ QStringList ResultsController::identityNotes() const
     return notes;
 }
 
+QString ResultsController::identityWarning() const
+{
+    const QString note = QString::fromLatin1(lookup::kIdentityMismatch);
+    return m_saved.result.notes.contains(note) ? note : QString();
+}
+
 QString ResultsController::priceText() const { return moneyText(m_saved.result.item.priceCents); }
 QString ResultsController::shippingText() const { return moneyText(m_saved.result.item.shippingCents); }
 QString ResultsController::totalText() const { return moneyText(m_saved.result.item.totalCents()); }
@@ -701,8 +707,11 @@ QStringList ResultsController::sideLines() const
                                                   : QString()));
     }
     lines.append(QStringLiteral("Shipping costs eBay shows can depend on the ship-to location eBay has for the app's browser."));
-    for (const QString &note : result.notes)
-        lines.append(note);
+    for (const QString &note : result.notes) {
+        // Shown in the identity bar instead.
+        if (note != QLatin1String(lookup::kIdentityMismatch))
+            lines.append(note);
+    }
     return lines;
 }
 

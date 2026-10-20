@@ -382,6 +382,9 @@ void LookupSession::saveLookup(lookup::LookupResult result)
     // The built-in matcher first, then the matcher plugins on its rows.
     if (m_plugins)
         m_plugins->applyMatchers(result, &rows);
+    // The pasted listing is never "not this item" (owner case 11).
+    if (!lookup::checkOwnListing(&result, &rows, *m_words))
+        qWarning().noquote() << "lookup: the identity does not match the listing's own title; no numbers";
     const lookup::Valuation valuation =
         lookup::valuate(result, rows, Settings(m_folder.settingsPath()).valueSettings());
     QString error;

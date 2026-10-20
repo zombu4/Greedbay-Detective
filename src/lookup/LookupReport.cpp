@@ -207,6 +207,30 @@ QList<Row> classifyRows(const LookupResult &result, const MatchWords &words)
     return rows;
 }
 
+bool checkOwnListing(LookupResult *result, QList<Row> *rows, const MatchWords &words)
+{
+    const QString itemId = result->item.itemId;
+    const QString source = result->identity.source;
+    if (source == QLatin1String("user") || source == QLatin1String("saved")) {
+        for (Row &row : *rows) {
+            if (itemId.isEmpty() || rowItemId(*result, row) != itemId || row.match.bucket == Bucket::SameItem)
+                continue;
+            row.match.bucket = Bucket::SameItem;
+            row.match.reasons.append(QStringLiteral("this listing: you set what it is"));
+            row.included = true;
+        }
+        return true;
+    }
+    if (result->identity.model.isEmpty() || matchRow(result->item.title, result->identity, words).bucket != Bucket::NoMatch)
+        return true;
+    for (Row &row : *rows)
+        row.included = false;
+    const QString note = QString::fromLatin1(kIdentityMismatch);
+    if (!result->notes.contains(note))
+        result->notes.append(note);
+    return false;
+}
+
 Valuation valuate(const LookupResult &result, const QList<Row> &rows, const ValueSettings &settings)
 {
     Valuation valuation;

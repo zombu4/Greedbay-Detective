@@ -135,7 +135,13 @@ ItemRecord ItemRecord::fromJson(const QJsonObject &data)
     }
     for (const QJsonValue &value : data.value(QStringLiteral("specifics")).toArray()) {
         const QJsonObject entry = value.toObject();
-        record.specifics.append({entry.value(QStringLiteral("label")).toString(), entry.value(QStringLiteral("value")).toString()});
+        const QString label = entry.value(QStringLiteral("label")).toString();
+        QString text = entry.value(QStringLiteral("value")).toString();
+        // eBay puts its whole explanation into the Condition specific ("New:
+        // A brand-new, unused, unopened ..."; owner case 11): its name only.
+        if (label.compare(QStringLiteral("Condition"), Qt::CaseInsensitive) == 0 && text.contains(QStringLiteral(": ")))
+            text = text.section(QStringLiteral(": "), 0, 0).trimmed();
+        record.specifics.append({label, text});
     }
     return record;
 }

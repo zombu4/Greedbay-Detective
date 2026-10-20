@@ -187,13 +187,20 @@ function sellerFromCard() {
     const text = norm(card.textContent);
     const percent = /(\d{1,3}(?:\.\d+)?)% positive/.exec(text);
     const count = /\((\d{1,3}(?:,\d{3})+|\d+)\)/.exec(text);
+    // The name is the link's bold span (recon: "name link span (BOLD)");
+    // the first link of the card can be something else (owner case 11 saved
+    // single letters, "F" and "G", as seller names). Without a bold span,
+    // the first link with text.
     let name = null;
+    const bold = card.querySelector('a span[class*="BOLD"]');
+    if (bold && norm(bold.textContent).length > 0)
+        name = norm(bold.textContent);
     for (const link of card.querySelectorAll('a')) {
-        const linkText = norm(link.textContent);
-        if (linkText.length > 0) {
-            name = linkText;
+        if (name !== null)
             break;
-        }
+        const linkText = norm(link.textContent);
+        if (linkText.length > 0)
+            name = linkText;
     }
     return {
         name: name,

@@ -265,10 +265,11 @@ void TestLookup::fullLookup()
     runner->onReply(okReply(itemData()));
     QCOMPARE(itemReady.size(), 1);
     QVERIFY(runner->isWaitingForQueries());
-    // Brand "Acme" (a new brand, as written) and the one model-like word of
-    // the Model specific, with its hyphen: one query (owner rule 21).
+    // Brand "Acme" (a new brand, as written) and the model right after the
+    // brand in the listing's own title (owner case 11: the title before the
+    // Model specific "Acme M7-X", the same code): one query (owner rule 21).
     QVERIFY(runner->result().identity.confident);
-    QCOMPARE(runner->result().queries, QStringList({"Acme M7-X"}));
+    QCOMPARE(runner->result().queries, QStringList({"Acme M7X"}));
 
     // The user keeps two queries (and clears the third).
     QVERIFY(runner->startComps({QStringLiteral("Acme M7X"), QStringLiteral("M7X"), QStringLiteral("  ")},

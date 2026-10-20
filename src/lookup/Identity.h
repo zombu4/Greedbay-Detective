@@ -18,27 +18,30 @@ namespace app::lookup {
 // specific, the first known brand named in the title that has a known model
 // there, else the known brand whose name appears first in the title.
 //
-// Model: first a known model (or family member) of that brand appearing as a
-// whole word, or 2-4 neighbouring words written together (the longest first),
-// in the "Model" or "MPN" specific or the title; in the title, a known model
-// of digits only counts only right after a brand name or its product name
-// (owner decision 2026-10-19: "1992" is a model, a year elsewhere). Otherwise
-// the candidates (modelCandidatesAfterBrand): the model-like words
+// Model (owner case 11: the listing's own title first, then the "Model"
+// specific, then the "MPN" specific):
+//   1 the title: a known model (or family member) of that brand as a whole
+//     word or 2-4 neighbouring words written together (the longest first;
+//     a known model of digits only only right after a brand name or its
+//     product name - owner decision 2026-10-19: "1992" is a model, a year
+//     elsewhere); else the candidate right after a brand name ("<brand>" or
+//     "<brand> model"); else the title's only candidate (after narrowed():
+//     tube types out, a seller's code at the end out). Its source is "item
+//     specifics" when a specific names the same code, else "title".
+//   2 else the "Model", then the "MPN" specific, but only a code the title
+//     holds too: a specific whose code is not in the title is ignored (an
+//     MPN is often a seller's own SKU: "TXD-A219" for a Hantek DSO2C10).
+// Candidates (modelCandidatesAfterBrand): the model-like words
 // (isModelLike: a letter and a digit, numbers-only never, no specification,
 // not a count, version or option code) that are no brand name, in upper
 // case with its hyphens kept as written (AA-100, IM-13, LC53, 8904A); and,
-// right after a brand name ("<brand>" or "<brand> model"), a number of
-// digits only ("Tektronix 2445", brand-scan S17) or a short letter word and a
-// number written apart, joined ("Sencore TC 154" -> TC154, S18); a number
-// that is a known model of the brand without its letters ("Sencore 53" for
-// LC53, owner case 2) is none. Elsewhere
-// words are never joined ("53 Z Meter" never gives 53Z). With several
-// candidates, tube types (12AX7, S3) are dropped; then, when every other
-// candidate is the title's last word (a seller's stock code, S4) and one
-// stands right after the brand, that one is taken. The model is confident
-// when the "Model" specific has exactly one candidate, else the "MPN"
-// specific, else the title (each: exactly one distinct normalized code).
-// Anything else - no brand, no model word, or several - is not confident:
+// right after a brand name, a number of digits only ("Tektronix 2445",
+// brand-scan S17) or a short letter word and a number written apart, joined
+// ("Sencore TC 154" -> TC154, S18); a number that is a known model of the
+// brand without its letters ("Sencore 53" for LC53, owner case 2) is none.
+// Elsewhere words are never joined ("53 Z Meter" never gives 53Z). Anything
+// else - no brand, no model, several title candidates and none right after
+// the brand, or only a specific the title does not hold - is not confident:
 // the app asks the user (rule 26) and suggests the candidates and the known
 // models of the brand.
 struct Identity {

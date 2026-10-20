@@ -287,6 +287,24 @@ bool shortOfKnownModel(const QString &candidate, const QString &brandId, const K
     return false;
 }
 
+// True when one of `codes` (normalized) stands in the title as one word or
+// as 2-4 neighbouring words written together.
+bool appearsInTitle(const QStringList &titleList, const QStringList &codes)
+{
+    QStringList wanted;
+    for (const QString &code : codes)
+        wanted.append(normalizeCode(code));
+    for (qsizetype i = 0; i < titleList.size(); ++i) {
+        QString joined;
+        for (qsizetype n = 0; n < 4 && i + n < titleList.size(); ++n) {
+            joined += normalizeCode(titleList.at(i + n));
+            if (wanted.contains(joined))
+                return true;
+        }
+    }
+    return false;
+}
+
 // Several candidates of one text: tube types are dropped when anything else
 // is left (S3); then, when the only other candidate is the text's last word
 // (a seller's stock code, S4) and the one left stands right after the
@@ -487,51 +505,87 @@ Identity identify(const ItemRecord &item, const KnownModels &known, const MatchW
     else if (!brandSpecific.isEmpty())
         setNewBrand(&identity, brandSpecific);
 
-    const struct {
-        QString text;
-        const char *source;
-        const char *field;
-    } sources[] = {
-        {item.specific(QStringLiteral("Model")), "item specifics", "Model specific"},
-        {item.specific(QStringLiteral("MPN")), "item specifics", "MPN specific"},
-        {item.title, "title", "title"},
-    };
+    // Owner case 11: the listing's own title comes first, then the "Model"
+    // specific, then the "MPN" specific; a specific counts only when the
+    // title holds its code too (a seller's SKU in the MPN, "TXD-A219" for a
+    // "Hantek DSO2C10", is never the model).
+    const QStringList titleList = titleWords(item.title);
+    const QString specificTexts[] = {item.specific(QStringLiteral("Model")), item.specific(QStringLiteral("MPN"))};
+    // The specifics' own candidates, to tell whether they agree with the title.
+    QStringList specificCodes;
+    for (const QString &text : specificTexts) {
+        QStringList ignored;
+        for (const QString &candidate : modelCandidatesAfterBrand(text, identity.matchNames, words, &ignored))
+            specificCodes.append(normalizeCode(candidate));
+    }
+    QStringList allCandidates;
+    QStringList severalInTitle;
+    QStringList notInTitle;
 
-    // A known model of the brand, anywhere: one word or 2-4 neighbouring
-    // words written together ("IM 13"), the longest first.
+    // 1 The title: a known model of the brand, else the model-like word right
+    // after the brand, else its only model-like word.
     if (brand) {
-        for (const auto &source : sources) {
-            const bool inTitle = &source == &sources[std::size(sources) - 1];
-            if (const KnownModel *model = knownModelIn(titleWords(source.text), *brand, known, inTitle, words)) {
-                setKnownModel(&identity, *model, known);
-                identity.source = QStringLiteral("known model");
-            }
-            if (!identity.model.isEmpty())
-                break;
+        if (const KnownModel *model = knownModelIn(titleList, *brand, known, true, words)) {
+            setKnownModel(&identity, *model, known);
+            identity.source = QStringLiteral("known model");
+        }
+    }
+    if (identity.model.isEmpty()) {
+        QStringList afterBrand;
+        QStringList found = modelCandidatesAfterBrand(item.title, identity.matchNames, words, &afterBrand);
+        found.removeIf([&](const QString &candidate) { return shortOfKnownModel(candidate, identity.brandId, known); });
+        afterBrand.removeIf([&](const QString &candidate) { return !found.contains(candidate); });
+        allCandidates = found;
+        const QStringList picked = afterBrand.size() == 1 ? afterBrand : narrowed(found, afterBrand, titleList, words);
+        if (picked.size() == 1) {
+            identity.model = picked.first();
+            identity.source = specificCodes.contains(normalizeCode(identity.model)) ? QStringLiteral("item specifics")
+                                                                                    : QStringLiteral("title");
+        } else if (picked.size() > 1) {
+            severalInTitle = picked;
         }
     }
 
-    QStringList allCandidates;
-    if (identity.model.isEmpty()) {
-        for (const auto &source : sources) {
-            QStringList afterBrand;
-            QStringList found = modelCandidatesAfterBrand(source.text, identity.matchNames, words, &afterBrand);
-            found.removeIf([&](const QString &candidate) { return shortOfKnownModel(candidate, identity.brandId, known); });
-            for (const QString &candidate : found) {
-                if (!allCandidates.contains(candidate))
-                    allCandidates.append(candidate);
+    // 2 The "Model", then the "MPN" specific: only a code the title holds
+    // too (which picks one of several title words, or one the title has
+    // apart from its model-like words, such as digits only).
+    for (const QString &text : specificTexts) {
+        if (!identity.model.isEmpty())
+            break;
+        if (brand) {
+            if (const KnownModel *model = knownModelIn(titleWords(text), *brand, known, false, words)) {
+                if (appearsInTitle(titleList, QStringList{model->model} + model->family)) {
+                    setKnownModel(&identity, *model, known);
+                    identity.source = QStringLiteral("known model");
+                    break;
+                }
+                notInTitle.append(model->model);
             }
-            const QStringList candidates = narrowed(found, afterBrand, titleWords(source.text), words);
-            if (candidates.size() == 1 && identity.reason.isEmpty()) {
-                identity.model = candidates.first();
-                identity.source = QString::fromLatin1(source.source);
-                break;
-            }
-            if (candidates.size() > 1 && identity.reason.isEmpty())
-                identity.reason = QStringLiteral("several model-like words in the %1: %2")
-                                      .arg(QString::fromLatin1(source.field), candidates.join(QStringLiteral(", ")));
         }
-        if (identity.model.isEmpty() && identity.reason.isEmpty())
+        QStringList ignored;
+        QStringList candidates = modelCandidatesAfterBrand(text, identity.matchNames, words, &ignored);
+        candidates.removeIf([&](const QString &candidate) { return shortOfKnownModel(candidate, identity.brandId, known); });
+        for (const QString &candidate : std::as_const(candidates)) {
+            if (!allCandidates.contains(candidate))
+                allCandidates.append(candidate);
+        }
+        if (candidates.size() != 1)
+            continue;
+        if (appearsInTitle(titleList, candidates)) {
+            identity.model = candidates.first();
+            identity.source = QStringLiteral("item specifics");
+        } else if (!notInTitle.contains(candidates.first())) {
+            notInTitle.append(candidates.first());
+        }
+    }
+
+    if (identity.model.isEmpty()) {
+        if (!severalInTitle.isEmpty())
+            identity.reason = QStringLiteral("several model-like words in the title: %1").arg(severalInTitle.join(QStringLiteral(", ")));
+        else if (!notInTitle.isEmpty())
+            identity.reason = QStringLiteral("the item specifics name %1, but the listing's own title does not")
+                                  .arg(notInTitle.join(QStringLiteral(", ")));
+        else
             identity.reason = QStringLiteral("no model number in the title or the item specifics");
     }
     if (identity.brandId.isEmpty())
