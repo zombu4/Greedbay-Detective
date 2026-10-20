@@ -135,8 +135,9 @@ qt_add_resources(applookup "lookup_data"
 )
 
 # appplugins: JavaScript plugins (DESIGN 5, PLAN 15): the manifest, the
-# catalog of built-in examples and installed plugins, and the host that runs
-# the enabled ones, each in a QJSEngine of its own.
+# catalog of built-in examples and installed plugins, the host that runs the
+# enabled ones, and the runner: the separate process in which plugin code
+# and plugin .zip files are handled.
 qt_add_library(appplugins STATIC
     plugins/PluginCatalog.cpp
     plugins/PluginCatalog.h
@@ -144,6 +145,8 @@ qt_add_library(appplugins STATIC
     plugins/PluginHost.h
     plugins/PluginManifest.cpp
     plugins/PluginManifest.h
+    plugins/PluginRunner.cpp
+    plugins/PluginRunner.h
 )
 
 target_link_libraries(appplugins PUBLIC appcore applookup Qt6::Qml PRIVATE Qt6::CorePrivate)
@@ -196,13 +199,14 @@ qt_add_library(appui STATIC
 )
 
 target_link_libraries(appui PUBLIC appbrowser applookup appplugins Qt6::Gui Qt6::Network Qt6::Qml Qt6::Quick Qt6::QuickControls2)
-# The generated QML type registration includes the headers by file name
-# (<Backend.h>).
+# The QML type registration code that qt_add_qml_module writes includes the
+# headers by file name (<Backend.h>).
 target_include_directories(appui PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/ui")
 
 app_enable_warnings(appui)
 # MSVC C4702 "unreachable code" is raised inside Qt's own templates that the
-# generated QML and moc code instantiates (CI run 39328016064, appui only):
+# code written by the QML tools and moc instantiates (CI run 39328016064,
+# appui only):
 # qmetatype.h:514, qvariant.h:792 and :797, qjsengine.h:112 - each an
 # `if constexpr` chain whose later return cannot be reached for some types.
 # Only that one warning is off, only for this target.
@@ -282,4 +286,11 @@ set_target_properties(${APP_NAME} PROPERTIES
     MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}"
 )
 target_compile_definitions(${APP_NAME} PRIVATE APP_LINUX_PACKAGE_BIN_DIR="${APP_LINUX_INSTALL_PREFIX}/bin")
+if(APPLE)
+    # macdeployqt rewrites the program's library paths when it packages the
+    # bundle; without room in the header install_name_tool stops with
+    # "larger updated load commands do not fit (the program must be relinked,
+    # and you may need to use -headerpad or -headerpad_max_install_names)".
+    target_link_options(${APP_NAME} PRIVATE "-Wl,-headerpad_max_install_names")
+endif()
 app_enable_warnings(${APP_NAME})

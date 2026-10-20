@@ -26,9 +26,15 @@ bool removeEntry(const QString &path, QStringList *failed)
 {
     const QFileInfo info(path);
     if (isLink(path)) {
-        // A junction or a link to a folder is removed like an empty folder on
-        // Windows; everywhere else a link is a file entry.
-        const bool removed = (info.isJunction() && QDir().rmdir(path)) || QFile::remove(path);
+#if defined(Q_OS_WIN)
+        // On Windows a junction or a link to a folder is a folder entry of its
+        // own: removing it like an empty folder leaves its target alone.
+        const bool removed = (info.isJunction() || info.isDir()) ? QDir().rmdir(path) : QFile::remove(path);
+#else
+        // Elsewhere every link is a file entry; unlinking it leaves its target
+        // alone.
+        const bool removed = QFile::remove(path);
+#endif
         if (!removed)
             failed->append(QStringLiteral("%1: the link cannot be removed").arg(shown(path)));
         return removed;
@@ -56,8 +62,11 @@ bool removeEntry(const QString &path, QStringList *failed)
 
 QStringList Uninstall::keptNames(const QString &appIdentifier)
 {
-    return {appIdentifier + QStringLiteral(".sqlite"), QStringLiteral("backups"), QString::fromLatin1(WorkFolder::kMarkerFileName),
-            QStringLiteral("known-models.json")};
+    // The database's rollback journal too: after a crash it is "hot", and
+    // the database needs it to roll back (the app uses SQLite's default
+    // rollback journal, PLAN 3).
+    return {appIdentifier + QStringLiteral(".sqlite"), appIdentifier + QStringLiteral(".sqlite-journal"), QStringLiteral("backups"),
+            QString::fromLatin1(WorkFolder::kMarkerFileName), QStringLiteral("known-models.json")};
 }
 
 QStringList Uninstall::knownPaths(const QString &appIdentifier)
@@ -98,15 +107,21 @@ QString Uninstall::check(const WorkFolder &folder)
 Uninstall::Report Uninstall::run(const WorkFolder &folder, bool keepHistory)
 {
     Report report;
+    // The app's own lock, held until everything else is gone: no instance
+    // of the app can start on the folder while it is being removed.
+    QLockFile lock(folder.lockPath());
+    lock.setStaleLockTime(0);
+    if (!lock.tryLock(0)) {
+        report.failed.append(QStringLiteral("%1: the app is running (its lock is held); nothing was removed").arg(shown(folder.path())));
+        return report;
+    }
     const QDir root(folder.path());
     const QStringList kept = keepHistory ? keptNames(folder.appIdentifier()) : QStringList();
     const QString marker = QString::fromLatin1(WorkFolder::kMarkerFileName);
-    // The marker last: until everything else is gone the folder stays
-    // recognizable as the app's.
+    const QString lockName = QString::fromLatin1(WorkFolder::kLockFileName);
     QStringList names = root.entryList(QDir::AllEntries | QDir::NoDotAndDotDot | QDir::Hidden | QDir::System, QDir::Name);
     names.removeAll(marker);
-    if (!kept.contains(marker))
-        names.append(marker);
+    names.removeAll(lockName);
     for (const QString &name : std::as_const(names)) {
         const QString path = root.filePath(name);
         if (kept.contains(name)) {
@@ -118,6 +133,13 @@ Uninstall::Report Uninstall::run(const WorkFolder &folder, bool keepHistory)
         if (removeEntry(path, &report.failed))
             report.removed.append(shown(path));
     }
+    // Then the lock (unlock() deletes its file), and the marker last: until
+    // everything else is gone the folder stays recognizable as the app's.
+    lock.unlock();
+    if (!keepHistory && somethingAt(folder.markerPath()) && report.ok()) {
+        if (removeEntry(folder.markerPath(), &report.failed))
+            report.removed.append(shown(folder.markerPath()));
+    }
     if (keepHistory) {
         // The marker stays with the history.
         if (somethingAt(folder.markerPath()) && !report.kept.contains(shown(folder.markerPath())))
@@ -128,7 +150,10 @@ Uninstall::Report Uninstall::run(const WorkFolder &folder, bool keepHistory)
         else
             report.failed.append(QStringLiteral("%1: the folder cannot be removed").arg(shown(folder.path())));
     }
-    for (const QString &path : knownPaths(folder.appIdentifier())) {
+    // The known paths belong to the app's default work folder only (its
+    // browsers make them); a folder anywhere else has none.
+    const bool defaultFolder = QDir::cleanPath(folder.path()) == QDir::cleanPath(WorkFolder::defaultPath(folder.appIdentifier()));
+    for (const QString &path : defaultFolder ? knownPaths(folder.appIdentifier()) : QStringList()) {
         if (!somethingAt(path))
             continue;
         if (removeEntry(path, &report.failed))

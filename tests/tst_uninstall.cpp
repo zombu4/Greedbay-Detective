@@ -1,6 +1,8 @@
 // Uninstall of the user's data (core/Uninstall, PLAN 9): keep or delete,
 // links never followed, and the safety checks. Only the paths the test made
-// are looked at; nothing is searched for.
+// are looked at; nothing is searched for. Temporary work folders have no
+// known paths (those belong to the app's default folder only), and the one
+// default folder the test uses has an identifier of its own.
 #include "core/Uninstall.h"
 #include "core/WorkFolder.h"
 #include "support/TestFiles.h"
@@ -29,7 +31,8 @@ bool present(const QString &path)
 bool fill(const WorkFolder &folder)
 {
     const QString root = folder.path();
-    return writeTestFile(folder.databasePath(), "db") && writeTestFile(folder.backupsDir() + "/old.sqlite", "backup")
+    return writeTestFile(folder.databasePath(), "db") && writeTestFile(folder.databasePath() + "-journal", "hot journal")
+           && writeTestFile(folder.backupsDir() + "/old.sqlite", "backup")
            && writeTestFile(folder.logsDir() + "/app.log", "log") && writeTestFile(folder.settingsPath(), "[a]\nb=1\n")
            && writeTestFile(folder.pageCountPath(), "{}") && writeTestFile(folder.knownModelsPath(), "{\"format\":1}")
            && QDir().mkpath(folder.browserProfilesDir() + "/brave/Default")
@@ -59,8 +62,10 @@ void TestUninstall::keepsTheHistory()
     QVERIFY(fill(*folder));
     const Uninstall::Report report = Uninstall::run(*folder, true);
     QVERIFY2(report.ok(), qPrintable(report.failed.join('\n')));
-    // Kept: the database, its backups, the marker, the confirmed models.
+    // Kept: the database and its journal, its backups, the marker, the
+    // confirmed models.
     QVERIFY(present(folder->databasePath()));
+    QVERIFY(present(folder->databasePath() + "-journal"));
     QVERIFY(present(folder->backupsDir() + "/old.sqlite"));
     QVERIFY(present(folder->markerPath()));
     QVERIFY(present(folder->knownModelsPath()));
@@ -68,7 +73,8 @@ void TestUninstall::keepsTheHistory()
     for (const QString &path : {folder->logsDir(), folder->settingsPath(), folder->pageCountPath(), folder->browserProfilesDir(),
                                 folder->pluginsDir(), folder->tmpDir()})
         QVERIFY2(!present(path), qPrintable(path));
-    QCOMPARE(report.kept.size(), 4);
+    QCOMPARE(report.kept.size(), 5);
+    QVERIFY(!present(folder->lockPath()));
     QVERIFY(report.removed.contains(QDir::toNativeSeparators(folder->browserProfilesDir())));
     // A later start reuses the kept folder.
     QVERIFY2(WorkFolder::open(folder->path(), QStringLiteral(TEST_APP_NAME), &error), qPrintable(error));
@@ -132,6 +138,11 @@ void TestUninstall::checksBeforeDeleting()
     QVERIFY(holder.waitForReadyRead(30000));
     QCOMPARE(holder.readLine().trimmed(), QByteArray("locked"));
     QVERIFY(Uninstall::check(*folder).contains("running"));
+    // run() takes the lock itself: while the app holds it, nothing goes.
+    const Uninstall::Report refused = Uninstall::run(*folder, false);
+    QVERIFY(!refused.ok());
+    QVERIFY(refused.removed.isEmpty());
+    QVERIFY(present(folder->markerPath()));
     holder.write("\n");
     QVERIFY(holder.waitForFinished(30000));
 

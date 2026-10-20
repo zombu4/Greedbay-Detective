@@ -70,8 +70,14 @@ app_add_unit_test(tst_ui tst_ui.cpp)
 target_link_libraries(tst_ui PRIVATE appui appuiplugin)
 
 # Plugins: manifest, install, sandbox, limits, examples; and export files.
+# pluginrunner: the plugin runner process, as the app starts itself with
+# "--plugin-runner".
+app_add_test_helper(pluginrunner helpers/pluginrunner.cpp)
+target_link_libraries(pluginrunner PRIVATE appplugins)
 app_add_unit_test(tst_plugins tst_plugins.cpp support/TestFiles.h)
 target_link_libraries(tst_plugins PRIVATE appplugins Qt6::CorePrivate)
+target_compile_definitions(tst_plugins PRIVATE PLUGINRUNNER_PATH="$<TARGET_FILE:pluginrunner>")
+add_dependencies(tst_plugins pluginrunner)
 
 # Uninstall of the work folder (core/Uninstall).
 app_add_unit_test(tst_uninstall tst_uninstall.cpp support/TestFiles.h)

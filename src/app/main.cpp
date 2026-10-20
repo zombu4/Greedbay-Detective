@@ -4,6 +4,10 @@
 // user chose "Uninstall..." (macOS, Linux), the data and the program are
 // removed once all of that is closed (core/Uninstall).
 //
+// "--plugin-runner" as the only argument: no window; runs one plugin request
+// from standard input and exits (src/plugins/PluginRunner.h: plugin code and
+// plugin .zip files are only handled in such a separate process).
+//
 // "--uninstall-data=keep" or "--uninstall-data=delete" as the only argument:
 // no window; removes the user's data the same way and exits (the Windows
 // uninstaller calls it, packaging/windows/NSIS.template.in). Exit codes: 0
@@ -17,6 +21,7 @@
 #include "core/WorkFolder.h"
 #include "db/Database.h"
 #include "db/Migrations.h"
+#include "plugins/PluginRunner.h"
 #include "ui/Backend.h"
 #include "ui/Fonts.h"
 #include "ui/PhotoProvider.h"
@@ -138,6 +143,10 @@ int finishUninstall(const app::WorkFolder &folder, bool keepHistory)
 int main(int argc, char *argv[])
 {
     const QString identifier = QString::fromLatin1(app::version::kIdentifier);
+    if (argc == 2 && std::strcmp(argv[1], "--plugin-runner") == 0) {
+        QCoreApplication runner(argc, argv);
+        return app::plugins::runPluginRequestOnStdio();
+    }
     if (argc == 2 && (std::strcmp(argv[1], "--uninstall-data=keep") == 0 || std::strcmp(argv[1], "--uninstall-data=delete") == 0))
         return uninstallData(identifier, std::strcmp(argv[1], "--uninstall-data=keep") == 0);
     QString error;

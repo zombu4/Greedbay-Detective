@@ -4,8 +4,8 @@
 # run -> the app's own --uninstall-data=delete, then the uninstaller. After
 # each step only the listed paths are checked; nothing is searched for.
 #
-# usage: windows.ps1 <the setup .exe> <app identifier>
-param([string]$Setup, [string]$Identifier)
+# usage: windows.ps1 <the setup .exe> <app identifier> <package vendor>
+param([string]$Setup, [string]$Identifier, [string]$Vendor)
 $ErrorActionPreference = 'Stop'
 
 $install = Join-Path $env:LOCALAPPDATA "Programs\$Identifier"
@@ -13,6 +13,8 @@ $program = Join-Path $install "bin\$Identifier.exe"
 $uninstaller = Join-Path $install 'Uninstall.exe'
 $work = Join-Path $env:LOCALAPPDATA $Identifier
 $entry = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\$Identifier"
+$settingsKey = "HKCU:\Software\$Vendor\$Identifier"
+$script:startMenu = $null
 
 function Fail([string]$why) { throw "INSTALL TEST FAILED: $why" }
 
@@ -21,6 +23,12 @@ function Install-App {
     if ($setup.ExitCode -ne 0) { Fail "setup exited with $($setup.ExitCode)" }
     if (-not (Test-Path $program)) { Fail "the program is not at $program" }
     if (-not (Test-Path $entry)) { Fail "no Apps & features entry at $entry" }
+    if (-not (Test-Path $settingsKey)) { Fail "no installer settings key at $settingsKey" }
+    # The Start menu folder the installer recorded in its Apps & features entry.
+    $folder = (Get-ItemProperty -Path $entry).StartMenu
+    if (-not $folder) { Fail 'the Apps & features entry names no Start menu folder' }
+    $script:startMenu = Join-Path ([Environment]::GetFolderPath('Programs')) $folder
+    if (-not (Test-Path (Join-Path $script:startMenu 'Uninstall.lnk'))) { Fail "no Uninstall shortcut in $script:startMenu" }
 }
 
 # Runs the app until it has made its work folder (at most 90 s), then stops it.
@@ -40,16 +48,19 @@ function Run-App {
 }
 
 # The uninstaller copies itself away and returns at once; wait until the
-# program and its Apps & features entry are gone (at most 120 s).
+# program, its Apps & features entry and its settings key are gone (at most
+# 120 s; the key goes last).
 function Uninstall-Silently {
     Start-Process -FilePath $uninstaller -ArgumentList '/S' -Wait | Out-Null
     $waited = 0
-    while ((Test-Path $program) -or (Test-Path $entry)) {
+    while ((Test-Path $program) -or (Test-Path $entry) -or (Test-Path $settingsKey)) {
         if ($waited -ge 120) { Fail 'the uninstaller did not remove the program in 120 s' }
         Start-Sleep -Seconds 1
         $waited++
     }
     if (Test-Path $install) { Fail "the program folder is still there: $install" }
+    if (Test-Path $settingsKey) { Fail "the installer settings key is still there: $settingsKey" }
+    if (Test-Path $script:startMenu) { Fail "the Start menu folder is still there: $script:startMenu" }
 }
 
 if (Test-Path $work) { Fail "a work folder exists before the test: $work" }

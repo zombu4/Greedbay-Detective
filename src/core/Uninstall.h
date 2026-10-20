@@ -12,8 +12,8 @@ namespace app {
 // (work cycle rule 8): only the work folder and the known paths below.
 //
 // "Keep saved lookups and history" keeps keptNames() in the work folder -
-// the database, its backups, the marker and the brands and models the user
-// confirmed - and deletes everything else there (logs, settings, the
+// the database (and its rollback journal), its backups, the marker and the
+// brands and models the user confirmed - and deletes everything else there (logs, settings, the
 // browser profiles with their cookies, the daily page count, temporary
 // files, installed plugins). "Delete everything" deletes the whole work
 // folder. A later install finds a kept folder and reuses the history.
@@ -36,7 +36,8 @@ public:
     };
 
     // The work folder entries "keep" leaves: <appIdentifier>.sqlite,
-    // backups, .workfolder, known-models.json.
+    // <appIdentifier>.sqlite-journal, backups, .workfolder,
+    // known-models.json.
     static QStringList keptNames(const QString &appIdentifier);
 
     // The known paths outside the work folder that the app itself created
@@ -49,10 +50,12 @@ public:
     // Empty when `folder` may be uninstalled (see above), else why not.
     static QString check(const WorkFolder &folder);
 
-    // Deletes the work folder (all of it, or all but keptNames()) and every
-    // known path. Call only after check() passed and after the app has
-    // closed its database, its log and its lock. Every failure is reported;
-    // the rest is still tried.
+    // Deletes the work folder (all of it, or all but keptNames()) and, for
+    // the app's default work folder only, every known path. Takes the app's
+    // lock first and holds it until everything but the marker is gone; when
+    // the app holds it (it runs), nothing is removed. Call after check()
+    // passed and after this process closed its database, its log and its own
+    // lock. Every failure is reported; the rest is still tried.
     static Report run(const WorkFolder &folder, bool keepHistory);
 
     // The program itself, after an in-app uninstall (macOS and Linux; on

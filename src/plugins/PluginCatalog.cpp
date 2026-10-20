@@ -6,14 +6,9 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QJsonObject>
 #include <QSaveFile>
-// Qt's own ZIP reader. It is private Qt API (no compatibility promise
-// between Qt versions); the app builds against one pinned Qt version
-// (PLAN 1), and tst_plugins covers it.
-#include <QtCore/private/qzipreader_p.h>
 
-#include <algorithm>
-#include <tuple>
 #include <utility>
 
 namespace app::plugins {
@@ -82,9 +77,10 @@ std::optional<PluginFiles> readFolder(const QString &folder, QString *error)
     return PluginFiles{*manifest, *script};
 }
 
-// manifest.json and main.js from a .zip: at its top or inside one folder.
-// Nothing else in it is read, and nothing is extracted to disk.
-std::optional<PluginFiles> readZip(const QString &path, QString *error)
+// manifest.json and main.js from a .zip, read by the runner process
+// (PluginRunner.h): a damaged or hostile .zip can only end that process.
+// Nothing is extracted to disk.
+std::optional<PluginFiles> readZip(const QString &path, const RunnerCommand &runner, QString *error)
 {
     if (!isPlainFile(path) || QFileInfo(path).size() > PluginCatalog::kMaxZipBytes) {
         *error = QStringLiteral("%1 is missing, a link, or larger than %2 MB")
@@ -92,50 +88,28 @@ std::optional<PluginFiles> readZip(const QString &path, QString *error)
                      .arg(PluginCatalog::kMaxZipBytes / (1024 * 1024));
         return std::nullopt;
     }
-    QZipReader zip(path);
-    if (!zip.isReadable() || zip.status() != QZipReader::NoError) {
-        *error = QStringLiteral("%1 is not a readable .zip file").arg(shown(path));
+    QString why;
+    const std::optional<QJsonObject> answer =
+        runRequest(runner, QJsonObject{{QStringLiteral("op"), QStringLiteral("unzip")}, {QStringLiteral("path"), path}},
+                   PluginCatalog::kZipTimeLimitMs, 2 * (kMaxManifestBytes + kMaxScriptBytes), &why);
+    if (answer && !answer->value(QStringLiteral("ok")).toBool())
+        why = answer->value(QStringLiteral("error")).toString();
+    if (!answer || !answer->value(QStringLiteral("ok")).toBool()) {
+        *error = QStringLiteral("%1 cannot be used: %2").arg(shown(path), why);
         return std::nullopt;
     }
-    const QList<QZipReader::FileInfo> entries = zip.fileInfoList();
-    // Where manifest.json is: "" (the top) or "<folder>/".
-    QStringList prefixes;
-    for (const QZipReader::FileInfo &entry : entries) {
-        if (entry.filePath == kManifestName)
-            prefixes.append(QString());
-        else if (entry.filePath.endsWith(QLatin1Char('/') + kManifestName) && entry.filePath.count(QLatin1Char('/')) == 1)
-            prefixes.append(entry.filePath.chopped(kManifestName.size()));
-    }
-    if (prefixes.size() != 1) {
-        *error = QStringLiteral("the .zip must hold one manifest.json, at its top or inside one folder");
+    PluginFiles files{QByteArray::fromBase64(answer->value(QStringLiteral("manifest")).toString().toLatin1()),
+                      QByteArray::fromBase64(answer->value(QStringLiteral("script")).toString().toLatin1())};
+    if (files.manifest.size() > kMaxManifestBytes || files.script.size() > kMaxScriptBytes) {
+        *error = QStringLiteral("%1 cannot be used: a file in it is too large").arg(shown(path));
         return std::nullopt;
-    }
-    const QString prefix = prefixes.first();
-    PluginFiles files;
-    for (const auto &[name, limit, target] : {std::tuple{kManifestName, kMaxManifestBytes, &files.manifest},
-                                              std::tuple{kScriptName, kMaxScriptBytes, &files.script}}) {
-        const auto entry = std::find_if(entries.cbegin(), entries.cend(),
-                                        [&](const QZipReader::FileInfo &info) { return info.filePath == prefix + name; });
-        if (entry == entries.cend() || !entry->isFile || entry->isSymLink) {
-            *error = QStringLiteral("%1 is missing from the .zip or is not a plain file").arg(prefix + name);
-            return std::nullopt;
-        }
-        if (entry->size > limit) {
-            *error = QStringLiteral("%1 in the .zip is larger than %2 KB").arg(prefix + name).arg(limit / 1024);
-            return std::nullopt;
-        }
-        *target = zip.fileData(prefix + name);
-        if (zip.status() != QZipReader::NoError || target->size() > limit) {
-            *error = QStringLiteral("%1 cannot be read from the .zip").arg(prefix + name);
-            return std::nullopt;
-        }
     }
     return files;
 }
 
 } // namespace
 
-PluginCatalog::PluginCatalog(WorkFolder folder) : m_folder(std::move(folder)) {}
+PluginCatalog::PluginCatalog(WorkFolder folder, RunnerCommand runner) : m_folder(std::move(folder)), m_runner(std::move(runner)) {}
 
 QStringList PluginCatalog::builtInIds() const
 {
@@ -256,7 +230,7 @@ std::optional<PluginManifest> PluginCatalog::install(const QString &path, QStrin
     if (source.isDir())
         files = readFolder(path, error);
     else if (source.isFile() && path.endsWith(QStringLiteral(".zip"), Qt::CaseInsensitive))
-        files = readZip(path, error);
+        files = readZip(path, m_runner, error);
     else
         *error = QStringLiteral("%1 is neither a folder nor a .zip file").arg(shown(path));
     if (!files)

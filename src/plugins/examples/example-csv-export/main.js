@@ -1,8 +1,11 @@
 // Example exporter (plugin API 1): the lookup's rows as CSV, one line per
 // row, totals in dollars. Fields with a comma, a quote or a line break are
-// quoted, with quotes doubled (RFC 4180).
+// quoted, with quotes doubled (RFC 4180); a field starting with = + - or @
+// gets a leading apostrophe, so a spreadsheet never reads it as a formula.
 function csvField(value) {
     var text = value === null || value === undefined ? "" : String(value);
+    if (/^[=+\-@]/.test(text))
+        text = "'" + text;
     if (/[",\r\n]/.test(text))
         return '"' + text.replace(/"/g, '""') + '"';
     return text;

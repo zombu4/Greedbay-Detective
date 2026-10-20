@@ -22,9 +22,11 @@ namespace app::lookup {
 // as whole words, also inside a slash-joined word ("HP/Agilent").
 //
 // The word lists are looked for in the title without the brand names, the
-// model and the product name, so they never fire inside them ("Heath Kit",
-// "Game Boy", the product name "Test Set"). "System" lists apply only to
-// models of a systemCategories category (computers, consoles, handhelds).
+// model and the words of the product name, so they never fire inside them
+// ("Heath Kit", "Game Boy"; the product name "Test Set" holds no kit, "Passive
+// Probe" no accessory: the probe is the item, S9, S13). "System" lists apply
+// only to models of a systemCategories category (computers, consoles,
+// handhelds).
 //
 // Bucket, first that applies:
 //   UnknownItem    no title (rule 19)
@@ -39,16 +41,14 @@ namespace app::lookup {
 //                  name or the product name (or "<name> model"), in a
 //                  documentation title
 //   ToCheck        such a model in any other title (a year?)
-//   NoMatch        a system re-issue ("Classic Edition", "Mini", R4) or
-//                  merchandise (poster, mug, R12)
 //   Lot            a lot word ("lot of", "station package", S16)
 //   Documentation  a documentation word not following a with-item word
 //                  ("with manual" belongs to the item; S7, R3)
 //   PartFits       a part-fits word ("compatible"); a part-only word not
 //                  following a with-item word ("front panel", "box only";
-//                  S6, S11, R12); a chip, revision or board location
-//                  (partPatterns) unless a system title names the system
-//                  itself (R10)
+//                  S6, S11, R12), or a chip, revision or board location
+//                  (partPatterns, R10) - both not when a system title names
+//                  the system itself ("computer, new SID chip")
 //   PartFits       a kit word (kit, set) not following a with-item word
 //                  (S10) with a kit-parts word (recap, cap, capacitors,
 //                  diodes, repair, upgrade, ...) or "kit for" (owner case 9)
@@ -70,9 +70,11 @@ namespace app::lookup {
 //   Accessory      an accessory word (for systems also controllers, power
 //                  supplies, cables, unless the title names the system
 //                  itself; R2) that does not follow a with-item word ("w/
-//                  Leads", case 1), is not inside a notAccessory phrase
-//                  ("original case", S12) and is not one of the identity's
-//                  ownWords (S13)
+//                  Leads", case 1) and is not inside a notAccessory phrase
+//                  ("original case", S12)
+//   NoMatch        a system re-issue word right before or after the model
+//                  ("NES Classic Edition", "C64 Mini", R4), or system
+//                  merchandise (poster, mug, R12)
 //   SameItem       otherwise
 // "for <model>" means a companion word directly followed, within three
 // words (a brand name may stand between), by the model.
@@ -87,12 +89,6 @@ struct Match {
 };
 
 Match matchRow(const QString &title, const Identity &identity, const MatchWords &words);
-
-// The accessory words (for systems also the system accessory words) that
-// the pasted listing's `title` uses for the item itself: not after a
-// with-item word, not inside a notAccessory phrase ("HP N2894A passive
-// probe" -> "probe"). Stored in Identity::ownWords before rows are matched.
-QStringList itemOwnWords(const QString &title, const Identity &identity, const MatchWords &words);
 
 QString bucketName(Bucket bucket);
 

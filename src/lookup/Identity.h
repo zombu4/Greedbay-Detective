@@ -64,11 +64,6 @@ struct Identity {
     // naming one of the other systems is a multi-system accessory (R6).
     QList<QStringList> otherModels;
     QStringList otherModelCategories;
-    // Accessory words the pasted listing's own title uses for the item
-    // itself ("HP N2894A passive probe": the probe is the item, S13); set by
-    // itemOwnWords() before the rows are matched. Rows with these words are
-    // not accessories.
-    QStringList ownWords;
     bool confident = false;
     // Where it came from: "saved" (the user confirmed it for this listing),
     // "user", "known model", "item specifics", "title".
@@ -100,7 +95,9 @@ QStringList buildQueries(const Identity &identity);
 // specUnits and specUnitsGlued) or joined by a hyphen ("2-CHANNEL",
 // "14-PIN"); a range of numbers with a unit ("10kHz-1000MHz", "0-1500V",
 // "0-15A"; the pair units A and M count here); a slash pair of such pieces,
-// optionally signed ("2M/6M", "0-8V/3A", "+-25V/1A"); a spec prefix with a
+// optionally signed ("2M/6M", "0-8V/3A", "+-25V/1A"); a current of 1-3
+// digits ("30A", currentUnits) when another word of the title states a voltage
+// (voltageUnits: "25V", "0-25V/7A"); a spec prefix with a
 // number and an optional unit ("DC-600", "DC-600kHz"); or a word ending in a
 // digit that is followed by a specUnits word ("600 KHZ", "15 MEG",
 // "4 channels").

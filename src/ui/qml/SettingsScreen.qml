@@ -12,6 +12,13 @@ Item {
     required property Backend backend
     readonly property PluginsController plugins: backend.plugins
 
+    // A plugin the app turned off after a failure (during a lookup or on the
+    // Results screen) shows as off, with why, whenever Settings is opened.
+    onVisibleChanged: {
+        if (visible)
+            plugins.refresh()
+    }
+
     component Section: Card {
         id: section
         property string heading

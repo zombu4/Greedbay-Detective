@@ -48,6 +48,8 @@ std::optional<MatchWords> MatchWords::fromJson(const QByteArray &json, QString *
         {wordsOf("specPrefixes"), &words.specPrefixes, "specPrefixes"},
         {wordsOf("specUnitsGlued"), &words.specUnitsGlued, "specUnitsGlued"},
         {wordsOf("specUnitsInPairs"), &words.specUnitsInPairs, "specUnitsInPairs"},
+        {wordsOf("currentUnits"), &words.currentUnits, "currentUnits"},
+        {wordsOf("voltageUnits"), &words.voltageUnits, "voltageUnits"},
         {patternsOf("notModels"), &words.notModels, "notModels"},
         {wordsOf("optionWords"), &words.optionWords, "optionWords"},
         {wordsOf("modelWords"), &words.modelWords, "modelWords"},

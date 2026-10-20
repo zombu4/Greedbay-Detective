@@ -10,8 +10,12 @@ namespace app::lookup {
 
 namespace {
 
-QString csvField(const QString &text)
+QString csvField(QString text)
 {
+    // A seller's title starting with = + - or @ would be a formula in a
+    // spreadsheet: a leading apostrophe keeps it text.
+    if (!text.isEmpty() && QStringLiteral("=+-@").contains(text.front()))
+        text.prepend(QLatin1Char('\''));
     if (!text.contains(QLatin1Char(',')) && !text.contains(QLatin1Char('"')) && !text.contains(QLatin1Char('\n'))
         && !text.contains(QLatin1Char('\r')))
         return text;

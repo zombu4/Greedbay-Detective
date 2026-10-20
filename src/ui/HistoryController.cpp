@@ -115,7 +115,9 @@ void HistoryController::rebuild()
     const QDate today = now.date();
     const QDate first = today.addDays(-(m_windowDays - 1));
     m_minTime = msOf(QDateTime(first, QTime(0, 0), QTimeZone::UTC));
-    m_maxTime = msOf(now);
+    // The end of today: a sale of today sits at noon UTC, which can be later
+    // than now.
+    m_maxTime = msOf(QDateTime(today, QTime(23, 59, 59), QTimeZone::UTC));
     m_startLabel = dateText(first);
     m_endLabel = dateText(today);
     m_minCents = 0;

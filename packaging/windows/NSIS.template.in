@@ -1,5 +1,5 @@
 ; The Windows setup program of the app, for CPack's NSIS generator
-; (cmake/packaging.cmake puts this folder on CMAKE_MODULE_PATH, where CPack
+; (cmake/packaging.cmake names this folder in CPACK_MODULE_PATH, where CPack
 ; looks for NSIS.template.in before its own). Written for this app; it uses
 ; the placeholders CPack's NSIS generator fills (the @CPACK_...@ names of
 ; CMake 4.4's own template, Modules/Internal/CPack/NSIS.template.in).

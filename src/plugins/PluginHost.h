@@ -3,6 +3,7 @@
 #include "lookup/LookupReport.h"
 #include "lookup/LookupRunner.h"
 #include "plugins/PluginCatalog.h"
+#include "plugins/PluginRunner.h"
 
 #include <QByteArray>
 #include <QJsonObject>
@@ -41,20 +42,22 @@ struct PluginExport {
 
 // Runs the enabled plugins, API version 1 (DESIGN 5, PLAN 15).
 //
-// Sandbox: each plugin runs in a QJSEngine of its own, created without any
-// of QJSEngine's extensions (no console, no qsTr, no gc()), with no C++
-// object passed in: the script has the ECMAScript built-ins and nothing
+// Sandbox: plugin code never runs inside the app. Each check and each call
+// runs in a runner process of its own (PluginRunner.h): a QJSEngine created
+// without any of its extensions (no console, no qsTr, no gc()), with no C++
+// object passed in, so the script has the ECMAScript built-ins and nothing
 // else - no file, network or process access. It sees only the data its
 // manifest's permissions grant, as plain JSON (inputFor), and returns plain
 // JSON.
 //
-// Limits: every call - loading main.js included - is stopped after the
-// time limit (Settings "plugins/callTimeLimitMs") by QJSEngine::
-// setInterrupted from a watchdog thread ("This function is thread safe",
-// https://doc.qt.io/qt-6/qjsengine.html). QJSEngine offers no memory limit;
-// what goes in is capped (kMaxInputBytes) and what comes out is checked
-// against the shapes below and capped (kMaxOutputChars, the exporter's
-// file size).
+// Limits: every check and call is stopped after the time limit (Settings
+// "plugins/callTimeLimitMs"): inside the runner by QJSEngine::setInterrupted,
+// and by the app, which kills a runner still running after the limit (plus
+// the time a process needs to start). QJSEngine offers no memory limit: a
+// script that uses up memory ends its own runner process, never the app.
+// Promise callbacks never run (the runner ends after the answer). What goes
+// in is capped (kMaxInputBytes) and what comes out is checked against the
+// shapes below and capped (kMaxOutputChars, the exporter's file size).
 //
 // Failure: a script error, a call over the time limit or an answer of the
 // wrong shape disables the plugin (PluginCatalog::disableAfterFailure) and
@@ -81,8 +84,9 @@ public:
     static constexpr qsizetype kMaxExportBytes = 16 * 1024 * 1024;
     static constexpr qsizetype kMaxFlags = 5;
 
-    // `timeLimitMs` gives the time limit per call when a call starts.
-    PluginHost(const PluginCatalog &catalog, std::function<int()> timeLimitMs);
+    // `runner`: how to start the runner process. `timeLimitMs` gives the time
+    // limit per call when a call starts.
+    PluginHost(const PluginCatalog &catalog, RunnerCommand runner, std::function<int()> timeLimitMs);
     ~PluginHost();
     PluginHost(const PluginHost &) = delete;
     PluginHost &operator=(const PluginHost &) = delete;
@@ -124,6 +128,7 @@ private:
     void fail(const QString &id, const QString &reason);
 
     const PluginCatalog &m_catalog;
+    RunnerCommand m_runner;
     std::function<int()> m_timeLimitMs;
     std::vector<std::unique_ptr<Loaded>> m_loaded;
     QStringList m_failures;

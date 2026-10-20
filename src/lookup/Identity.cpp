@@ -344,6 +344,15 @@ bool isSpecification(const QStringList &words, qsizetype index, const MatchWords
     // "1500V", "16GB", "2-CHANNEL".
     if (cachedRegex(QStringLiteral("^%1-?(?:%2)$").arg(kNumber, units)).match(word).hasMatch())
         return true;
+    // A current of 1-3 digits ("30A", "7.5A"; never a 4-digit model code such
+    // as 6035A) when the title also states a voltage ("25V", "0-25V/7A").
+    if (cachedRegex(QStringLiteral("^\\d{1,3}(?:[.,]\\d+)?(?:%1)$").arg(unitAlternatives(matchWords.currentUnits))).match(word).hasMatch()) {
+        const QRegularExpression voltage = cachedRegex(QStringLiteral("\\d(?:%1)(?![a-z])").arg(unitAlternatives(matchWords.voltageUnits)));
+        for (qsizetype k = 0; k < words.size(); ++k) {
+            if (k != index && voltage.match(words.at(k)).hasMatch())
+                return true;
+        }
+    }
     // A range ("0-1500V", "0-15A") or a slash pair ("2M/6M", "0-8V/3A").
     const QRegularExpression number = cachedRegex(QStringLiteral("^%1(?:%2)?$").arg(kNumber, pairUnits));
     const QRegularExpression numberWithUnit = cachedRegex(QStringLiteral("^%1(?:%2)$").arg(kNumber, pairUnits));

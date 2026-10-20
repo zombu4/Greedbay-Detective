@@ -8,6 +8,7 @@
 #include "plugins/PluginCatalog.h"
 #include "plugins/PluginHost.h"
 #include "plugins/PluginManifest.h"
+#include "plugins/PluginRunner.h"
 #include "support/TestFiles.h"
 
 #include <QDate>
@@ -43,6 +44,13 @@ QByteArray manifest(const QString &id, const QString &type, const QStringList &p
                                      {"type", type},
                                      {"permissions", QJsonArray::fromStringList(permissions)}})
         .toJson();
+}
+
+// The plugin runner process (tests/helpers/pluginrunner.cpp), optionally
+// told to misbehave.
+RunnerCommand runner(const QStringList &arguments = {})
+{
+    return RunnerCommand{QStringLiteral(PLUGINRUNNER_PATH), arguments};
 }
 
 // A lookup with a listing and three sold rows (all same item, counted).
@@ -112,6 +120,7 @@ private slots:
     void installFromZip();
     void sandboxHasNoAccess();
     void timeLimitStopsALoop();
+    void runnerProcessIsolates();
     void failuresDisable();
     void permissionsLimitTheData();
     void examplesWork();
@@ -185,7 +194,7 @@ void TestPlugins::manifestRules()
 
 void TestPlugins::builtInExamples()
 {
-    const PluginCatalog catalog(*m_folder);
+    const PluginCatalog catalog(*m_folder, runner());
     QStringList problems;
     const QList<PluginInfo> plugins = catalog.plugins(&problems);
     QVERIFY2(problems.isEmpty(), qPrintable(problems.join('\n')));
@@ -209,7 +218,7 @@ void TestPlugins::builtInExamples()
 
 void TestPlugins::installAndRemove()
 {
-    const PluginCatalog catalog(*m_folder);
+    const PluginCatalog catalog(*m_folder, runner());
     QString error;
     const QString source = pluginFolder("my-flags", "flagger", {"listing"}, "function flags(input) { return null; }");
     QVERIFY(!source.isEmpty());
@@ -247,7 +256,7 @@ void TestPlugins::installAndRemove()
 
 void TestPlugins::installFromZip()
 {
-    const PluginCatalog catalog(*m_folder);
+    const PluginCatalog catalog(*m_folder, runner());
     QString error;
     // At the top of the zip.
     const QString top = m_dir.path() + QStringLiteral("/top.zip");
@@ -298,7 +307,7 @@ void TestPlugins::installFromZip()
 
 void TestPlugins::sandboxHasNoAccess()
 {
-    const PluginCatalog catalog(*m_folder);
+    const PluginCatalog catalog(*m_folder, runner());
     // Every name below would give a script a way out; none may exist on the
     // global object (`this` at the top of a script). The script also
     // replaces JSON.parse: the host took its own copy first.
@@ -311,7 +320,7 @@ void TestPlugins::sandboxHasNoAccess()
             return found.length === 0 ? null : [{text: "found " + found.join(" "), kind: "warn"}];
         }
     )"));
-    PluginHost host(catalog, [] { return 2000; });
+    PluginHost host(catalog, runner(), [] { return 2000; });
     host.reload();
     const LookupResult result = lookupResult(5);
     const QList<PluginFlag> flags = host.flags(result, sameItemRows(result));
@@ -322,10 +331,10 @@ void TestPlugins::sandboxHasNoAccess()
 
 void TestPlugins::timeLimitStopsALoop()
 {
-    const PluginCatalog catalog(*m_folder);
+    const PluginCatalog catalog(*m_folder, runner());
     QVERIFY(installEnabled(catalog, "loops", "flagger", {"listing"}, "function flags(input) { for (;;) {} }"));
     QVERIFY(installEnabled(catalog, "loads-forever", "flagger", {}, "while (true) {} function flags() { return null; }"));
-    PluginHost host(catalog, [] { return 300; });
+    PluginHost host(catalog, runner(), [] { return 300; });
     QElapsedTimer timer;
     timer.start();
     host.reload();
@@ -342,9 +351,49 @@ void TestPlugins::timeLimitStopsALoop()
     QVERIFY(!catalog.find(QStringLiteral("loads-forever"))->enabled);
 }
 
+void TestPlugins::runnerProcessIsolates()
+{
+    // Work a script leaves behind in a Promise never runs: the runner ends
+    // after its answer. The app is never held up by it.
+    const PluginCatalog catalog(*m_folder, runner());
+    QVERIFY(installEnabled(catalog, "promises", "flagger", {}, R"(
+        Promise.resolve().then(function () { for (;;) {} });
+        function flags(input) {
+            Promise.resolve().then(function () { for (;;) {} });
+            return [{text: "answered", kind: "info"}];
+        }
+    )"));
+    PluginHost host(catalog, runner(), [] { return 1000; });
+    QElapsedTimer timer;
+    timer.start();
+    host.reload();
+    const LookupResult result = lookupResult(5);
+    const QList<PluginFlag> flags = host.flags(result, sameItemRows(result));
+    QVERIFY2(timer.elapsed() < 20000, qPrintable(QString::number(timer.elapsed())));
+    const QStringList failures = host.takeFailures();
+    // Either the answer came back, or the plugin was stopped and disabled.
+    QVERIFY2((flags.size() == 1 && flags.first().text == QLatin1String("answered")) || failures.size() == 1,
+             qPrintable(failures.join('\n')));
+
+    // A runner that crashes, or never answers, ends in an error; the app
+    // goes on.
+    QString error;
+    const QJsonObject request{{"op", "check"}, {"script", "function flags() { return null; }"}, {"function", "flags"},
+                              {"timeLimitMs", 200}};
+    QVERIFY(!runRequest(runner({"--abort"}), request, 200, 1024, &error));
+    QVERIFY2(error.contains("abnormally") || error.contains("no answer"), qPrintable(error));
+    timer.restart();
+    QVERIFY(!runRequest(runner({"--hang"}), request, 200, 1024, &error));
+    QVERIFY2(error.contains("200 ms"), qPrintable(error));
+    QVERIFY2(timer.elapsed() < 20000, qPrintable(QString::number(timer.elapsed())));
+    // And a well-behaved one answers.
+    const std::optional<QJsonObject> answer = runRequest(runner(), request, 2000, 1024, &error);
+    QVERIFY2(answer && answer->value("ok").toBool(), qPrintable(error));
+}
+
 void TestPlugins::failuresDisable()
 {
-    const PluginCatalog catalog(*m_folder);
+    const PluginCatalog catalog(*m_folder, runner());
     QVERIFY(installEnabled(catalog, "throws", "flagger", {}, "function flags(input) { throw new Error('broken on purpose'); }"));
     QVERIFY(installEnabled(catalog, "wrong-shape", "flagger", {}, "function flags(input) { return [{text: 5}]; }"));
     QVERIFY(installEnabled(catalog, "no-function", "flagger", {}, "var nothing = 1;"));
@@ -352,7 +401,7 @@ void TestPlugins::failuresDisable()
     QVERIFY(installEnabled(catalog, "bad-row", "matcher", {"rows"},
                            "function match(input) { return [{row: 99, bucket: 'lot', reason: 'x'}]; }"));
     QVERIFY(installEnabled(catalog, "fine", "flagger", {}, "function flags(input) { return [{text: 'ok', kind: 'info'}]; }"));
-    PluginHost host(catalog, [] { return 2000; });
+    PluginHost host(catalog, runner(), [] { return 2000; });
     host.reload();
     const LookupResult result = lookupResult(5);
     QList<Row> rows = sameItemRows(result);
@@ -391,11 +440,11 @@ void TestPlugins::permissionsLimitTheData()
 
 void TestPlugins::examplesWork()
 {
-    const PluginCatalog catalog(*m_folder);
+    const PluginCatalog catalog(*m_folder, runner());
     QString error;
     for (const char *id : {"example-csv-export", "example-few-ratings", "example-no-reproductions", "example-recent-median"})
         QVERIFY2(catalog.setEnabled(QLatin1String(id), true, &error), qPrintable(error));
-    PluginHost host(catalog, [] { return 2000; });
+    PluginHost host(catalog, runner(), [] { return 2000; });
     host.reload();
     QVERIFY(host.takeFailures().isEmpty());
 
@@ -450,6 +499,11 @@ void TestPlugins::exportFiles()
     QVERIFY(!app::saveExport(folder, QStringLiteral("../a.csv"), "x", &error));
     QVERIFY(!app::saveExport(folder, QStringLiteral("sub/a.csv"), "x", &error));
     QVERIFY(!app::saveExport(folder + QStringLiteral("/missing"), QStringLiteral("a.csv"), "x", &error));
+    // Windows device names, with or without an extension.
+    QVERIFY(!app::saveExport(folder, QStringLiteral("CON.txt"), "x", &error));
+    QVERIFY(!app::saveExport(folder, QStringLiteral("nul.csv"), "x", &error));
+    QVERIFY(!app::saveExport(folder, QStringLiteral("COM1.json"), "x", &error));
+    QVERIFY(app::saveExport(folder, QStringLiteral("console.txt"), "x", &error));
 
     // The lookups as CSV: RFC 4180 quoting, CRLF.
     app::lookup::LookupSummary summary;
@@ -461,6 +515,9 @@ void TestPlugins::exportFiles()
     QVERIFY(csv.startsWith("id,checked_utc,input,"));
     QVERIFY2(csv.contains("7,2026-10-20T12:00:00Z,,,\"Acme \"\"Q9\"\", boxed\",,,,11500,"), csv.constData());
     QVERIFY(csv.endsWith("\r\n"));
+    // A title that would be a spreadsheet formula stays text.
+    summary.title = QStringLiteral("=HYPERLINK(1)");
+    QVERIFY2(app::lookup::lookupsCsv({summary}).contains(",'=HYPERLINK(1),"), app::lookup::lookupsCsv({summary}).constData());
     // One lookup as JSON, with its rows.
     app::lookup::SavedLookup saved;
     saved.id = 7;

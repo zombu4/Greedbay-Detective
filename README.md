@@ -135,7 +135,8 @@ Then, depending on the system:
 Plugins add rules, figures, warnings or file formats. Each is a folder (or
 .zip) with `manifest.json` and `main.js`, run in a sandbox: it gets only the
 data its permissions name, cannot read files, go online or start programs,
-and is stopped after a time limit. A plugin is off until you turn it on in
+and is stopped after a time limit. Plugin code runs in a separate process,
+so a plugin that misbehaves cannot take the app down. A plugin is off until you turn it on in
 **Settings > Plugins**, which shows its permissions first. Four examples come
 with the app; the plugin API is described in
 [src/plugins/PluginHost.h](src/plugins/PluginHost.h) and

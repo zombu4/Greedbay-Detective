@@ -2,6 +2,7 @@
 
 #include "core/WorkFolder.h"
 #include "plugins/PluginManifest.h"
+#include "plugins/PluginRunner.h"
 
 #include <QList>
 #include <QString>
@@ -27,7 +28,9 @@ struct PluginInfo {
 // user enables it, also right after it is installed or replaced.
 class PluginCatalog {
 public:
-    explicit PluginCatalog(WorkFolder folder);
+    // `runner`: how to start the runner process that reads .zip files
+    // (PluginRunner.h).
+    PluginCatalog(WorkFolder folder, RunnerCommand runner);
 
     // The built-in examples, then the installed plugins, each by id.
     // *problems (may be null): installed folders that cannot be used, and why.
@@ -45,12 +48,12 @@ public:
 
     // Installs a plugin from `path`: a folder holding manifest.json and
     // main.js, or a .zip file holding them at its top or inside one folder
-    // (nothing else in it is read; only these two files are written). The
-    // manifest must be valid, its id must not be a built-in example's, and
-    // neither file may be a link or larger than the limits of
-    // PluginManifest.h. An installed plugin of the same id is replaced. The
-    // plugin is disabled afterwards. Returns its manifest; std::nullopt (and
-    // *error) when nothing was installed.
+    // (read by the runner process; nothing else in it is read, and only these
+    // two files are written). The manifest must be valid, its id must not be
+    // a built-in example's, and neither file may be a link or larger than the
+    // limits of PluginManifest.h. An installed plugin of the same id is
+    // replaced. The plugin is disabled afterwards. Returns its manifest;
+    // std::nullopt (and *error) when nothing was installed.
     std::optional<PluginManifest> install(const QString &path, QString *error) const;
 
     // Removes an installed plugin: its manifest.json and main.js, then its
@@ -58,14 +61,16 @@ public:
     // *error says so). Built-in examples cannot be removed.
     bool remove(const QString &id, QString *error) const;
 
-    // Largest .zip file install() reads.
+    // Largest .zip file install() reads, and how long its runner may take.
     static constexpr qint64 kMaxZipBytes = 8 * 1024 * 1024;
+    static constexpr int kZipTimeLimitMs = 10000;
 
 private:
     std::optional<PluginInfo> readInstalled(const QString &folder, QString *problem) const;
     QStringList builtInIds() const;
 
     WorkFolder m_folder;
+    RunnerCommand m_runner;
 };
 
 } // namespace app::plugins

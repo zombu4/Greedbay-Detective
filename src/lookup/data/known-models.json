@@ -2654,6 +2654,9 @@
         {
             "brand": "hp",
             "model": "11940A",
+            "productName": {
+                "name": "Close Field Probe"
+            },
             "family": [],
             "notes": [],
             "category": {
@@ -2690,6 +2693,9 @@
         {
             "brand": "hp",
             "model": "N2894A",
+            "productName": {
+                "name": "Passive Probe"
+            },
             "family": [],
             "notes": [],
             "category": {

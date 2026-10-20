@@ -5,6 +5,7 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QRegularExpression>
 #include <QStandardPaths>
 
 namespace app {
@@ -28,6 +29,18 @@ std::optional<QString> saveExport(const QString &folder, const QString &fileName
     const qsizetype dot = fileName.lastIndexOf(QLatin1Char('.'));
     const QString stem = dot > 0 ? fileName.left(dot) : fileName;
     const QString extension = dot > 0 ? fileName.mid(dot) : QString();
+    // Names Windows reserves for devices: "CON, PRN, AUX, NUL, COM1 ... COM9,
+    // COM¹, COM², COM³, LPT1 ... LPT9, LPT¹, LPT², and LPT³. Also avoid these
+    // names followed immediately by an extension; for example, NUL.txt and
+    // NUL.tar.gz are both equivalent to NUL."
+    // (https://learn.microsoft.com/en-us/windows/win32/fileio/naming-a-file)
+    static const QRegularExpression device(
+        QStringLiteral("^(con|prn|aux|nul|com[1-9\\x{00B9}\\x{00B2}\\x{00B3}]|lpt[1-9\\x{00B9}\\x{00B2}\\x{00B3}])$"),
+        QRegularExpression::CaseInsensitiveOption);
+    if (device.match(stem.section(QLatin1Char('.'), 0, 0)).hasMatch()) {
+        *error = QStringLiteral("\"%1\" is a device name on Windows").arg(fileName);
+        return std::nullopt;
+    }
     for (int n = 1; n <= 999; ++n) {
         const QString name = n == 1 ? fileName : QStringLiteral("%1-%2%3").arg(stem).arg(n).arg(extension);
         const QString path = QDir(folder).filePath(name);

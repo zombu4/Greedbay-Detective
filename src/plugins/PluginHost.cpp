@@ -2,17 +2,11 @@
 
 #include "lookup/LookupStore.h"
 
-#include <QJSEngine>
-#include <QJSValue>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QRegularExpression>
 
 #include <algorithm>
-#include <chrono>
-#include <condition_variable>
-#include <mutex>
-#include <thread>
 #include <utility>
 
 namespace app::plugins {
@@ -20,46 +14,6 @@ namespace app::plugins {
 namespace {
 
 constexpr qint64 kMaxCents = 100'000'000'000;
-
-// Stops the engine's script after `ms` milliseconds unless stop() comes
-// first. QJSEngine::setInterrupted is thread safe (Qt docs); the watchdog
-// thread calls nothing else.
-class Watchdog {
-public:
-    Watchdog(QJSEngine *engine, int ms)
-        : m_thread([this, engine, ms]() {
-              std::unique_lock<std::mutex> lock(m_mutex);
-              if (!m_wake.wait_for(lock, std::chrono::milliseconds(ms), [this]() { return m_stopped; })) {
-                  m_fired = true;
-                  engine->setInterrupted(true);
-              }
-          })
-    {
-    }
-    ~Watchdog() { stop(); }
-    Watchdog(const Watchdog &) = delete;
-    Watchdog &operator=(const Watchdog &) = delete;
-
-    // Ends the watch; true when the time limit was reached.
-    bool stop()
-    {
-        {
-            const std::lock_guard<std::mutex> lock(m_mutex);
-            m_stopped = true;
-        }
-        m_wake.notify_all();
-        if (m_thread.joinable())
-            m_thread.join();
-        return m_fired;
-    }
-
-private:
-    std::mutex m_mutex;
-    std::condition_variable m_wake;
-    bool m_stopped = false;
-    bool m_fired = false;
-    std::thread m_thread;
-};
 
 QJsonValue optionalNumber(const std::optional<qint64> &value)
 {
@@ -111,15 +65,11 @@ std::optional<QString> textOf(const QJsonObject &object, const char *key, qsizet
 
 struct PluginHost::Loaded {
     PluginInfo info;
-    std::unique_ptr<QJSEngine> engine;
-    // Taken before main.js runs, so the script cannot replace them.
-    QJSValue parse;
-    QJSValue stringify;
-    QJSValue function;
+    QString script;
 };
 
-PluginHost::PluginHost(const PluginCatalog &catalog, std::function<int()> timeLimitMs)
-    : m_catalog(catalog), m_timeLimitMs(std::move(timeLimitMs))
+PluginHost::PluginHost(const PluginCatalog &catalog, RunnerCommand runner, std::function<int()> timeLimitMs)
+    : m_catalog(catalog), m_runner(std::move(runner)), m_timeLimitMs(std::move(timeLimitMs))
 {
 }
 
@@ -149,29 +99,24 @@ void PluginHost::reload()
             fail(info.manifest.id, error);
             continue;
         }
+        // The runner loads main.js once, to check it loads and defines its
+        // function.
+        const int limit = m_timeLimitMs();
+        const std::optional<QJsonObject> answer =
+            runRequest(m_runner,
+                       QJsonObject{{QStringLiteral("op"), QStringLiteral("check")},
+                                   {QStringLiteral("script"), *script},
+                                   {QStringLiteral("fileName"), info.manifest.id + QStringLiteral("/main.js")},
+                                   {QStringLiteral("function"), info.manifest.function()},
+                                   {QStringLiteral("timeLimitMs"), limit}},
+                       limit, kMaxOutputChars, &error);
+        if (!answer || !answer->value(QStringLiteral("ok")).toBool()) {
+            fail(info.manifest.id, answer ? answer->value(QStringLiteral("error")).toString() : error);
+            continue;
+        }
         auto loaded = std::make_unique<Loaded>();
         loaded->info = info;
-        // No installExtensions(): no console, no qsTr, no gc().
-        loaded->engine = std::make_unique<QJSEngine>();
-        const QJSValue json = loaded->engine->globalObject().property(QStringLiteral("JSON"));
-        loaded->parse = json.property(QStringLiteral("parse"));
-        loaded->stringify = json.property(QStringLiteral("stringify"));
-        const int limit = m_timeLimitMs();
-        Watchdog watchdog(loaded->engine.get(), limit);
-        const QJSValue result = loaded->engine->evaluate(*script, info.manifest.id + QStringLiteral("/main.js"));
-        const bool late = watchdog.stop();
-        loaded->engine->setInterrupted(false);
-        if (late || result.isError() || loaded->engine->hasError()) {
-            const QJSValue thrown = loaded->engine->hasError() ? loaded->engine->catchError() : result;
-            fail(info.manifest.id, late ? QStringLiteral("main.js did not finish loading within %1 ms").arg(limit)
-                                        : QStringLiteral("main.js does not load: %1").arg(thrown.toString()));
-            continue;
-        }
-        loaded->function = loaded->engine->globalObject().property(info.manifest.function());
-        if (!loaded->function.isCallable()) {
-            fail(info.manifest.id, QStringLiteral("main.js defines no function %1()").arg(info.manifest.function()));
-            continue;
-        }
+        loaded->script = *script;
         m_loaded.push_back(std::move(loaded));
     }
 }
@@ -212,43 +157,30 @@ QJsonObject PluginHost::inputFor(const PluginManifest &manifest, const lookup::L
 
 std::optional<QJsonValue> PluginHost::call(Loaded &plugin, const QJsonObject &input, QString *error)
 {
-    const QByteArray json = QJsonDocument(input).toJson(QJsonDocument::Compact);
-    if (json.size() > kMaxInputBytes) {
+    if (QJsonDocument(input).toJson(QJsonDocument::Compact).size() > kMaxInputBytes) {
         *error = QStringLiteral("the lookup's data is larger than %1 MB").arg(kMaxInputBytes / (1024 * 1024));
         return std::nullopt;
     }
-    QJSEngine &engine = *plugin.engine;
     const int limit = m_timeLimitMs();
-    Watchdog watchdog(&engine, limit);
-    const QJSValue argument = plugin.parse.call({QString::fromUtf8(json)});
-    const QJSValue answer = plugin.function.call({argument});
-    const bool empty = answer.isUndefined() || answer.isNull();
-    const QJSValue text = empty || answer.isError() ? QJSValue() : plugin.stringify.call({answer});
-    const bool late = watchdog.stop();
-    engine.setInterrupted(false);
-    if (late) {
-        *error = QStringLiteral("it did not finish within %1 ms").arg(limit);
+    // An exporter's answer holds a whole file.
+    const qint64 maxAnswer = plugin.info.manifest.type == PluginType::Exporter ? 2 * kMaxExportBytes : kMaxOutputChars;
+    const std::optional<QJsonObject> answer =
+        runRequest(m_runner,
+                   QJsonObject{{QStringLiteral("op"), QStringLiteral("call")},
+                               {QStringLiteral("script"), plugin.script},
+                               {QStringLiteral("fileName"), plugin.info.manifest.id + QStringLiteral("/main.js")},
+                               {QStringLiteral("function"), plugin.info.manifest.function()},
+                               {QStringLiteral("input"), input},
+                               {QStringLiteral("timeLimitMs"), limit},
+                               {QStringLiteral("maxAnswerChars"), static_cast<double>(maxAnswer)}},
+                   limit, maxAnswer + 1024, error);
+    if (!answer)
+        return std::nullopt;
+    if (!answer->value(QStringLiteral("ok")).toBool()) {
+        *error = answer->value(QStringLiteral("error")).toString();
         return std::nullopt;
     }
-    if (engine.hasError() || answer.isError() || text.isError()) {
-        const QJSValue thrown = engine.hasError() ? engine.catchError() : (answer.isError() ? answer : text);
-        *error = QStringLiteral("it stopped with an error: %1").arg(thrown.toString());
-        return std::nullopt;
-    }
-    if (empty)
-        return QJsonValue(QJsonValue::Null);
-    const QString out = text.toString();
-    if (!text.isString() || out.size() > kMaxOutputChars) {
-        *error = QStringLiteral("its answer is not plain data or larger than %1 KB").arg(kMaxOutputChars / 1024);
-        return std::nullopt;
-    }
-    // Wrapped in an array so any JSON value parses.
-    const QJsonDocument document = QJsonDocument::fromJson(QStringLiteral("[%1]").arg(out).toUtf8());
-    if (!document.isArray() || document.array().size() != 1) {
-        *error = QStringLiteral("its answer is not plain data");
-        return std::nullopt;
-    }
-    return document.array().first();
+    return answer->value(QStringLiteral("answer"));
 }
 
 void PluginHost::runAll(PluginType type, const lookup::LookupResult &result, const QList<lookup::Row> &rows,

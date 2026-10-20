@@ -16,7 +16,9 @@ namespace app::lookup {
 // item_id, title, brand, model, status, listing_total_cents, sold_count,
 // sold_median_cents, sold_confidence, shipping_flagged, for_sale_count,
 // cheaper_for_sale, cheapest_for_sale_cents. RFC 4180: fields with a comma,
-// a quote or a line break are quoted, quotes doubled; lines end in CRLF.
+// a quote or a line break are quoted, quotes doubled; lines end in CRLF. A
+// field starting with = + - or @ gets a leading apostrophe, so a
+// spreadsheet never reads a seller's title as a formula.
 QByteArray lookupsCsv(const QList<LookupSummary> &lookups);
 
 // One lookup with its listing, identity, searches and every row (source,

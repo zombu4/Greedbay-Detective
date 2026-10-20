@@ -190,15 +190,11 @@ QList<qsizetype> rowOrder(const LookupResult &result, const QList<Row> &rows)
 QList<Row> classifyRows(const LookupResult &result, const MatchWords &words)
 {
     QList<Row> rows;
-    // Accessory words of the pasted listing's own title name the item ("a
-    // probe" when the listing is a probe, S13).
-    Identity identity = result.identity;
-    identity.ownWords = itemOwnWords(result.item.title, identity, words);
     auto add = [&](Row::Source source, qsizetype index, const QString &title) {
         Row row;
         row.source = source;
         row.index = index;
-        row.match = matchRow(title, identity, words);
+        row.match = matchRow(title, result.identity, words);
         row.included = row.match.bucket == Bucket::SameItem;
         rows.append(row);
     };

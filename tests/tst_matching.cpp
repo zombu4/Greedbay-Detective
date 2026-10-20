@@ -59,7 +59,7 @@ private slots:
     void identityBrandScan();
     void rows_data();
     void rows();
-    void ownWordsOfTheListing();
+    void productNameWords();
     void valueOverAllRows();
     void partsKitIsNotCheapest();
     void heathZenithFamily();
@@ -268,6 +268,8 @@ void TestMatching::specifications_data()
     QTest::newRow("14-PIN") << "socket 14-PIN" << "14-PIN" << true;
     // A and M count only in ranges and pairs; K sizes stay (ZX Spectrum 48K).
     QTest::newRow("30A alone") << "supply 30A" << "30A" << false;
+    QTest::newRow("30A with volts") << "supply 0-25V 30A" << "30A" << true;
+    QTest::newRow("6035A with volts") << "HP 6035A supply 0-500V" << "6035A" << false;
     QTest::newRow("48K") << "Sinclair ZX Spectrum 48K" << "48K" << false;
     QTest::newRow("10-30") << "Heathkit oscilloscope 10-30" << "10-30" << false;
     QTest::newRow("E3634A") << "HP E3634A 0-25V/7A" << "E3634A" << false;
@@ -493,15 +495,15 @@ void TestMatching::identityBrandScan()
     QCOMPARE(modelOf("Acme TC 154 tube checker"), QStringLiteral("TC154"));
     QCOMPARE(modelOf("Acme No 5 tester"), QString());
     // S4: a seller's code at the end of the title.
-    QCOMPARE(modelOf("Acme M7X meter GB925"), QStringLiteral("M7X"));
-    QCOMPARE(modelOf("Acme meter M7X GB925"), QString());
+    QCOMPARE(modelOf("Acme M7X meter QX7731"), QStringLiteral("M7X"));
+    QCOMPARE(modelOf("Acme meter M7X QX7731"), QString());
     // S3: tube types give way to another candidate; alone they are the model.
     QCOMPARE(modelOf("Acme XR-5 amplifier with 12AX7 tubes"), QStringLiteral("XR-5"));
     QCOMPARE(modelOf("Acme 12AX7 vacuum tube"), QStringLiteral("12AX7"));
     // S2: option codes.
     QCOMPARE(modelOf("Acme M7X meter Opt 1E5 1EA"), QStringLiteral("M7X"));
     // S15: "Knight" alone names no brand.
-    const Identity knight = identify(item(QStringLiteral("Jedi Knight Outfit VC23")), m_known, m_words);
+    const Identity knight = identify(item(QStringLiteral("Space Knight costume VC77")), m_known, m_words);
     QVERIFY(!knight.confident);
     QVERIFY(knight.brandId.isEmpty());
     // S8: "Heath Kit" names Heathkit.
@@ -654,7 +656,7 @@ void TestMatching::rows_data()
                               << Bucket::SameItem;
     QTest::newRow("S2 options") << "HP" << "8904A" << "HP 8904A synthesizer Opt 1E5 1EA" << "" << Bucket::SameItem;
     QTest::newRow("S3 tubes") << heathkit << "AA-100" << "Heathkit AA-100 amplifier 12AX7 EL84" << "" << Bucket::SameItem;
-    QTest::newRow("S4 seller code") << sencore << "LC53" << "Sencore LC53 Z meter QA10 GB925" << "" << Bucket::SameItem;
+    QTest::newRow("S4 seller code") << sencore << "LC53" << "Sencore LC53 Z meter QA10 QX7731" << "" << Bucket::SameItem;
     QTest::newRow("S5 supply") << "HP" << "E3634A" << "HP E3634A DC power supply 0-25V/7A 0-50V/4A" << ""
                                << Bucket::SameItem;
     QTest::newRow("S5 generator") << "HP" << "33511B" << "HP 33511B waveform generator 20MHz 250MSa/s 16BIT" << ""
@@ -690,31 +692,32 @@ void TestMatching::rows_data()
     QTest::newRow("S18 split code") << sencore << "TC154" << "Sencore TC 154 tube checker" << "" << Bucket::SameItem;
     // Retro-scan cases.
     const QString atari = QStringLiteral("Atari");
-    QTest::newRow("R1 cartridge") << atari << "2600" << "Berzerk Atari 2600 game cartridge" << "" << Bucket::Companion;
-    QTest::newRow("R1 CIB") << atari << "2600" << "Space Invaders Atari 2600 CIB with manual" << "" << Bucket::Companion;
+    QTest::newRow("R1 cartridge") << atari << "2600" << "Moon Raid Atari 2600 game cartridge" << "" << Bucket::Companion;
+    QTest::newRow("R1 CIB") << atari << "2600" << "Star Hopper Atari 2600 CIB with manual" << "" << Bucket::Companion;
     QTest::newRow("R1 console with games") << atari << "2600" << "Atari 2600 console with 5 games" << ""
                                            << Bucket::SameItem;
     QTest::newRow("R1 product name") << atari << "2600" << "Atari 2600 Video Computer System" << "" << Bucket::SameItem;
-    QTest::newRow("R2 controllers") << atari << "2600" << "Atari 2600 paddle controllers original pair" << ""
+    QTest::newRow("R2 controllers") << atari << "2600" << "Two Atari 2600 paddle controllers, tested" << ""
                                     << Bucket::Accessory;
-    QTest::newRow("R2 power supply") << atari << "2600" << "AC power supply adapter for the Atari 2600" << ""
-                                     << Bucket::Accessory;
+    QTest::newRow("R2 power supply") << atari << "2600" << "Wall power supply, Atari 2600" << "" << Bucket::Accessory;
     QTest::newRow("R2 console with controllers") << atari << "2600" << "Atari 2600 console with 2 controllers" << ""
                                                  << Bucket::SameItem;
-    QTest::newRow("R3 magazine") << atari << "ST" << "Atari ST Format magazine issue 13 with cover disk" << ""
+    QTest::newRow("R3 magazine") << atari << "ST" << "Atari ST users magazine number 7 with cover disk" << ""
                                  << Bucket::Documentation;
     QTest::newRow("R4 classic edition") << "Nintendo" << "NES" << "Nintendo NES Classic Edition" << "" << Bucket::NoMatch;
     QTest::newRow("R4 flashback") << atari << "7800" << "Atari 7800 Flashback" << "" << Bucket::NoMatch;
-    QTest::newRow("R4 mini") << "Commodore" << "64" << "The C64 Mini Commodore" << "" << Bucket::NoMatch;
+    QTest::newRow("R4 mini") << "Commodore" << "64" << "Commodore C64 Mini boxed" << "" << Bucket::NoMatch;
+    QTest::newRow("R4 not next to the model") << atari << "2600" << "Atari 2600 console with HDMI mod" << ""
+                                              << Bucket::SameItem;
     QTest::newRow("R5 size and video specs") << "Nintendo" << "Switch" << "Nintendo Switch 64GB 1080P console" << ""
                                              << Bucket::SameItem;
     QTest::newRow("R5 Spectrum 48K") << "Sinclair" << "ZX Spectrum" << "Sinclair ZX Spectrum 48K computer" << ""
                                      << Bucket::SameItem;
     QTest::newRow("R6 other system") << atari << "2600" << "Atari 2600 Commodore 64 dual interface" << ""
                                      << Bucket::Accessory;
-    QTest::newRow("R7 other maker") << atari << "Lynx" << "Camputers Lynx 48K computer" << "" << Bucket::NoMatch;
-    QTest::newRow("R7 Enterprise") << "Commodore" << "64" << "Enterprise 64 and 128 computer" << "" << Bucket::NoMatch;
-    QTest::newRow("R8 inside a part number") << "IBM" << "1130" << "IBM ThinkPad T60 keyboard 02K1130" << ""
+    QTest::newRow("R7 other maker") << atari << "Lynx" << "Camputers Lynx home computer, boxed" << "" << Bucket::NoMatch;
+    QTest::newRow("R7 Enterprise") << "Commodore" << "64" << "Enterprise 64 home computer" << "" << Bucket::NoMatch;
+    QTest::newRow("R8 inside a part number") << "IBM" << "1130" << "IBM ThinkPad keyboard 77Z1130" << ""
                                              << Bucket::NoMatch;
     QTest::newRow("R8 CPU") << "HP" << "2100" << "Intel Core i3-2100 CPU" << "" << Bucket::NoMatch;
     QTest::newRow("R9 connectors") << "Commodore" << "64" << "Commodore 64 computer DB9 RS232 5FT 14-PIN" << ""
@@ -729,8 +732,14 @@ void TestMatching::rows_data()
     QTest::newRow("R12 shirt") << atari << "2600" << "Atari 2600 t-shirt" << "" << Bucket::NoMatch;
     QTest::newRow("R13 game in the model") << "Nintendo" << "Game Boy" << "Nintendo Game Boy handheld" << ""
                                            << Bucket::SameItem;
-    QTest::newRow("R13 game cartridge") << "Nintendo" << "Game Boy" << "Nintendo Game Boy Tetris game cartridge" << ""
+    QTest::newRow("R13 game cartridge") << "Nintendo" << "Game Boy" << "Nintendo Game Boy Block Drop game cartridge" << ""
                                         << Bucket::Companion;
+    // Words that must not misjudge a real item (review of 2026-10-20).
+    QTest::newRow("no merchandise in test gear") << "Tektronix" << "2445" << "Tektronix 2445 with BNC tee and patch cords"
+                                                 << "" << Bucket::SameItem;
+    QTest::newRow("chip with the computer") << "Commodore" << "64" << "Commodore 64 computer, new SID chip" << ""
+                                            << Bucket::SameItem;
+    QTest::newRow("wave guide") << "HP" << "X281A" << "HP X281A wave guide adapter" << "" << Bucket::SameItem;
 }
 
 void TestMatching::rows()
@@ -748,28 +757,25 @@ void TestMatching::rows()
     QVERIFY(!match.reasons.isEmpty());
 }
 
-void TestMatching::ownWordsOfTheListing()
+void TestMatching::productNameWords()
 {
-    // S9: the product name holds a kit word; S13: the listing is a probe.
+    // S9: the product name holds a kit word; S13: the item is a probe.
     Identity testSet = identityFromUser({QStringLiteral("HP"), QStringLiteral("8920A"), QString()}, m_known,
                                         QStringLiteral("user"));
     QCOMPARE(matchRow(QStringLiteral("HP 8920A RF Communications Test Set"), testSet, m_words).bucket, Bucket::ToCheck);
     testSet.productName = QStringLiteral("RF Communications Test Set");
     QCOMPARE(matchRow(QStringLiteral("HP 8920A RF Communications Test Set"), testSet, m_words).bucket, Bucket::SameItem);
 
-    Identity probe = identityFromUser({QStringLiteral("HP"), QStringLiteral("N2894A"), QString()}, m_known,
-                                      QStringLiteral("user"));
-    const QString row = QStringLiteral("Agilent N2894A passive probe");
-    QCOMPARE(matchRow(row, probe, m_words).bucket, Bucket::Accessory);
-    probe.ownWords = itemOwnWords(QStringLiteral("HP N2894A passive probe 700MHz"), probe, m_words);
-    QCOMPARE(probe.ownWords, QStringList({"probe"}));
-    QCOMPARE(matchRow(row, probe, m_words).bucket, Bucket::SameItem);
-    // Leads that come with the listing are no own word.
-    QVERIFY(itemOwnWords(QStringLiteral("Sencore LC53 Z Meter with leads"),
-                         identityFromUser({QStringLiteral("Sencore"), QStringLiteral("LC53"), QString()}, m_known,
-                                          QStringLiteral("user")),
-                         m_words)
-                .isEmpty());
+    // The known N2894A is a "Passive Probe": its own name is no accessory.
+    const Identity probe = identityFromUser({QStringLiteral("HP"), QStringLiteral("N2894A"), QString()}, m_known,
+                                            QStringLiteral("user"));
+    QCOMPARE(probe.productName, QStringLiteral("Passive Probe"));
+    QCOMPARE(matchRow(QStringLiteral("Agilent N2894A passive probe 700MHz"), probe, m_words).bucket, Bucket::SameItem);
+    QCOMPARE(matchRow(QStringLiteral("Keysight N2894A probe"), probe, m_words).bucket, Bucket::SameItem);
+    // For any other item a probe stays an accessory.
+    const Identity synthesizer = identityFromUser({QStringLiteral("HP"), QStringLiteral("8904A"), QString()}, m_known,
+                                                  QStringLiteral("user"));
+    QCOMPARE(matchRow(QStringLiteral("HP 8904A probe"), synthesizer, m_words).bucket, Bucket::Accessory);
 }
 
 void TestMatching::valueOverAllRows()

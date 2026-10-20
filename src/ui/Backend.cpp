@@ -55,9 +55,12 @@ Backend::Backend(WorkFolder folder, const QString &connectionName, QObject *pare
 
     // Plugins: only the enabled ones run; matchers on each lookup before it
     // is saved, flaggers, valuators and exporters on the Results screen.
-    m_pluginCatalog = std::make_unique<plugins::PluginCatalog>(m_folder);
+    // Plugin code and plugin .zip files run in a separate process: the app
+    // itself with "--plugin-runner" (src/app/main.cpp).
+    const plugins::RunnerCommand runner{QCoreApplication::applicationFilePath(), {QStringLiteral("--plugin-runner")}};
+    m_pluginCatalog = std::make_unique<plugins::PluginCatalog>(m_folder, runner);
     m_pluginHost = std::make_unique<plugins::PluginHost>(
-        *m_pluginCatalog, [settingsPath]() { return Settings(settingsPath).pluginCallTimeLimitMs(); });
+        *m_pluginCatalog, runner, [settingsPath]() { return Settings(settingsPath).pluginCallTimeLimitMs(); });
     m_pluginHost->reload();
     m_plugins = new PluginsController(m_folder, *m_pluginCatalog, *m_pluginHost, this);
     m_results->setPlugins(m_pluginHost.get());

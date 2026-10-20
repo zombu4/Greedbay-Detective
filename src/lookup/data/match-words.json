@@ -71,6 +71,20 @@
             "M"
         ]
     },
+    "currentUnits": {
+        "words": [
+            "A"
+        ]
+    },
+    "voltageUnits": {
+        "words": [
+            "V",
+            "kV",
+            "mV",
+            "VAC",
+            "VDC"
+        ]
+    },
     "notModels": {
         "patterns": [
             "^\\d+s$",
@@ -1948,9 +1962,15 @@
             "app note",
             "flyer",
             "brochure",
-            "guide",
             "book",
-            "books"
+            "books",
+            "strategy guide",
+            "game guide",
+            "user guide",
+            "users guide",
+            "service guide",
+            "price guide",
+            "instruction guide"
         ]
     },
     "partFits": {
@@ -2115,26 +2135,6 @@
             "Parts Only"
         ]
     },
-    "merchandise": {
-        "words": [
-            "poster",
-            "posters",
-            "sticker",
-            "stickers",
-            "shirt",
-            "t-shirt",
-            "tee",
-            "keychain",
-            "key chain",
-            "mug",
-            "mugs",
-            "patch",
-            "decal",
-            "decals",
-            "pin badge",
-            "magnet"
-        ]
-    },
     "systemCategories": {
         "words": [
             "computer",
@@ -2205,8 +2205,28 @@
             "classic mini",
             "mini classic",
             "flashback",
-            "mini",
-            "hdmi"
+            "mini"
+        ]
+    },
+    "merchandise": {
+        "words": [
+            "poster",
+            "posters",
+            "sticker",
+            "stickers",
+            "shirt",
+            "shirts",
+            "t-shirt",
+            "t-shirts",
+            "keychain",
+            "keychains",
+            "key chain",
+            "key chains",
+            "mug",
+            "mugs",
+            "decal",
+            "decals",
+            "pin badge"
         ]
     }
 }
