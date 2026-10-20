@@ -190,7 +190,9 @@ void TestExtractors::initTestCase()
     QSignalSpy ready(m_controller, &BrowserController::ready);
     QSignalSpy failed(m_controller, &BrowserController::failed);
     QVERIFY2(m_controller->start(&error), qPrintable(error));
-    QVERIFY2(ready.wait(BrowserController::kStartTimeoutMs) || !ready.isEmpty(),
+    // Past the controller's own start timeout, so a failed start reports its
+    // reason here.
+    QVERIFY2(ready.wait(BrowserController::kStartTimeoutMs + 5000) || !ready.isEmpty(),
              failed.isEmpty() ? "the browser did not get ready" : qPrintable(failed.at(0).at(0).toString()));
 }
 
@@ -737,7 +739,7 @@ void TestExtractors::dailyCapStopsLoads()
     BrowserController capped(*folder, app::browser::BrowserCatalog::installed().first(), options);
     QSignalSpy ready(&capped, &BrowserController::ready);
     QVERIFY2(capped.start(&error), qPrintable(error));
-    QVERIFY(ready.wait(BrowserController::kStartTimeoutMs) || !ready.isEmpty());
+    QVERIFY(ready.wait(BrowserController::kStartTimeoutMs + 5000) || !ready.isEmpty());
     QUrl local(QStringLiteral("http://127.0.0.1:%1/sch/i.html?_nkw=test+meter&_ipg=240").arg(m_server.serverPort()));
     QSignalSpy done(&capped, &BrowserController::done);
     capped.fetch(local, PageKind::ActiveSearch);

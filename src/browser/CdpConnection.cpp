@@ -130,7 +130,7 @@ void CdpConnection::pollVersion()
         return;
     if (--m_pollsLeft <= 0) {
         m_pollTimer->stop();
-        emit protocolError(QStringLiteral("the browser did not open its DevTools port in time"));
+        emit protocolError(QStringLiteral("the browser did not open its DevTools port in time (last try: %1)").arg(m_lastPoll));
         return;
     }
     m_polling = true;
@@ -143,6 +143,9 @@ void CdpConnection::pollVersion()
         if (!m_pollTimer->isActive() || m_socket)
             return;
         const QUrl url = reply->error() == QNetworkReply::NoError ? webSocketUrlFromVersion(reply->read(65536), m_port) : QUrl();
+        m_lastPoll = reply->error() != QNetworkReply::NoError ? reply->errorString()
+                     : url.isEmpty()                          ? QStringLiteral("an answer without a valid browser WebSocket URL")
+                                                              : QStringLiteral("answered");
         if (!url.isEmpty())
             connectWebSocket(url);
     });

@@ -109,6 +109,8 @@ private:
     bool m_polling = false;
     int m_port = 0;
     int m_pollsLeft = 0;
+    // What the last /json/version poll got, for the timeout message.
+    QString m_lastPoll = QStringLiteral("no answer yet");
     bool m_connected = false;
     int m_nextId = 1;
 };
