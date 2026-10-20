@@ -1,7 +1,9 @@
 // One tab's table (ui-spec 2): Use (checkbox) | Where | Total | eBay
-// condition | Sold / listed | Title with CHEAPEST / THIS LISTING pills; the
-// not-this-item rows also show their reason. Sorted by total, lowest first
-// (by the model). A title opens the listing in the system browser.
+// condition | Sold / listed | Format (BUY IT NOW / BEST OFFER / AUCTION - N
+// bids, an auction's time left) | Title with CHEAPEST / THIS LISTING pills |
+// View (for-sale rows only); the not-this-item rows also show their reason.
+// Sorted by total, lowest first (by the model). A title or View opens the
+// listing in the system browser.
 import QtQuick
 import QtQuick.Controls.Basic
 import QtQuick.Layouts
@@ -18,6 +20,8 @@ ColumnLayout {
     readonly property int totalWidth: 110
     readonly property int conditionWidth: 190
     readonly property int dateWidth: 110
+    readonly property int formatWidth: 170
+    readonly property int viewWidth: 76
 
     spacing: 0
 
@@ -38,7 +42,9 @@ ColumnLayout {
         HeaderText { text: "Total"; Layout.preferredWidth: table.totalWidth; horizontalAlignment: Text.AlignRight }
         HeaderText { text: "eBay condition"; Layout.preferredWidth: table.conditionWidth }
         HeaderText { text: "Sold / listed"; Layout.preferredWidth: table.dateWidth }
+        HeaderText { text: "Format"; Layout.preferredWidth: table.formatWidth }
         HeaderText { text: "Title"; Layout.fillWidth: true }
+        HeaderText { text: ""; Layout.preferredWidth: table.viewWidth }
     }
     Rectangle {
         Layout.fillWidth: true
@@ -76,6 +82,10 @@ ColumnLayout {
             required property string reason
             required property string mark
             required property string broken
+            required property string format
+            required property string timeLeft
+            required property bool view
+            required property string viewNote
             width: list.width
             implicitHeight: Math.max(Theme.target, content.implicitHeight + 12)
             color: mark === "this" ? Theme.warnBackground : "transparent"
@@ -127,6 +137,24 @@ ColumnLayout {
                     color: Theme.secondaryText
                 }
                 ColumnLayout {
+                    Layout.preferredWidth: table.formatWidth
+                    spacing: 2
+                    Pill {
+                        visible: line.format.length > 0
+                        text: line.format
+                        kind: "neutral"
+                    }
+                    Text {
+                        Layout.fillWidth: true
+                        visible: text.length > 0
+                        text: line.timeLeft.length > 0 ? line.timeLeft : line.viewNote
+                        wrapMode: Text.WordWrap
+                        font.family: Theme.mono
+                        font.pixelSize: Theme.labelSize - 1
+                        color: Theme.mutedText
+                    }
+                }
+                ColumnLayout {
                     Layout.fillWidth: true
                     Layout.topMargin: 6
                     Layout.bottomMargin: 6
@@ -172,6 +200,21 @@ ColumnLayout {
                         font.pixelSize: Theme.labelSize
                         color: Theme.mutedText
                     }
+                }
+                // Only for listings for sale now (never sold or Product
+                // Research rows, never an auction whose end has passed).
+                AppButton {
+                    Layout.preferredWidth: table.viewWidth
+                    visible: line.view
+                    text: "View"
+                    leftPadding: 10
+                    rightPadding: 10
+                    Accessible.name: "View on eBay: " + line.title
+                    onClicked: table.openRequested(line.itemId)
+                }
+                Item {
+                    Layout.preferredWidth: table.viewWidth
+                    visible: !line.view
                 }
             }
         }

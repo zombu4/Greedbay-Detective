@@ -37,9 +37,14 @@ QList<Row> classifyRows(const LookupResult &result, const MatchWords &words);
 //             eBay's Product Research average shipping
 //   ebay      eBay's own Product Research summary, only as a labeled side
 //             figure (it may mix models, rule 20)
-//   forSale   totals of the included for-sale rows other than the pasted
-//             listing, lowest first; cheaperForSale counts those below the
-//             pasted listing's total
+//   forSale   totals of the included Buy It Now rows (with or without Best
+//             Offer; format "fixed_price") other than the pasted listing,
+//             lowest first; cheaperForSale counts those below the pasted
+//             listing's total (owner decision 2026-10-19: an auction's low
+//             start is not a low price)
+//   auctions  current prices of the included running auctions other than
+//             the pasted listing, lowest first (not final prices); for-sale
+//             rows whose format eBay did not show count in neither
 struct Valuation {
     ValueNumbers sold;
     ValueNumbers research;
@@ -47,6 +52,7 @@ struct Valuation {
     std::optional<qint64> ebayAverageSoldCents;
     QList<qint64> forSale;
     int cheaperForSale = 0;
+    QList<qint64> auctions;
 };
 
 Valuation valuate(const LookupResult &result, const QList<Row> &rows, const ValueSettings &settings);

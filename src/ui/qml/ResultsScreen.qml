@@ -149,6 +149,37 @@ Item {
                                   + "  ·  seller: " + (screen.results.seller.length > 0 ? screen.results.seller : "-")
                             color: Theme.secondaryText
                         }
+                        // Format (owner decision 2026-10-19): Buy It Now, Best
+                        // Offer, or the auction with its bids and end.
+                        Text {
+                            Layout.fillWidth: true
+                            text: screen.results.formatText
+                            wrapMode: Text.WordWrap
+                            font.family: Theme.mono
+                            font.pixelSize: Theme.labelSize + 1
+                            color: Theme.text
+                        }
+                        // The auction's countdown, from the end read on the
+                        // page (never by loading eBay again).
+                        Text {
+                            id: countdown
+                            property string remaining: "-"
+                            visible: screen.results.isAuction && screen.results.auctionEndMs >= 0
+                            text: countdown.remaining
+                            font.family: Theme.mono
+                            font.pixelSize: Theme.bodySize
+                            font.weight: Font.Medium
+                            color: countdown.remaining === "ENDED" ? Theme.warnLabel : Theme.accent
+                            Accessible.name: "Time left: " + countdown.remaining
+                            Timer {
+                                interval: 1000
+                                repeat: true
+                                triggeredOnStart: true
+                                running: countdown.visible
+                                onTriggered: countdown.remaining = screen.results.timeLeft(screen.results.auctionEndMs,
+                                                                                      screen.results.auctionEndSeconds)
+                            }
+                        }
                         LinkText {
                             visible: screen.results.itemId.length > 0
                             text: "Open on eBay"
@@ -185,8 +216,17 @@ Item {
             // Flag cards, only the ones that apply.
             RowLayout {
                 Layout.fillWidth: true
-                visible: screen.results.brokenFlag || screen.results.shippingFlag || screen.results.cheaperFlag
+                visible: screen.results.brokenFlag || screen.results.isAuction || screen.results.shippingFlag
+                         || screen.results.cheaperFlag
                 spacing: Theme.gap
+                FlagCard {
+                    Layout.fillWidth: true
+                    Layout.preferredWidth: 1
+                    visible: screen.results.isAuction
+                    kind: "warn"
+                    label: screen.results.auctionLabel
+                    lines: screen.results.auctionLines
+                }
                 FlagCard {
                     Layout.fillWidth: true
                     Layout.preferredWidth: 1
@@ -252,7 +292,7 @@ Item {
                         bandHigh: screen.results.bandHigh
                         median: screen.results.medianValue
                         thisValue: screen.results.thisValue
-                        thisLabel: "THIS " + screen.results.totalText
+                        thisLabel: screen.results.thisLabel
                         cheapest: screen.results.cheapestValue
                         cheapestLabel: screen.results.cheapestLabel
                     }
@@ -262,8 +302,14 @@ Item {
                         KeyNumber { label: "Median sold"; value: screen.results.medianText }
                         KeyNumber { label: "Middle half of sales"; value: screen.results.middleText }
                         KeyNumber { label: "Lowest / highest sale"; value: screen.results.lowHighText }
-                        KeyNumber { label: "For sale now (from lowest)"; value: screen.results.forSaleText }
+                        KeyNumber { label: "For sale now, Buy It Now (from lowest)"; value: screen.results.forSaleText }
                         Item { Layout.fillWidth: true }
+                    }
+                    Muted {
+                        Layout.fillWidth: true
+                        visible: text.length > 0
+                        font.family: Theme.mono
+                        text: screen.results.auctionsLine
                     }
                     Muted {
                         Layout.fillWidth: true

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QDateTime>
 #include <QJsonObject>
 #include <QList>
 #include <QString>
@@ -24,6 +25,14 @@ struct SearchRecord {
     std::optional<qint64> shippingCents;
     QString format; // "auction", "fixed_price" or empty when not shown
     std::optional<int> bids;
+    // For sale: "or Best Offer" on the card; an auction's "3d 14h left" and
+    // "Thu, 01:11 PM" as shown, and the end resolved from them when they
+    // agree (lookup/AuctionTime, at the time the card was read).
+    bool bestOffer = false;
+    QString timeLeft;
+    QString auctionEndText;
+    std::optional<QDateTime> auctionEnd; // UTC
+    bool auctionEndSeconds = false;
     QString sellerName;
     // Sold search only. soldDate is YYYY-MM-DD or empty. confirmed: the shown
     // price is what the buyer paid (no "Best offer accepted" on the card,
@@ -62,6 +71,19 @@ struct ItemRecord {
     std::optional<qint64> shippingCents;
     QString condition; // as eBay shows it (item extractor's conditionText)
     QString sellerName;
+    // Format (owner decision 2026-10-19 "Buy It Now vs auction"): an auction
+    // (the bid block or "Place bid"), its bid count, "Ends in" ("3d 22h") and
+    // the weekday and time ("Friday, 06:28 PM") as shown, the end resolved
+    // from them (lookup/AuctionTime) when they agree; Buy It Now and Best
+    // Offer buttons.
+    bool auction = false;
+    std::optional<int> bids;
+    QString endsIn;
+    QString endsAt;
+    std::optional<QDateTime> auctionEnd; // UTC
+    bool auctionEndSeconds = false;
+    bool buyItNow = false;
+    bool bestOffer = false;
     // The listing's first photo (https), from the item page's JSON-LD; empty
     // when the page gave none.
     QString imageUrl;

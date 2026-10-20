@@ -88,6 +88,7 @@ private slots:
     void itemFromJsonLd();
     void itemFromDom();
     void itemShippingBlockOnOneLine();
+    void itemAuction();
     void research();
     void stopsAtFewerWordsDivider();
     void zeroResultsIsAnEmptyResult();
@@ -433,6 +434,31 @@ void TestExtractors::itemFromDom()
     QVERIFY(data.value("watchers").isNull());
     QCOMPARE(names(data.value("missing")),
              set({"itemId", "imageUrl", "availability", "listingStartedAt", "returnsText", "seller"}));
+}
+
+// An auction item page (structure seen 2026-10-19): the auction, its bids
+// and the end texts; no Buy It Now. A fixed-price page has none of them.
+void TestExtractors::itemAuction()
+{
+    QString error;
+    const std::optional<QJsonObject> result = extract("item_auction.html", kItemDomUrl, PageKind::Item, &error);
+    QVERIFY2(result, qPrintable(error));
+    QCOMPARE(result->value("page").toString(), QStringLiteral("expected"));
+    const QJsonObject data = result->value("data").toObject();
+    QCOMPARE(data.value("auction").toBool(), true);
+    QCOMPARE(data.value("bids").toInt(), 3);
+    QCOMPARE(data.value("endsIn").toString(), QStringLiteral("3d 22h"));
+    QCOMPARE(data.value("endsAt").toString(), QStringLiteral("Friday, 06:28 PM"));
+    QCOMPARE(data.value("buyItNowOffered").toBool(), false);
+    QCOMPARE(data.value("priceCents").toInt(), 12500);
+
+    const std::optional<QJsonObject> fixed = extract("item_jsonld.html", kItemUrl, PageKind::Item, &error);
+    QVERIFY2(fixed, qPrintable(error));
+    const QJsonObject fixedData = fixed->value("data").toObject();
+    QCOMPARE(fixedData.value("auction").toBool(), false);
+    QVERIFY(fixedData.value("bids").isNull());
+    QVERIFY(fixedData.value("endsIn").isNull());
+    QCOMPARE(fixedData.value("buyItNowOffered").toBool(), true);
 }
 
 void TestExtractors::itemShippingBlockOnOneLine()

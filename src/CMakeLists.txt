@@ -46,6 +46,7 @@ qt_add_resources(appcore "migrations"
     FILES
         db/migrations/0001_init.sql
         db/migrations/0002_saved_lookups.sql
+        db/migrations/0003_formats.sql
 )
 
 # appbrowser: drives the user's installed browser over the DevTools protocol
@@ -85,6 +86,8 @@ qt_add_resources(appbrowser "extractors"
 # (LookupStore). Browser-free: it asks for pages through a callback, so tests
 # run it on fake page records.
 qt_add_library(applookup STATIC
+    lookup/AuctionTime.cpp
+    lookup/AuctionTime.h
     lookup/Identity.cpp
     lookup/Identity.h
     lookup/KnownModels.cpp

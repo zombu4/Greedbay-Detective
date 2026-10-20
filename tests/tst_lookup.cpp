@@ -5,6 +5,7 @@
 // seller and number is invented.
 #include "core/Settings.h"
 #include "ebay/SearchUrls.h"
+#include "lookup/AuctionTime.h"
 #include "lookup/Identity.h"
 #include "lookup/LookupReport.h"
 #include "lookup/LookupRunner.h"
@@ -15,6 +16,7 @@
 #include <QJsonObject>
 #include <QSignalSpy>
 #include <QTest>
+#include <QTimeZone>
 #include <QUrlQuery>
 
 using namespace app::lookup;
@@ -124,6 +126,8 @@ private slots:
     void browserCancelEndsAsCancelled();
     void refusesBadInput();
     void startFromSavedItem();
+    void auctionEnds();
+    void countdownText();
     void reportNumbers();
 };
 
@@ -597,6 +601,47 @@ void TestLookup::startFromSavedItem()
     QJsonObject withPhoto = itemData();
     withPhoto.insert("imageUrl", "https://images.example.com/m7x.jpg");
     QCOMPARE(ItemRecord::fromJson(withPhoto).imageUrl, QStringLiteral("https://images.example.com/m7x.jpg"));
+}
+
+// The end of an auction from what eBay shows (lookup/AuctionTime): the
+// weekday and time count only inside the window the relative text gives.
+void TestLookup::auctionEnds()
+{
+    // Monday 2026-10-19 19:47 local; "3d 22h" + "Friday, 06:28 PM" = Friday
+    // 2026-10-23 18:28 local (3d 22h 41m later).
+    const QDateTime now(QDate(2026, 10, 19), QTime(19, 47), QTimeZone::LocalTime);
+    std::optional<AuctionEnd> end = auctionEnd(QStringLiteral("3d 22h"), QStringLiteral("Friday, 06:28 PM"), now);
+    QVERIFY(end);
+    QCOMPARE(end->end, QDateTime(QDate(2026, 10, 23), QTime(18, 28), QTimeZone::LocalTime).toUTC());
+    QCOMPARE(end->seconds, false);
+    // With the label, and the search card's form.
+    QVERIFY(auctionEnd(QStringLiteral("Ends in 3d 22h"), QStringLiteral("Friday, 06:28 PM"), now));
+    end = auctionEnd(QStringLiteral("3d 17h left"), QStringLiteral("(Fri, 01:11 PM)"), now);
+    QVERIFY(end);
+    QCOMPARE(end->end, QDateTime(QDate(2026, 10, 23), QTime(13, 11), QTimeZone::LocalTime).toUTC());
+    // The two texts disagree: no end.
+    QVERIFY(!auctionEnd(QStringLiteral("1d 2h"), QStringLiteral("Friday, 06:28 PM"), now));
+    // Down to the second without a weekday: that is enough.
+    end = auctionEnd(QStringLiteral("45m 12s"), QString(), now);
+    QVERIFY(end);
+    QCOMPARE(end->end, now.addSecs(45 * 60 + 12).toUTC());
+    QCOMPARE(end->seconds, true);
+    // Hours only and no weekday, or nothing readable: no end.
+    QVERIFY(!auctionEnd(QStringLiteral("3d 22h"), QString(), now));
+    QVERIFY(!auctionEnd(QStringLiteral("soon"), QStringLiteral("Friday, 06:28 PM"), now));
+    QVERIFY(!auctionEnd(QString(), QStringLiteral("Friday, 06:28 PM"), now));
+    QVERIFY(!auctionEnd(QStringLiteral("3d 22h"), QStringLiteral("Funday, 06:28 PM"), now));
+}
+
+void TestLookup::countdownText()
+{
+    const QDateTime now(QDate(2026, 10, 19), QTime(12, 0), QTimeZone::UTC);
+    QCOMPARE(timeLeftText(now.addSecs(2 * 86400 + 5 * 3600 + 12 * 60 + 30), false, now), QStringLiteral("2d 5h 12m left"));
+    QCOMPARE(timeLeftText(now.addSecs(5 * 3600 + 12 * 60), true, now), QStringLiteral("5h 12m left"));
+    QCOMPARE(timeLeftText(now.addSecs(12 * 60 + 5), true, now), QStringLiteral("12m 05s left"));
+    QCOMPARE(timeLeftText(now.addSecs(12 * 60 + 5), false, now), QStringLiteral("12m left"));
+    QCOMPARE(timeLeftText(now, true, now), QStringLiteral("ENDED"));
+    QCOMPARE(timeLeftText(now.addSecs(-60), false, now), QStringLiteral("ENDED"));
 }
 
 QTEST_GUILESS_MAIN(TestLookup)

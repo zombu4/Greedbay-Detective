@@ -18,7 +18,7 @@ const TITLE_SELECTOR = 'h1 .x-item-title__mainTitle, h1.x-item-title__mainTitle'
 
 // Counters eBay shows only on some listings; null when absent, and not
 // listed in "missing".
-const OPTIONAL_FIELDS = ['watchers', 'soldCount', 'quantityAvailable'];
+const OPTIONAL_FIELDS = ['watchers', 'soldCount', 'quantityAvailable', 'bids', 'endsIn', 'endsAt'];
 
 // "9 available" in the quantity box (seen 2026-10-19); any other text gives
 // null.
@@ -202,6 +202,25 @@ function sellerFromCard() {
     };
 }
 
+// "0 bids", "1 bid", "12 bids" in the bid count; else null.
+function auctionBids() {
+    const match = /^(\d{1,3}(?:,\d{3})+|\d+) bids?$/.exec(textOf(document.querySelector('[data-testid="x-bid-count"]')) || '');
+    return match ? intOf(match[1]) : null;
+}
+
+// "3d 22h" from "Ends in 3d 22h" (the label span removed); else null.
+function endsInText() {
+    const timer = document.querySelector('[data-testid="x-end-time"] .ux-timer__text');
+    if (!timer)
+        return null;
+    const copy = timer.cloneNode(true);
+    const label = copy.querySelector('.ux-timer__label');
+    if (label)
+        label.remove();
+    const text = norm(copy.textContent);
+    return text.length > 0 ? text : null;
+}
+
 function itemSpecifics() {
     const specifics = [];
     for (const list of document.querySelectorAll('dl.ux-layout-section-evo__item--table-view')) {
@@ -243,6 +262,13 @@ function extract(input) {
         bestOfferOffered: document.querySelector('[data-testid="x-offer-action"], .x-offer-action') !== null,
         // The Buy It Now button (seen on a fixed-price listing 2026-10-19).
         buyItNowOffered: document.querySelector('[data-testid="x-bin-action"]') !== null,
+        // Auction (seen 2026-10-19): the bid price block, "Place bid", the
+        // bid count ("0 bids") and the end ("Ends in 3d 22h" + "Friday,
+        // 06:28 PM", no date). Null when the page does not show them.
+        auction: document.querySelector('[data-testid="x-bid-action"], [data-testid="x-bid-price"]') !== null,
+        bids: auctionBids(),
+        endsIn: endsInText(),
+        endsAt: textOf(document.querySelector('[data-testid="x-end-time"] .ux-timer__time-left')),
         returnsText: textOf(document.querySelector('.ux-labels-values--returns')),
         seller: sellerFromCard(),
         specifics: itemSpecifics(),

@@ -1,8 +1,11 @@
 #include "ui/ResultsController.h"
 
+#include "lookup/AuctionTime.h"
 #include "ui/Format.h"
 
 #include <QJsonObject>
+#include <QLocale>
+#include <QTimeZone>
 
 #include <algorithm>
 #include <utility>
@@ -102,6 +105,14 @@ QVariant RowsModel::data(const QModelIndex &index, int role) const
         return entry.mark;
     case BrokenRole:
         return entry.broken;
+    case FormatRole:
+        return entry.format;
+    case TimeLeftRole:
+        return entry.timeLeft;
+    case ViewRole:
+        return entry.view;
+    case ViewNoteRole:
+        return entry.viewNote;
     default:
         return {};
     }
@@ -111,7 +122,8 @@ QHash<int, QByteArray> RowsModel::roleNames() const
 {
     return {{RowRole, "row"},         {IncludedRole, "included"}, {WhereRole, "where"},   {TotalRole, "total"},
             {ConditionRole, "condition"}, {DateRole, "date"},     {TitleRole, "title"},   {ItemIdRole, "itemId"},
-            {ReasonRole, "reason"},   {MarkRole, "mark"},       {BrokenRole, "broken"}};
+            {ReasonRole, "reason"},   {MarkRole, "mark"},       {BrokenRole, "broken"},
+            {FormatRole, "format"}, {TimeLeftRole, "timeLeft"}, {ViewRole, "view"},   {ViewNoteRole, "viewNote"}};
 }
 
 ResultsController::ResultsController(lookup::LookupStore store, const lookup::MatchWords *words,
@@ -165,13 +177,14 @@ void ResultsController::recompute()
     const lookup::LookupResult &result = m_saved.result;
     m_valuation = lookup::valuate(result, m_saved.rows, m_valueSettings());
 
-    // CHEAPEST: the lowest totals among the counted for-sale rows other than
-    // the pasted listing (the same rows as m_valuation.forSale).
+    // CHEAPEST: the lowest totals among the counted Buy It Now rows other
+    // than the pasted listing (the same rows as m_valuation.forSale).
     QList<int> forSale;
     for (int i = 0; i < m_saved.rows.size(); ++i) {
         const Row &row = m_saved.rows.at(i);
         if (row.source == Row::Source::Active && row.included && lookup::rowTotal(result, row)
-            && result.active.at(row.index).itemId != result.item.itemId)
+            && result.active.at(row.index).itemId != result.item.itemId
+            && result.active.at(row.index).format == QLatin1String("fixed_price"))
             forSale.append(i);
     }
     std::stable_sort(forSale.begin(), forSale.end(), [&](int a, int b) {
@@ -261,6 +274,25 @@ QList<RowsModel::Entry> ResultsController::entries(bool sameItem) const
                 entry.mark = QStringLiteral("this");
             else if (m_cheapest.contains(i))
                 entry.mark = QStringLiteral("cheapest");
+        }
+        if (row.source == Row::Source::Active) {
+            const lookup::SearchRecord &record = result.active.at(row.index);
+            const QDateTime now = QDateTime::currentDateTime();
+            if (record.format == QLatin1String("auction")) {
+                entry.format = record.bids ? QStringLiteral("AUCTION - %1").arg(countText(*record.bids, QStringLiteral("bid"), QStringLiteral("bids")))
+                                           : QStringLiteral("AUCTION");
+                entry.timeLeft = record.auctionEnd ? lookup::timeLeftText(*record.auctionEnd, record.auctionEndSeconds, now)
+                                 : record.timeLeft.isEmpty() ? QString()
+                                                             : QStringLiteral("%1 (when checked)").arg(record.timeLeft);
+                // An auction whose known end has passed is no longer for sale.
+                entry.view = !(record.auctionEnd && *record.auctionEnd <= now);
+            } else {
+                if (record.format == QLatin1String("fixed_price"))
+                    entry.format = record.bestOffer ? QStringLiteral("BEST OFFER") : QStringLiteral("BUY IT NOW");
+                entry.view = true;
+                entry.viewNote = QStringLiteral("listed when checked %1").arg(whenText(m_saved.createdAt, now));
+            }
+            entry.view = entry.view && !record.itemId.isEmpty();
         }
         if (row.match.bucket != Bucket::SameItem) {
             entry.reason = lookup::bucketName(row.match.bucket);
@@ -373,6 +405,103 @@ QString ResultsController::brokenLine() const
     if (reason.isEmpty())
         return {};
     return QStringLiteral("Likely broken: %1. Sellers often don't test or don't say. Assume it does not work.").arg(reason);
+}
+
+QString ResultsController::formatText() const
+{
+    const lookup::ItemRecord &item = m_saved.result.item;
+    if (item.auction) {
+        const QString bids = item.bids ? countText(*item.bids, QStringLiteral("bid"), QStringLiteral("bids")) : QStringLiteral("- bids");
+        return QStringLiteral("Auction - %1, ends %2").arg(bids, auctionEndText());
+    }
+    if (item.buyItNow)
+        return item.bestOffer ? QStringLiteral("Buy It Now or Best Offer") : QStringLiteral("Buy It Now");
+    return item.bestOffer ? QStringLiteral("Best Offer") : QStringLiteral("-");
+}
+
+double ResultsController::auctionEndMs() const
+{
+    const std::optional<QDateTime> &end = m_saved.result.item.auctionEnd;
+    return end ? static_cast<double>(end->toMSecsSinceEpoch()) : -1.0;
+}
+
+QString ResultsController::auctionEndText() const
+{
+    const std::optional<QDateTime> &end = m_saved.result.item.auctionEnd;
+    if (!end)
+        return QStringLiteral("-");
+    const QLocale english(QLocale::English, QLocale::UnitedStates);
+    return english.toString(end->toLocalTime(), QStringLiteral("ddd MMM d, h:mm AP")) + QStringLiteral(" (read ")
+           + whenText(m_saved.createdAt, QDateTime::currentDateTime()) + QLatin1Char(')');
+}
+
+QString ResultsController::timeLeft(double endMs, bool seconds) const
+{
+    if (endMs < 0)
+        return QStringLiteral("-");
+    return lookup::timeLeftText(QDateTime::fromMSecsSinceEpoch(static_cast<qint64>(endMs), QTimeZone::UTC), seconds,
+                                QDateTime::currentDateTimeUtc());
+}
+
+QString ResultsController::auctionLabel() const
+{
+    if (!isAuction())
+        return {};
+    const lookup::ItemRecord &item = m_saved.result.item;
+    const lookup::ValueNumbers &sold = m_valuation.sold.medianCents ? m_valuation.sold : m_valuation.research;
+    if (item.bids && *item.bids == 0 && item.priceCents && sold.p75Cents && *item.priceCents > *sold.p75Cents)
+        return QStringLiteral("AUCTION STARTS HIGH");
+    return QStringLiteral("AUCTION");
+}
+
+QStringList ResultsController::auctionLines() const
+{
+    if (!isAuction())
+        return {};
+    const lookup::ItemRecord &item = m_saved.result.item;
+    const lookup::ValueNumbers &sold = m_valuation.sold.medianCents ? m_valuation.sold : m_valuation.research;
+    if (item.bids && *item.bids > 0)
+        return {QStringLiteral("The current bid %1 is not the final price - it will likely go higher. Compare the sold "
+                               "numbers, not the current bid.")
+                    .arg(moneyText(item.priceCents))};
+    if (auctionLabel() == QLatin1String("AUCTION STARTS HIGH"))
+        return {QStringLiteral("The starting price %1 is already above what the same item sold for (median %2).")
+                    .arg(moneyText(item.priceCents), moneyText(sold.medianCents))};
+    if (item.bids && *item.bids == 0)
+        return {QStringLiteral("Starts at %1 - the final price is decided by bidders.").arg(moneyText(item.priceCents))};
+    return {QStringLiteral("The price %1 is a bid, not a final price; eBay showed no bid count.").arg(moneyText(item.priceCents))};
+}
+
+QString ResultsController::thisLabel() const
+{
+    const lookup::ItemRecord &item = m_saved.result.item;
+    if (item.auction && item.bids && *item.bids > 0)
+        return QStringLiteral("current bid %1").arg(moneyText(item.priceCents));
+    return QStringLiteral("THIS ") + totalText();
+}
+
+QString ResultsController::auctionsLine() const
+{
+    // The counted auctions (m_valuation.auctions' rows) whose stored end has
+    // not passed; one without a known end is taken as running.
+    const lookup::LookupResult &result = m_saved.result;
+    const QDateTime now = QDateTime::currentDateTimeUtc();
+    int running = 0;
+    std::optional<qint64> lowest;
+    for (const Row &row : m_saved.rows) {
+        if (row.source != Row::Source::Active || !row.included)
+            continue;
+        const lookup::SearchRecord &record = result.active.at(row.index);
+        if (record.itemId == result.item.itemId || record.format != QLatin1String("auction") || !record.priceCents
+            || (record.auctionEnd && *record.auctionEnd <= now))
+            continue;
+        ++running;
+        if (!lowest || *record.priceCents < *lowest)
+            lowest = record.priceCents;
+    }
+    if (running == 0)
+        return {};
+    return QStringLiteral("Auctions running: %1, lowest current bid %2 (not a final price)").arg(running).arg(moneyText(lowest));
 }
 
 bool ResultsController::cheaperFlag() const

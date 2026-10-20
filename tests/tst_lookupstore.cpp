@@ -402,7 +402,7 @@ void TestLookupStore::identitiesAndPhotos()
 void TestLookupStore::upgradesVersion1()
 {
     const QList<app::Migration> all = shippedMigrations();
-    QCOMPARE(all.size(), 2);
+    QCOMPARE(all.size(), 3);
     const Database::Result created =
         Database::open(QStringLiteral("v1"), m_db, m_backups, QStringLiteral(TEST_APP_NAME), all.mid(0, 1));
     QVERIFY2(created.ok(), qPrintable(created.error));
@@ -446,7 +446,7 @@ void TestLookupStore::upgradesVersion1()
     QVERIFY2(upgraded.ok(), qPrintable(upgraded.error));
     QCOMPARE(upgraded.outcome, Database::Outcome::Upgraded);
     QCOMPARE(upgraded.fromVersion, 1);
-    QCOMPARE(upgraded.toVersion, 2);
+    QCOMPARE(upgraded.toVersion, 3);
     QVERIFY(QFileInfo::exists(upgraded.backupPath));
     QCOMPARE(scalar(QStringLiteral("v2"), QStringLiteral("PRAGMA integrity_check")).toString(), QStringLiteral("ok"));
     for (const char *table : {"lookup", "listing", "research_summary", "valuation", "excluded_listing"}) {

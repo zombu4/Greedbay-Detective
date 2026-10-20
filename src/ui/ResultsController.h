@@ -35,6 +35,10 @@ public:
         ReasonRole,     // why it is not counted by default (the not-this-item tab)
         MarkRole,       // "this" (THIS LISTING), "cheapest" (CHEAPEST) or ""
         BrokenRole,     // why it is likely broken (a LIKELY BROKEN badge), or ""
+        FormatRole,     // "BUY IT NOW", "BEST OFFER", "AUCTION - N bids" or "" (for-sale rows)
+        TimeLeftRole,   // auctions: the time left, or ""
+        ViewRole,       // true: a View button (for sale now, not an ended auction)
+        ViewNoteRole,   // "listed when checked <when>" next to View, or ""
     };
 
     struct Entry {
@@ -49,6 +53,10 @@ public:
         QString reason;
         QString mark;
         QString broken;
+        QString format;
+        QString timeLeft;
+        bool view = false;
+        QString viewNote;
     };
 
     explicit RowsModel(QObject *parent = nullptr);
@@ -113,6 +121,18 @@ class ResultsController : public QObject {
     // the numbers do not change.
     Q_PROPERTY(bool brokenFlag READ brokenFlag NOTIFY changed)
     Q_PROPERTY(QString brokenLine READ brokenLine NOTIFY changed)
+    // Format (owner decision 2026-10-19 "Buy It Now vs auction").
+    Q_PROPERTY(QString formatText READ formatText NOTIFY changed)
+    Q_PROPERTY(bool isAuction READ isAuction NOTIFY changed)
+    // The auction's end in ms since the epoch (-1: not known), whether it is
+    // known to the second, and when the page was read.
+    Q_PROPERTY(double auctionEndMs READ auctionEndMs NOTIFY changed)
+    Q_PROPERTY(bool auctionEndSeconds READ auctionEndSeconds NOTIFY changed)
+    Q_PROPERTY(QString auctionEndText READ auctionEndText NOTIFY changed)
+    Q_PROPERTY(QString auctionLabel READ auctionLabel NOTIFY changed)
+    Q_PROPERTY(QStringList auctionLines READ auctionLines NOTIFY changed)
+    Q_PROPERTY(QString thisLabel READ thisLabel NOTIFY changed)
+    Q_PROPERTY(QString auctionsLine READ auctionsLine NOTIFY changed)
     // "What the same item really sold for".
     Q_PROPERTY(QString soldLine READ soldLine NOTIFY changed)
     Q_PROPERTY(bool hasSoldNumbers READ hasSoldNumbers NOTIFY changed)
@@ -193,6 +213,17 @@ public:
     QString cheapestItemId() const { return m_cheapestItemId; }
     bool brokenFlag() const { return !brokenReason().isEmpty(); }
     QString brokenLine() const;
+    QString formatText() const;
+    bool isAuction() const { return m_saved.result.item.auction; }
+    double auctionEndMs() const;
+    bool auctionEndSeconds() const { return m_saved.result.item.auctionEndSeconds; }
+    QString auctionEndText() const;
+    QString auctionLabel() const;
+    QStringList auctionLines() const;
+    QString thisLabel() const;
+    QString auctionsLine() const;
+    // The countdown text for an end in ms since the epoch, at this moment.
+    Q_INVOKABLE QString timeLeft(double endMs, bool seconds) const;
     QString soldLine() const;
     bool hasSoldNumbers() const { return m_valuation.sold.medianCents.has_value(); }
     QString medianText() const;

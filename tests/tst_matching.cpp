@@ -489,19 +489,31 @@ void TestMatching::partsKitIsNotCheapest()
         record.title = QString::fromLatin1(title);
         record.priceCents = price;
         record.shippingCents = shipping;
+        record.format = QStringLiteral("fixed_price");
         return record;
     };
     result.active = {forSale("200000000091", "Heathkit IP-20 RECAP KIT for Power Supply w/ Instructions - capacitors & diodes",
                              3200, 0),
                      forSale("200000000092", "Heathkit IP-20 regulated power supply", 8000, 1500),
                      forSale("200000000093", "Heathkit IP-20 power supply tested", 12000, 0)};
+    // Owner decision 2026-10-19: only Buy It Now listings count as "for sale
+    // now" prices; a running auction's $20.00 bid is shown apart; a card
+    // without a format counts in neither.
+    SearchRecord auction = forSale("200000000094", "Heathkit IP-20 power supply", 2000, 1000);
+    auction.format = QStringLiteral("auction");
+    auction.bids = 2;
+    SearchRecord unknown = forSale("200000000095", "Heathkit IP-20 supply", 5000, 0);
+    unknown.format.clear();
+    result.active.append(auction);
+    result.active.append(unknown);
     const QList<Row> rows = classifyRows(result, m_words);
-    QCOMPARE(rows.size(), 3);
+    QCOMPARE(rows.size(), 5);
     QCOMPARE(rows.at(0).match.bucket, Bucket::PartFits);
     QCOMPARE(rows.at(0).included, false);
     const Valuation valuation = valuate(result, rows, app::ValueSettings());
     QCOMPARE(valuation.forSale, QList<qint64>({9500, 12000}));
     QCOMPARE(valuation.cheaperForSale, 1);
+    QCOMPARE(valuation.auctions, QList<qint64>({2000}));
 }
 
 // Case 10: "Brand: Heath Zenith" is Heathkit; IP-17, IP-2717, IP-2717A,

@@ -17,6 +17,7 @@
 #include <QFontDatabase>
 #include <QGuiApplication>
 #include <QImage>
+#include <QMap>
 #include <QQmlApplicationEngine>
 #include <QQmlComponent>
 #include <QQuickItem>
@@ -100,6 +101,7 @@ private slots:
     void savedLookupReopens();
     void panelsLoad();
     void nothingFoundIsSaid();
+    void auctionsAndFormats();
 };
 
 void TestUi::initTestCase()
@@ -446,6 +448,131 @@ void TestUi::nothingFoundIsSaid()
     QVERIFY(cardFlagged);
     QVERIFY(backend.openSaved(m_lookupId));
     QCOMPARE(backend.results()->emptyMessage(), QString());
+}
+
+// Owner decision 2026-10-19 "Buy It Now vs auction": the listing's format
+// and auction card, Buy It Now-only cheapest, format badges, View only for
+// what is for sale now, and the auction fields saved and read back.
+void TestUi::auctionsAndFormats()
+{
+    const QDateTime now = QDateTime::currentDateTimeUtc();
+    auto save = [&](int bids, qint64 price, std::optional<QDateTime> end) -> qint64 {
+        LookupResult result;
+        result.status = QStringLiteral("complete");
+        result.item.itemId = QStringLiteral("100000000096");
+        result.item.title = QStringLiteral("Acme Q9 Signal Tracer");
+        result.item.priceCents = price;
+        result.item.shippingCents = 1000;
+        result.item.condition = QStringLiteral("Used");
+        result.item.auction = true;
+        result.item.bids = bids;
+        result.item.endsIn = QStringLiteral("3d 22h");
+        result.item.endsAt = QStringLiteral("Friday, 06:28 PM");
+        result.item.auctionEnd = end;
+        result.identity.brandName = QStringLiteral("Acme");
+        result.identity.model = QStringLiteral("Q9");
+        result.identity.source = QStringLiteral("item specifics");
+        result.identity.confident = true;
+        result.queries = {QStringLiteral("Acme Q9")};
+        result.sold = {sale("200000000001", "Acme Q9", 8000, 1000, "Used"), sale("200000000002", "Acme Q9", 9000, 1000, "Used"),
+                       sale("200000000003", "Acme Q9", 10000, 1200, "Used"), sale("200000000004", "Acme Q9", 11000, 1000, "Used")};
+        SearchRecord binOffer = sale("200000000021", "Acme Q9 tracer", 9500, 800, "Used");
+        binOffer.bestOffer = true;
+        SearchRecord running = sale("200000000022", "Acme Q9", 7000, 900, "Used");
+        running.format = QStringLiteral("auction");
+        running.bids = 3;
+        running.timeLeft = QStringLiteral("2h 10m left");
+        running.auctionEnd = now.addSecs(2 * 3600);
+        SearchRecord ended = sale("200000000023", "Acme Q9 tracer", 6000, 900, "Used");
+        ended.format = QStringLiteral("auction");
+        ended.bids = 5;
+        ended.auctionEnd = now.addSecs(-3600);
+        result.active = {binOffer, running, ended};
+        QList<Row> rows;
+        for (qsizetype i = 0; i < 4; ++i)
+            rows.append(row(Row::Source::Sold, i, Bucket::SameItem));
+        for (qsizetype i = 0; i < 3; ++i)
+            rows.append(row(Row::Source::Active, i, Bucket::SameItem));
+        QString error;
+        const std::optional<qint64> id = LookupStore(QStringLiteral("app")).save(
+            QStringLiteral("100000000096"), result, rows, valuate(result, rows, app::ValueSettings()),
+            app::lookup::Depths{240, 240, 200}, 1095, &error);
+        return id ? *id : 0;
+    };
+    app::ui::Backend backend(*m_folder, QStringLiteral("app"));
+    std::unique_ptr<app::ui::PhotoProvider> photos(backend.takePhotoProvider());
+    app::ui::ResultsController *results = backend.results();
+
+    // With bids: the current bid is not the final price; the bar says so.
+    const qint64 withBids = save(3, 9000, std::nullopt);
+    QVERIFY(withBids && backend.openSaved(withBids));
+    QVERIFY(results->isAuction());
+    QCOMPARE(results->formatText(), QStringLiteral("Auction - 3 bids, ends -"));
+    QCOMPARE(results->auctionLabel(), QStringLiteral("AUCTION"));
+    QCOMPARE(results->auctionLines(),
+             QStringList{QStringLiteral("The current bid $90.00 is not the final price - it will likely go higher. Compare the "
+                                        "sold numbers, not the current bid.")});
+    QCOMPARE(results->thisLabel(), QStringLiteral("current bid $90.00"));
+    QCOMPARE(results->auctionEndMs(), -1.0);
+    // Cheapest = Buy It Now only: $103.00; the auctions are apart, the ended
+    // one no longer running.
+    QCOMPARE(results->forSaleText(), QStringLiteral("1, from $103.00"));
+    QCOMPARE(results->auctionsLine(), QStringLiteral("Auctions running: 1, lowest current bid $70.00 (not a final price)"));
+    QCOMPARE(results->cheapestItemId(), QStringLiteral("200000000021"));
+    QMap<QString, QModelIndex> byId;
+    for (int i = 0; i < results->sameItem()->count(); ++i) {
+        const QModelIndex index = results->sameItem()->index(i);
+        byId.insert(index.data(app::ui::RowsModel::ItemIdRole).toString(), index);
+    }
+    using R = app::ui::RowsModel;
+    QCOMPARE(byId.value("200000000021").data(R::FormatRole).toString(), QStringLiteral("BEST OFFER"));
+    QVERIFY(byId.value("200000000021").data(R::ViewRole).toBool());
+    QVERIFY(byId.value("200000000021").data(R::ViewNoteRole).toString().startsWith(QLatin1String("listed when checked ")));
+    QCOMPARE(byId.value("200000000022").data(R::FormatRole).toString(), QStringLiteral("AUCTION - 3 bids"));
+    QVERIFY(byId.value("200000000022").data(R::ViewRole).toBool());
+    QVERIFY(byId.value("200000000022").data(R::TimeLeftRole).toString().endsWith(QLatin1String(" left")));
+    QCOMPARE(byId.value("200000000023").data(R::ViewRole).toBool(), false);
+    QCOMPARE(byId.value("200000000023").data(R::TimeLeftRole).toString(), QStringLiteral("ENDED"));
+    QCOMPARE(byId.value("200000000001").data(R::ViewRole).toBool(), false);
+    QCOMPARE(byId.value("200000000001").data(R::FormatRole).toString(), QString());
+    // The CHEAPEST mark is on the Buy It Now listing, not on an auction.
+    QCOMPARE(byId.value("200000000021").data(R::MarkRole).toString(), QStringLiteral("cheapest"));
+    QCOMPARE(byId.value("200000000022").data(R::MarkRole).toString(), QString());
+
+    // No bids, start above the sold P75 ($114.00): starts high.
+    const qint64 high = save(0, 12000, std::nullopt);
+    QVERIFY(high && backend.openSaved(high));
+    QCOMPARE(results->auctionLabel(), QStringLiteral("AUCTION STARTS HIGH"));
+    QCOMPARE(results->auctionLines(),
+             QStringList{QStringLiteral("The starting price $120.00 is already above what the same item sold for (median $106.00).")});
+    QCOMPARE(results->thisLabel(), QStringLiteral("THIS $130.00"));
+
+    // No bids, a low start, a known end: the countdown runs from the stored end.
+    const QDateTime end = now.addSecs(3 * 86400);
+    const qint64 low = save(0, 5000, end);
+    QVERIFY(low && backend.openSaved(low));
+    QCOMPARE(results->auctionLabel(), QStringLiteral("AUCTION"));
+    QCOMPARE(results->auctionLines(), QStringList{QStringLiteral("Starts at $50.00 - the final price is decided by bidders.")});
+    QVERIFY(results->formatText().startsWith(QLatin1String("Auction - 0 bids, ends ")));
+    QVERIFY(results->auctionEndMs() > 0);
+    QVERIFY(results->timeLeft(results->auctionEndMs(), false).startsWith(QLatin1String("2d 23h")));
+    // Saved and read back.
+    QString error;
+    const std::optional<SavedLookup> saved = LookupStore(QStringLiteral("app")).load(low, &error);
+    QVERIFY2(saved, qPrintable(error));
+    QVERIFY(saved->result.item.auction);
+    QCOMPARE(saved->result.item.bids, std::optional<int>(0));
+    QCOMPARE(saved->result.item.endsAt, QStringLiteral("Friday, 06:28 PM"));
+    QCOMPARE(saved->result.item.auctionEnd->toSecsSinceEpoch(), end.toSecsSinceEpoch());
+    QVERIFY(saved->result.active.at(0).bestOffer);
+    QCOMPARE(saved->result.active.at(1).timeLeft, QStringLiteral("2h 10m left"));
+    QVERIFY(saved->result.active.at(1).auctionEnd.has_value());
+
+    // A Buy It Now listing: its format, no auction card.
+    QVERIFY(backend.openSaved(m_lookupId));
+    QVERIFY(!results->isAuction());
+    QCOMPARE(results->formatText(), QStringLiteral("-"));
+    QVERIFY(results->auctionLines().isEmpty());
 }
 
 int main(int argc, char *argv[])

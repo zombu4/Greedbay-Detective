@@ -1,5 +1,7 @@
 #include "lookup/Records.h"
 
+#include "lookup/AuctionTime.h"
+
 #include <QJsonArray>
 
 #include <limits>
@@ -58,6 +60,15 @@ SearchRecord SearchRecord::fromJson(const QJsonObject &item, bool sold)
     record.format = item.value(QStringLiteral("format")).toString();
     record.bids = count(item.value(QStringLiteral("bids")));
     record.sellerName = item.value(QStringLiteral("seller")).toObject().value(QStringLiteral("name")).toString();
+    record.bestOffer = item.value(QStringLiteral("bestOfferOffered")).toBool();
+    record.timeLeft = item.value(QStringLiteral("timeLeft")).toString();
+    record.auctionEndText = item.value(QStringLiteral("auctionEnd")).toString();
+    if (!record.timeLeft.isEmpty()) {
+        if (const std::optional<AuctionEnd> end = app::lookup::auctionEnd(record.timeLeft, record.auctionEndText, QDateTime::currentDateTime())) {
+            record.auctionEnd = end->end;
+            record.auctionEndSeconds = end->seconds;
+        }
+    }
     if (sold) {
         record.soldDate = item.value(QStringLiteral("soldDate")).toString();
         record.confirmed = item.value(QStringLiteral("priceStatus")).toString() == QLatin1String("shown");
@@ -105,6 +116,18 @@ ItemRecord ItemRecord::fromJson(const QJsonObject &data)
     record.condition = data.value(QStringLiteral("conditionText")).toString();
     record.sellerName = data.value(QStringLiteral("seller")).toObject().value(QStringLiteral("name")).toString();
     record.imageUrl = data.value(QStringLiteral("imageUrl")).toString();
+    record.auction = data.value(QStringLiteral("auction")).toBool();
+    record.bids = count(data.value(QStringLiteral("bids")));
+    record.endsIn = data.value(QStringLiteral("endsIn")).toString();
+    record.endsAt = data.value(QStringLiteral("endsAt")).toString();
+    record.buyItNow = data.value(QStringLiteral("buyItNowOffered")).toBool();
+    record.bestOffer = data.value(QStringLiteral("bestOfferOffered")).toBool();
+    if (record.auction && !record.endsIn.isEmpty()) {
+        if (const std::optional<AuctionEnd> end = app::lookup::auctionEnd(record.endsIn, record.endsAt, QDateTime::currentDateTime())) {
+            record.auctionEnd = end->end;
+            record.auctionEndSeconds = end->seconds;
+        }
+    }
     for (const QJsonValue &value : data.value(QStringLiteral("specifics")).toArray()) {
         const QJsonObject entry = value.toObject();
         record.specifics.append({entry.value(QStringLiteral("label")).toString(), entry.value(QStringLiteral("value")).toString()});

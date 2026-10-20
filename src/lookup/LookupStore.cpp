@@ -47,6 +47,19 @@ QString notNull(const QString &text)
     return text.isNull() ? QStringLiteral("") : text;
 }
 
+QVariant timeOrNull(const std::optional<QDateTime> &time)
+{
+    return time ? QVariant(time->toUTC().toString(Qt::ISODateWithMs)) : QVariant(QMetaType::fromType<QString>());
+}
+
+std::optional<QDateTime> optionalTime(const QVariant &value)
+{
+    if (value.isNull())
+        return std::nullopt;
+    const QDateTime time = QDateTime::fromString(value.toString(), Qt::ISODateWithMs);
+    return time.isValid() ? std::optional<QDateTime>(time) : std::nullopt;
+}
+
 std::optional<qint64> optionalCents(const QVariant &value)
 {
     if (value.isNull())
@@ -238,13 +251,30 @@ std::optional<qint64> LookupStore::save(const QString &input, const LookupResult
         return fail();
     const qint64 lookupId = query.lastInsertId().toLongLong();
 
+    QSqlQuery format(db);
+    format.prepare(QStringLiteral("UPDATE lookups SET auction = :auction, bids = :bids, buy_it_now = :buy_it_now, "
+                                  "best_offer = :best_offer, ends_in = :ends_in, ends_at = :ends_at, auction_end = :auction_end, "
+                                  "auction_end_seconds = :auction_end_seconds WHERE id = :id"));
+    format.bindValue(QStringLiteral(":auction"), item.auction ? 1 : 0);
+    format.bindValue(QStringLiteral(":bids"), optionalInt(item.bids));
+    format.bindValue(QStringLiteral(":buy_it_now"), item.buyItNow ? 1 : 0);
+    format.bindValue(QStringLiteral(":best_offer"), item.bestOffer ? 1 : 0);
+    format.bindValue(QStringLiteral(":ends_in"), textOrNull(item.endsIn));
+    format.bindValue(QStringLiteral(":ends_at"), textOrNull(item.endsAt));
+    format.bindValue(QStringLiteral(":auction_end"), timeOrNull(item.auctionEnd));
+    format.bindValue(QStringLiteral(":auction_end_seconds"), item.auctionEndSeconds ? 1 : 0);
+    format.bindValue(QStringLiteral(":id"), lookupId);
+    if (!run(format, error))
+        return fail();
+
     QSqlQuery insertRow(db);
     insertRow.prepare(QStringLiteral(
         "INSERT INTO lookup_rows (lookup_id, source, position, item_id, title, condition_text, price_cents, price_text, "
         "shipping_cents, format, bids, seller_name, sold_date, confirmed, total_sold, last_sold_date, bucket, reasons, "
-        "included) VALUES (:lookup_id, :source, :position, :item_id, :title, :condition_text, :price_cents, "
-        ":price_text, :shipping_cents, :format, :bids, :seller_name, :sold_date, :confirmed, :total_sold, "
-        ":last_sold_date, :bucket, :reasons, :included)"));
+        "included, best_offer, time_left, auction_end_text, auction_end, auction_end_seconds) VALUES (:lookup_id, "
+        ":source, :position, :item_id, :title, :condition_text, :price_cents, :price_text, :shipping_cents, :format, "
+        ":bids, :seller_name, :sold_date, :confirmed, :total_sold, :last_sold_date, :bucket, :reasons, :included, "
+        ":best_offer, :time_left, :auction_end_text, :auction_end, :auction_end_seconds)"));
     for (const Row &row : rows) {
         insertRow.bindValue(QStringLiteral(":lookup_id"), lookupId);
         insertRow.bindValue(QStringLiteral(":source"), rowSourceId(row.source));
@@ -267,6 +297,11 @@ std::optional<qint64> LookupStore::save(const QString &input, const LookupResult
             insertRow.bindValue(QStringLiteral(":confirmed"), 1);
             insertRow.bindValue(QStringLiteral(":total_sold"), optionalInt(record.totalSold));
             insertRow.bindValue(QStringLiteral(":last_sold_date"), textOrNull(record.lastSoldDate));
+            insertRow.bindValue(QStringLiteral(":best_offer"), 0);
+            insertRow.bindValue(QStringLiteral(":time_left"), QVariant(QMetaType::fromType<QString>()));
+            insertRow.bindValue(QStringLiteral(":auction_end_text"), QVariant(QMetaType::fromType<QString>()));
+            insertRow.bindValue(QStringLiteral(":auction_end"), QVariant(QMetaType::fromType<QString>()));
+            insertRow.bindValue(QStringLiteral(":auction_end_seconds"), 0);
         } else {
             const SearchRecord &record = row.source == Row::Source::Sold ? result.sold.at(row.index) : result.active.at(row.index);
             insertRow.bindValue(QStringLiteral(":item_id"), textOrNull(record.itemId));
@@ -282,6 +317,11 @@ std::optional<qint64> LookupStore::save(const QString &input, const LookupResult
             insertRow.bindValue(QStringLiteral(":confirmed"), record.confirmed ? 1 : 0);
             insertRow.bindValue(QStringLiteral(":total_sold"), QVariant(QMetaType::fromType<int>()));
             insertRow.bindValue(QStringLiteral(":last_sold_date"), QVariant(QMetaType::fromType<QString>()));
+            insertRow.bindValue(QStringLiteral(":best_offer"), record.bestOffer ? 1 : 0);
+            insertRow.bindValue(QStringLiteral(":time_left"), textOrNull(record.timeLeft));
+            insertRow.bindValue(QStringLiteral(":auction_end_text"), textOrNull(record.auctionEndText));
+            insertRow.bindValue(QStringLiteral(":auction_end"), timeOrNull(record.auctionEnd));
+            insertRow.bindValue(QStringLiteral(":auction_end_seconds"), record.auctionEndSeconds ? 1 : 0);
         }
         if (!run(insertRow, error))
             return fail();
@@ -345,7 +385,8 @@ std::optional<SavedLookup> LookupStore::load(qint64 lookupId, QString *error) co
         "SELECT created_at, input, item_id, status, message, title, price_cents, shipping_cents, currency, "
         "condition_text, seller_name, image_url, specifics, brand, model, product_name, identity_source, "
         "identity_confident, identity_reason, family, known_issues, queries, sold_depth, active_depth, research_depth, "
-        "history_days, research_unavailable, research_summary, notes, pages_loaded, elapsed_ms FROM lookups WHERE id = ?"));
+        "history_days, research_unavailable, research_summary, notes, pages_loaded, elapsed_ms, auction, bids, buy_it_now, "
+        "best_offer, ends_in, ends_at, auction_end, auction_end_seconds FROM lookups WHERE id = ?"));
     query.addBindValue(lookupId);
     if (!run(query, error))
         return std::nullopt;
@@ -390,11 +431,20 @@ std::optional<SavedLookup> LookupStore::load(qint64 lookupId, QString *error) co
     result.notes = listFromJson(query.value(28));
     result.pagesLoaded = query.value(29).toInt();
     result.elapsedMs = query.value(30).toLongLong();
+    item.auction = query.value(31).toInt() == 1;
+    item.bids = optionalCount(query.value(32));
+    item.buyItNow = query.value(33).toInt() == 1;
+    item.bestOffer = query.value(34).toInt() == 1;
+    item.endsIn = query.value(35).toString();
+    item.endsAt = query.value(36).toString();
+    item.auctionEnd = optionalTime(query.value(37));
+    item.auctionEndSeconds = query.value(38).toInt() == 1;
 
     QSqlQuery rowsQuery(db);
     rowsQuery.prepare(QStringLiteral(
         "SELECT source, item_id, title, condition_text, price_cents, price_text, shipping_cents, format, bids, "
-        "seller_name, sold_date, confirmed, total_sold, last_sold_date, bucket, reasons, included FROM lookup_rows "
+        "seller_name, sold_date, confirmed, total_sold, last_sold_date, bucket, reasons, included, best_offer, time_left, "
+        "auction_end_text, auction_end, auction_end_seconds FROM lookup_rows "
         "WHERE lookup_id = ? ORDER BY CASE source WHEN 'sold' THEN 0 WHEN 'active' THEN 1 ELSE 2 END, position"));
     rowsQuery.addBindValue(lookupId);
     if (!run(rowsQuery, error))
@@ -435,6 +485,11 @@ std::optional<SavedLookup> LookupStore::load(qint64 lookupId, QString *error) co
             record.sellerName = rowsQuery.value(9).toString();
             record.soldDate = rowsQuery.value(10).toString();
             record.confirmed = rowsQuery.value(11).toInt() == 1;
+            record.bestOffer = rowsQuery.value(17).toInt() == 1;
+            record.timeLeft = rowsQuery.value(18).toString();
+            record.auctionEndText = rowsQuery.value(19).toString();
+            record.auctionEnd = optionalTime(rowsQuery.value(20));
+            record.auctionEndSeconds = rowsQuery.value(21).toInt() == 1;
             const bool sold = source == QLatin1String("sold");
             QList<SearchRecord> &list = sold ? result.sold : result.active;
             row.source = sold ? Row::Source::Sold : Row::Source::Active;

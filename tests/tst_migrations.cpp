@@ -21,7 +21,7 @@ void TestMigrations::shippedMigrationsLoad()
     QString error;
     const auto migrations = app::loadMigrations(QStringLiteral(":/migrations"), &error);
     QVERIFY2(migrations, qPrintable(error));
-    QCOMPARE(migrations->size(), 2);
+    QCOMPARE(migrations->size(), 3);
     const Migration &init = migrations->first();
     QCOMPARE(init.version, 1);
     QCOMPARE(init.name, QStringLiteral("init"));
@@ -35,6 +35,11 @@ void TestMigrations::shippedMigrationsLoad()
     QCOMPARE(saved.statements.size(), 14);
     QVERIFY(saved.statements.first().startsWith(QStringLiteral("CREATE TABLE lookups")));
     QVERIFY(saved.statements.last().startsWith(QStringLiteral("DROP TABLE lookup")));
+    const Migration &formats = migrations->at(2);
+    QCOMPARE(formats.version, 3);
+    QCOMPARE(formats.name, QStringLiteral("formats"));
+    // Eight columns of lookups, five of lookup_rows.
+    QCOMPARE(formats.statements.size(), 13);
 }
 
 void TestMigrations::contiguityCheck()

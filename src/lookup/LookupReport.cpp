@@ -168,12 +168,16 @@ Valuation valuate(const LookupResult &result, const QList<Row> &rows, const Valu
             sold.append({record.totalCents(), record.shippingCents, record.confirmed});
         } else if (row.source == Row::Source::Research) {
             research.append({rowTotal(result, row), result.research.at(row.index).avgShippingCents, true});
-        } else if (const std::optional<qint64> total = rowTotal(result, row);
-                   total && result.active.at(row.index).itemId != result.item.itemId) {
-            valuation.forSale.append(*total);
+        } else if (const SearchRecord &record = result.active.at(row.index); record.itemId != result.item.itemId) {
+            const std::optional<qint64> total = rowTotal(result, row);
+            if (record.format == QLatin1String("fixed_price") && total)
+                valuation.forSale.append(*total);
+            else if (record.format == QLatin1String("auction") && record.priceCents)
+                valuation.auctions.append(*record.priceCents);
         }
     }
     std::sort(valuation.forSale.begin(), valuation.forSale.end());
+    std::sort(valuation.auctions.begin(), valuation.auctions.end());
     if (const std::optional<qint64> listing = result.item.totalCents()) {
         valuation.cheaperForSale = static_cast<int>(
             std::count_if(valuation.forSale.cbegin(), valuation.forSale.cend(), [&](qint64 total) { return total < *listing; }));
