@@ -411,6 +411,8 @@ void TestMatching::rows_data()
                                               << Bucket::ToCheck;
     QTest::newRow("8 letters-only model away from brand") << "Commodore" << "Amiga" << "Amiga computer made by Commodore"
                                                           << "" << Bucket::SameItem;
+    QTest::newRow("8 split code away from brand") << "Acme" << "2022D" << "Acme signal generator 2022 D" << ""
+                                                 << Bucket::SameItem;
     QTest::newRow("8 untested") << "Marconi" << "2022" << "Marconi Instruments 2022 AM/FM signal generator untested" << ""
                                 << Bucket::SameItem;
     QTest::newRow("8 new by eBay") << "Marconi" << "2022" << "Marconi 2022 signal generator" << "Brand New"
