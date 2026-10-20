@@ -116,3 +116,8 @@ set(app_test_fixtures
 app_add_unit_test(tst_extractors tst_extractors.cpp support/ProcessList.h)
 target_link_libraries(tst_extractors PRIVATE appbrowser)
 qt_add_resources(tst_extractors "extractor_fixtures" PREFIX "/fixtures" BASE fixtures FILES ${app_test_fixtures})
+# The browser-driven suite loads every fixture in a real browser; the feedback
+# page cases wait for in-page updates (up to 10 s, twice when a page is read
+# again after Continue). CI's macOS runner needed more than 120 s for the
+# whole suite (run 39495969553); its own limit is 300 s.
+set_tests_properties(tst_extractors PROPERTIES TIMEOUT 300)
