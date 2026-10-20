@@ -22,7 +22,7 @@ namespace app::lookup {
 // accepted in result titles. A model has the manufacturer's spelling, an
 // optional product name ("Z Meter"), a family (suffix versions that count as
 // the same item, owner rule 28; a model without one keeps its versions
-// apart) and known-issue notes (rule 25).
+// apart), known-issue notes (rule 25) and the years it was made.
 struct BrandName {
     QString name;
     bool search = true;
@@ -46,6 +46,10 @@ struct KnownModel {
     // matched; off unless the data says so (owner rule 21, case 10).
     bool searchFamily = false;
     QStringList notes;
+    // The first and, when recorded, the last year the model was made or
+    // sold (owner decision 2026-10-19); 0 when not recorded.
+    int firstYear = 0;
+    int lastYear = 0;
 };
 
 // What the user confirmed for one listing.

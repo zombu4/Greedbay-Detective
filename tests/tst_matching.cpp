@@ -77,8 +77,27 @@ void TestMatching::initTestCase()
 void TestMatching::dataFilesNameTheirSources()
 {
     // The shipped data reads with every source required (builtIn did).
-    QCOMPARE(m_known.brands().size(), 4);
+    QCOMPARE(m_known.brands().size(), 80);
     QVERIFY(m_known.findModel(QStringLiteral("marconi"), QStringLiteral("2022D")));
+    QVERIFY(m_known.findModel(QStringLiteral("racaldana"), QStringLiteral("1992")));
+    // Years (owner decision 2026-10-19): first and optional last year.
+    const KnownModel *c64 = m_known.findModel(QStringLiteral("commodore"), QStringLiteral("64"));
+    QVERIFY(c64);
+    QCOMPARE(c64->firstYear, 1982);
+    QCOMPARE(c64->lastYear, 0);
+    QCOMPARE(c64->category, QStringLiteral("computer"));
+    // Misspellings seen in titles are match-only names of their brand.
+    const Brand *heathit = m_known.brandByName(QStringLiteral("HealthKit"));
+    QVERIFY(heathit);
+    QCOMPARE(heathit->id, QStringLiteral("heathkit"));
+    for (const BrandName &name : heathit->names) {
+        if (name.name == QStringLiteral("HealthKit"))
+            QVERIFY(!name.search);
+    }
+    QCOMPARE(m_known.brandByName(QStringLiteral("etco"))->id, QStringLiteral("eico"));
+    // "Knight" alone never makes the brand.
+    QVERIFY(!m_known.brandByName(QStringLiteral("Knight")));
+    QCOMPARE(m_known.brandByName(QStringLiteral("Allied Knight"))->id, QStringLiteral("knight"));
     QVERIFY(!m_known.findModel(QStringLiteral("sencore"), QStringLiteral("PR5700")));
     // A fact without a source is refused in shipped data, accepted in the
     // user's file.
@@ -87,6 +106,14 @@ void TestMatching::dataFilesNameTheirSources()
     QVERIFY(!KnownModels::fromJson(noSource, true, &error));
     QVERIFY2(error.contains(QStringLiteral("no source")), qPrintable(error));
     QVERIFY(KnownModels::fromJson(noSource, false, &error));
+    const QByteArray badYear = R"({"format":1,"brands":[{"id":"x","names":[{"name":"X","search":true,"source":"owner"}]}],
+        "models":[{"brand":"x","model":"M7X","source":"owner","year":{"first":1990,"last":1980,"source":"owner"}}]})";
+    QVERIFY(!KnownModels::fromJson(badYear, true, &error));
+    QVERIFY2(error.contains(QStringLiteral("year")), qPrintable(error));
+    const QByteArray yearNoSource = R"({"format":1,"brands":[{"id":"x","names":[{"name":"X","search":true,"source":"owner"}]}],
+        "models":[{"brand":"x","model":"M7X","source":"owner","year":{"first":1990}}]})";
+    QVERIFY(!KnownModels::fromJson(yearNoSource, true, &error));
+    QVERIFY(KnownModels::fromJson(yearNoSource, false, &error));
     // Word lists: a missing list is refused.
     QVERIFY(!MatchWords::fromJson(R"({"format":1})", &error));
 }
@@ -108,7 +135,7 @@ void TestMatching::userFileSavesAndReloads()
                                                                          QStringLiteral("Bench Meter")}, &error),
              qPrintable(error));
     // A known brand with a new model: the user's file refers to the built-in brand.
-    QVERIFY2(known.saveConfirmed(path, QStringLiteral("100000000003"), {QStringLiteral("sencore"), QStringLiteral("LC75"), QString()},
+    QVERIFY2(known.saveConfirmed(path, QStringLiteral("100000000003"), {QStringLiteral("sencore"), QStringLiteral("LC800"), QString()},
                                  &error),
              qPrintable(error));
     const QJsonObject saved = QJsonDocument::fromJson(readTestFile(path)).object();
@@ -125,9 +152,9 @@ void TestMatching::userFileSavesAndReloads()
     QVERIFY(model);
     QCOMPARE(model->model, QStringLiteral("M7-X"));
     QCOMPARE(model->productName, QStringLiteral("Bench Meter"));
-    const KnownModel *lc75 = again.findModel(QStringLiteral("sencore"), QStringLiteral("LC75"));
-    QVERIFY(lc75);
-    QCOMPARE(lc75->model, QStringLiteral("LC75"));
+    const KnownModel *lc800 = again.findModel(QStringLiteral("sencore"), QStringLiteral("LC800"));
+    QVERIFY(lc800);
+    QCOMPARE(lc800->model, QStringLiteral("LC800"));
 
     // The saved identity comes first for that listing (rule 7).
     ItemRecord listing = item(QStringLiteral("Marconi Instruments 10kHz-1000MHz generator"));
@@ -266,11 +293,35 @@ void TestMatching::identityPerCase()
     QVERIFY(!marconi.confident);
     QCOMPARE(marconi.brandId, QStringLiteral("marconi"));
     QVERIFY(marconi.model.isEmpty());
-    QCOMPARE(marconi.candidates, QStringList({"2022"}));
+    QCOMPARE(marconi.candidates.first(), QStringLiteral("2022"));
+    QVERIFY(marconi.candidates.contains(QStringLiteral("2955B")));
     const Identity marconiUser = identityFromUser({QStringLiteral("Marconi Instruments"), QStringLiteral("2022"), QString()},
                                                   m_known, QStringLiteral("user"));
     QCOMPARE(buildQueries(marconiUser), QStringList({"Marconi Instruments 2022", "Marconi 2022"}));
     QCOMPARE(marconiUser.family, QStringList({"2022A", "2022C", "2022D", "2022E"}));
+
+    // Owner decision 2026-10-19: a known digits-only model counts in the
+    // title only right after a brand name (or its product name).
+    const Identity racal = identify(item(QStringLiteral("Racal-Dana 1992 Universal Counter")), m_known, m_words);
+    QVERIFY(racal.confident);
+    QCOMPARE(racal.brandId, QStringLiteral("racaldana"));
+    QCOMPARE(racal.model, QStringLiteral("1992"));
+    QCOMPARE(buildQueries(racal), QStringList({"Racal-Dana 1992"}));
+    const Identity racalYear = identify(item(QStringLiteral("Racal Dana counter manual printed 1992")), m_known, m_words);
+    QCOMPARE(racalYear.brandId, QStringLiteral("racaldana"));
+    QVERIFY(racalYear.model.isEmpty());
+    QVERIFY(!racalYear.confident);
+    // The longest known model wins ("Game Boy Color", not "Game Boy"); a
+    // model of four title words.
+    QCOMPARE(identify(item(QStringLiteral("Nintendo Game Boy Color handheld")), m_known, m_words).model,
+             QStringLiteral("Game Boy Color"));
+    QCOMPARE(identify(item(QStringLiteral("Radio Shack TRS-80 Color Computer 2")), m_known, m_words).model,
+             QStringLiteral("TRS-80 Color Computer 2"));
+    // "Knight" alone is no brand; Allied Knight is.
+    QVERIFY(identify(item(QStringLiteral("Moon Knight A7 trading card")), m_known, m_words).brandId != QStringLiteral("knight"));
+    const Identity knight = identify(item(QStringLiteral("Allied Knight KG-625 VTVM")), m_known, m_words);
+    QCOMPARE(knight.brandId, QStringLiteral("knight"));
+    QCOMPARE(knight.model, QStringLiteral("KG-625"));
 
     // A seeded model written with a space in the listing title.
     QCOMPARE(identify(item(QStringLiteral("Heathkit IM 13 VTVM")), m_known, m_words).model, QStringLiteral("IM-13"));
@@ -413,6 +464,17 @@ void TestMatching::rows_data()
                                                           << "" << Bucket::SameItem;
     QTest::newRow("8 split code away from brand") << "Acme" << "2022D" << "Acme signal generator 2022 D" << ""
                                                  << Bucket::SameItem;
+    // Owner decision 2026-10-19: digits-only models.
+    QTest::newRow("R5 right after brand") << "Racal-Dana" << "1992" << "Racal-Dana 1992 counter" << "" << Bucket::SameItem;
+    QTest::newRow("R5 a year") << "Racal-Dana" << "1992" << "1992 Ford" << "" << Bucket::NoMatch;
+    QTest::newRow("R5 manual") << "Racal-Dana" << "1992" << "Racal Dana counter 1992 manual" << "" << Bucket::Documentation;
+    QTest::newRow("R5 after product name") << "Marconi" << "2022" << "Marconi AM/FM Signal Generator 2022" << ""
+                                           << Bucket::SameItem;
+    // A longer known model of the brand is another model; a misspelt brand
+    // still matches.
+    QTest::newRow("longer model") << "Nintendo" << "Game Boy" << "Nintendo Game Boy Color console" << "" << Bucket::NoMatch;
+    QTest::newRow("shorter model") << "Nintendo" << "Game Boy" << "Nintendo Game Boy DMG-01 handheld" << "" << Bucket::SameItem;
+    QTest::newRow("misspelt brand") << "Sencore" << "LC102" << "Sencor LC102 Auto-Z analyzer" << "" << Bucket::SameItem;
     QTest::newRow("8 untested") << "Marconi" << "2022" << "Marconi Instruments 2022 AM/FM signal generator untested" << ""
                                 << Bucket::SameItem;
     QTest::newRow("8 new by eBay") << "Marconi" << "2022" << "Marconi 2022 signal generator" << "Brand New"

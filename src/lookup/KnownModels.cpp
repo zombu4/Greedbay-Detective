@@ -126,6 +126,16 @@ std::optional<KnownModels> KnownModels::fromJson(const QByteArray &json, bool re
                 return fail(QStringLiteral("searchFamily of %1 has no source").arg(model.model));
             model.searchFamily = searchFamily.value(QStringLiteral("value")).toBool();
         }
+        // "year": {"first": 1977, "last": 1993, "source": ...}; "last" is optional.
+        const QJsonObject year = object.value(QStringLiteral("year")).toObject();
+        if (!year.isEmpty()) {
+            if (requireSources && !hasSource(year))
+                return fail(QStringLiteral("the year of %1 has no source").arg(model.model));
+            model.firstYear = year.value(QStringLiteral("first")).toInt();
+            model.lastYear = year.value(QStringLiteral("last")).toInt();
+            if (model.firstYear <= 0 || model.lastYear < 0 || (model.lastYear > 0 && model.lastYear < model.firstYear))
+                return fail(QStringLiteral("the year of %1 is not a first year (and a later last year)").arg(model.model));
+        }
         for (const QJsonValue &memberValue : object.value(QStringLiteral("family")).toArray()) {
             const QJsonObject member = memberValue.toObject();
             if (requireSources && !hasSource(member))
