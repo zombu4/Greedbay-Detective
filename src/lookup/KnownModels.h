@@ -28,6 +28,11 @@ struct BrandName {
     // When set, the name applies only to models of this category (owner
     // decision 2026-10-19: Agilent/Keysight only for HP test equipment).
     QString onlyFor;
+    // When set, a search name only for models whose first year is before
+    // this year (owner decision 2026-10-20, search names by era: "HP" until
+    // 1998, "Agilent" until 2013); a model without a year searches every
+    // name. Result titles match the name either way.
+    int searchBefore = 0;
 };
 
 struct Brand {

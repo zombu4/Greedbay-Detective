@@ -63,6 +63,7 @@ struct Identity {
     bool searchFamily = false; // the family members are searched too
     QString productName;
     QString category;          // of a known model; empty otherwise
+    int firstYear = 0;         // of a known model; 0 when not recorded (picks the search names by era)
     QStringList notes;         // known-issue notes of the model
     // Other known models with a category, normalized word by word, each as
     // its code alone (a code with a letter and a digit, at least 3 long:

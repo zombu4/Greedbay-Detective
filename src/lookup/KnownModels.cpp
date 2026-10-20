@@ -83,8 +83,11 @@ std::optional<KnownModels> KnownModels::fromJson(const QByteArray &json, QString
             const QString text = name.value(QStringLiteral("name")).toString().simplified();
             if (text.isEmpty() || !name.value(QStringLiteral("search")).isBool())
                 return fail(QStringLiteral("a name of brand %1 has no text or no search flag").arg(brand.id));
+            const int searchBefore = name.value(QStringLiteral("searchBefore")).toInt();
+            if (name.contains(QStringLiteral("searchBefore")) && searchBefore <= 0)
+                return fail(QStringLiteral("name %1 of brand %2 has a searchBefore that is not a year").arg(text, brand.id));
             brand.names.append({text, name.value(QStringLiteral("search")).toBool(),
-                                name.value(QStringLiteral("onlyFor")).toString().simplified()});
+                                name.value(QStringLiteral("onlyFor")).toString().simplified(), searchBefore});
         }
         if (brand.names.isEmpty())
             return fail(QStringLiteral("brand %1 has no name").arg(brand.id));

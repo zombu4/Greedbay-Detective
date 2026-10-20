@@ -88,7 +88,8 @@ void applyNames(Identity *identity)
         if (!name.onlyFor.isEmpty() && name.onlyFor.compare(identity->category, Qt::CaseInsensitive) != 0)
             continue;
         identity->matchNames.append(name.name);
-        if (name.search)
+        const bool otherEra = name.searchBefore > 0 && identity->firstYear > 0 && identity->firstYear >= name.searchBefore;
+        if (name.search && !otherEra)
             identity->searchNames.append(name.name);
     }
 }
@@ -183,6 +184,7 @@ void setKnownModel(Identity *identity, const KnownModel &model, const KnownModel
     identity->searchFamily = model.searchFamily;
     identity->productName = model.productName;
     identity->category = model.category;
+    identity->firstYear = model.firstYear;
     identity->notes = model.notes;
     applyNames(identity);
 }

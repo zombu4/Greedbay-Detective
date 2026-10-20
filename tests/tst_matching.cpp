@@ -61,6 +61,7 @@ private slots:
     void identityBrandScan();
     void identityCase11();
     void identityCase12();
+    void searchNamesByEra();
     void ownListingIsNeverNotThisItem();
     void rows_data();
     void rows();
@@ -625,6 +626,38 @@ void TestMatching::identityCase12()
     const Identity ask = identityOf("Zentrix scope QX9 KQ7 tested", {{QStringLiteral("Brand"), QStringLiteral("Zentrix")}});
     QVERIFY(!ask.confident);
     QCOMPARE(ask.candidates.value(0), QStringLiteral("QX9"));
+}
+
+void TestMatching::searchNamesByEra()
+{
+    // Owner decision 2026-10-20: search names follow the model's era; every
+    // name still matches result titles.
+    const QByteArray json = R"({"format":1,"brands":[{"id":"oldco","names":[
+        {"name":"OldCo","search":true,"searchBefore":1999},
+        {"name":"Old Company","search":true,"searchBefore":1999},
+        {"name":"MidCo","search":true,"searchBefore":2014,"onlyFor":"test equipment"},
+        {"name":"NewCo","search":true,"onlyFor":"test equipment"}]}],
+        "models":[
+        {"brand":"oldco","model":"A100","category":{"name":"test equipment"},"year":{"first":1985}},
+        {"brand":"oldco","model":"B200","category":{"name":"test equipment"},"year":{"first":2005}},
+        {"brand":"oldco","model":"C300","category":{"name":"test equipment"},"year":{"first":2018}},
+        {"brand":"oldco","model":"D400","category":{"name":"test equipment"}}]})";
+    QString error;
+    const std::optional<KnownModels> known = KnownModels::fromJson(json, &error);
+    QVERIFY2(known, qPrintable(error));
+    auto queriesOf = [&](const char *model) {
+        return buildQueries(identityFromUser({QStringLiteral("OldCo"), QLatin1String(model), QString()}, *known, QStringLiteral("user")));
+    };
+    QCOMPARE(queriesOf("A100"), QStringList({"OldCo A100", "Old Company A100", "MidCo A100", "NewCo A100"}));
+    QCOMPARE(queriesOf("B200"), QStringList({"MidCo B200", "NewCo B200"}));
+    QCOMPARE(queriesOf("C300"), QStringList({"NewCo C300"}));
+    // No year: every name (fallback).
+    QCOMPARE(queriesOf("D400"), QStringList({"OldCo D400", "Old Company D400", "MidCo D400", "NewCo D400"}));
+    // Matching keeps every name.
+    const Identity newer = identityFromUser({QStringLiteral("OldCo"), QStringLiteral("C300"), QString()}, *known, QStringLiteral("user"));
+    QCOMPARE(newer.matchNames, QStringList({"OldCo", "Old Company", "MidCo", "NewCo"}));
+    // A searchBefore that is not a year is refused.
+    QVERIFY(!KnownModels::fromJson(R"({"format":1,"brands":[{"id":"x","names":[{"name":"X","search":true,"searchBefore":"soon"}]}],"models":[]})", &error));
 }
 
 void TestMatching::ownListingIsNeverNotThisItem()

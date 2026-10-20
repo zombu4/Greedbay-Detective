@@ -1,17 +1,19 @@
 {
     "format": 1,
-    "about": "Brands and models the lookup knows. A brand name with \"search\": true is used in search queries; every name is accepted when matching result titles. A name with \"onlyFor\" applies only to models of that category. A model's \"year\" holds the first and, optionally, the last year it was made or sold.",
+    "about": "Brands and models the lookup knows. A brand name with \"search\": true is used in search queries; every name is accepted when matching result titles. A name with \"onlyFor\" applies only to models of that category. A name with \"searchBefore\" is searched only for models whose first year is before that year (models without a year search every name). A model's \"year\" holds the first and, optionally, the last year it was made or sold.",
     "brands": [
         {
             "id": "hp",
             "names": [
                 {
                     "name": "HP",
-                    "search": true
+                    "search": true,
+                    "searchBefore": 1999
                 },
                 {
                     "name": "Hewlett Packard",
-                    "search": true
+                    "search": true,
+                    "searchBefore": 1999
                 },
                 {
                     "name": "Hewlett-Packard",
@@ -21,7 +23,8 @@
                     "name": "Agilent",
                     "search": true,
                     "note": "took over HP's test and measurement business (announced 1999)",
-                    "onlyFor": "test equipment"
+                    "onlyFor": "test equipment",
+                    "searchBefore": 2014
                 },
                 {
                     "name": "Keysight",
