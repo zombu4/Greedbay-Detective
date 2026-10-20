@@ -9,7 +9,9 @@
 #include "lookup/History.h"
 #include "lookup/LookupReport.h"
 #include "lookup/LookupRunner.h"
+#include "lookup/LookupExport.h"
 #include "lookup/LookupStore.h"
+#include "lookup/SellerStore.h"
 
 #include <QDir>
 #include <QJsonArray>
@@ -18,6 +20,7 @@
 #include <QSqlError>
 #include <QSqlQuery>
 #include <QTemporaryDir>
+#include <QTimeZone>
 #include <QTest>
 
 #include <algorithm>
@@ -153,6 +156,9 @@ private slots:
     void identitiesAndPhotos();
     void priceHistory();
     void upgradesVersion1();
+    void sellerMarksAndReviews();
+    void sellerFieldsAreStored();
+    void sellerRules();
 };
 
 void TestLookupStore::initTestCase()
@@ -465,7 +471,7 @@ void TestLookupStore::priceHistory()
 void TestLookupStore::upgradesVersion1()
 {
     const QList<app::Migration> all = shippedMigrations();
-    QCOMPARE(all.size(), 4);
+    QCOMPARE(all.size(), 5);
     const Database::Result created =
         Database::open(QStringLiteral("v1"), m_db, m_backups, QStringLiteral(TEST_APP_NAME), all.mid(0, 1));
     QVERIFY2(created.ok(), qPrintable(created.error));
@@ -509,7 +515,11 @@ void TestLookupStore::upgradesVersion1()
     QVERIFY2(upgraded.ok(), qPrintable(upgraded.error));
     QCOMPARE(upgraded.outcome, Database::Outcome::Upgraded);
     QCOMPARE(upgraded.fromVersion, 1);
-    QCOMPARE(upgraded.toVersion, 4);
+    QCOMPARE(upgraded.toVersion, 5);
+    // Version 5: the seller tables exist, empty.
+    for (const char *table : {"marked_sellers", "seller_feedback"}) {
+        QCOMPARE(scalar(QStringLiteral("v2"), QStringLiteral("SELECT count(*) FROM %1").arg(QLatin1String(table))).toInt(), 0);
+    }
     QVERIFY(QFileInfo::exists(upgraded.backupPath));
     QCOMPARE(scalar(QStringLiteral("v2"), QStringLiteral("PRAGMA integrity_check")).toString(), QStringLiteral("ok"));
     for (const char *table : {"lookup", "listing", "research_summary", "valuation", "excluded_listing"}) {
@@ -523,6 +533,8 @@ void TestLookupStore::upgradesVersion1()
     QString error;
     const std::optional<SavedLookup> saved = store.load(7, &error);
     QVERIFY2(saved, qPrintable(error));
+    // A lookup saved before version 5 has no seller id.
+    QVERIFY(saved->result.item.sellerId.isEmpty());
     const LookupResult &result = saved->result;
     QCOMPARE(saved->input, QStringLiteral("100000000080"));
     QCOMPARE(saved->createdAt, QDateTime(QDate(2026, 10, 1), QTime(12, 0), QTimeZone::UTC));
@@ -615,6 +627,140 @@ void TestLookupStore::upgradesVersion1()
     QCOMPARE(scalar(QStringLiteral("backup"), QStringLiteral("PRAGMA user_version")).toInt(), 1);
     QCOMPARE(scalar(QStringLiteral("backup"), QStringLiteral("SELECT count(*) FROM listing")).toInt(), 6);
     backup.close();
+}
+
+// Owner decisions 2026-10-20: the user's own marks (local only) and the
+// cached reviews.
+void TestLookupStore::sellerMarksAndReviews()
+{
+    QVERIFY(Database::open(QStringLiteral("main"), m_db, m_backups, QStringLiteral(TEST_APP_NAME), shippedMigrations()).ok());
+    const SellerStore store(QStringLiteral("main"));
+    QString error;
+    QVERIFY2(store.mark({QStringLiteral("seller-a"), QStringLiteral("fake_best_offer"), QStringLiteral("auto-declines"),
+                         QDate(2026, 10, 1)},
+                        &error),
+             qPrintable(error));
+    // Ids are compared without regard to case; a new mark keeps its first date.
+    std::optional<SellerMark> mark = store.markOf(QStringLiteral("SELLER-A"), &error);
+    QVERIFY(mark);
+    QCOMPARE(mark->reason, QStringLiteral("fake_best_offer"));
+    QVERIFY(store.mark({QStringLiteral("Seller-A"), QStringLiteral("scam"), QString(), QDate(2026, 10, 9)}, &error));
+    mark = store.markOf(QStringLiteral("seller-a"), &error);
+    QCOMPARE(mark->reason, QStringLiteral("scam"));
+    QCOMPARE(mark->markedOn, QDate(2026, 10, 1));
+    QCOMPARE(store.marks(&error)->size(), 1);
+    // Refused: not a user id, an unknown reason, a note over 2000 characters.
+    QVERIFY(!store.mark({QStringLiteral("not an id"), QStringLiteral("scam"), QString(), {}}, &error));
+    QVERIFY(!store.mark({QStringLiteral("seller-b"), QStringLiteral("bad"), QString(), {}}, &error));
+    QVERIFY(!store.mark({QStringLiteral("seller-b"), QStringLiteral("other"), QString(2001, QLatin1Char('x')), {}}, &error));
+    // Export: the reason's label, CSV-safe.
+    QCOMPARE(QString::fromUtf8(markedSellersCsv(*store.marks(&error))),
+             QStringLiteral("seller_id,reason,note,marked_on\r\nseller-a,scam,,2026-10-01\r\n"));
+    QVERIFY(store.unmark(QStringLiteral("SELLER-a"), &error));
+    QVERIFY(!store.markOf(QStringLiteral("seller-a"), &error));
+    QVERIFY(store.marks(&error)->isEmpty());
+
+    // Reviews: one read per kind, replaced by the next.
+    SellerFeedback feedback;
+    feedback.sellerId = QStringLiteral("seller-a");
+    feedback.kind = QStringLiteral("negative");
+    feedback.score = 3295;
+    feedback.negative[0] = 2;
+    feedback.negative[1] = 5;
+    feedback.negative[2] = 6;
+    feedback.reviews = {{QStringLiteral("Past month"), QStringLiteral("Never arrived"), QStringLiteral("Acme Q9 tracer"),
+                         QStringLiteral("US $25.00"), true}};
+    feedback.fetchedAt = QDateTime(QDate(2026, 10, 20), QTime(12, 0), QTimeZone::UTC);
+    QVERIFY2(store.saveFeedback(feedback, &error), qPrintable(error));
+    std::optional<SellerFeedback> read = store.feedback(QStringLiteral("SELLER-A"), QStringLiteral("negative"), &error);
+    QVERIFY(read);
+    QCOMPARE(*read->score, 3295);
+    QCOMPARE(read->negative[2], 6);
+    QCOMPARE(read->positive[0], -1);
+    QCOMPARE(read->reviews.size(), 1);
+    QCOMPARE(read->reviews.first().comment, QStringLiteral("Never arrived"));
+    QVERIFY(read->reviews.first().verifiedPurchase);
+    QCOMPARE(read->fetchedAt, feedback.fetchedAt);
+    QVERIFY(!store.feedback(QStringLiteral("seller-a"), QStringLiteral("neutral"), &error));
+    feedback.reviews.clear();
+    QVERIFY(store.saveFeedback(feedback, &error));
+    QVERIFY(store.feedback(QStringLiteral("seller-a"), QStringLiteral("negative"), &error)->reviews.isEmpty());
+}
+
+void TestLookupStore::sellerFieldsAreStored()
+{
+    QVERIFY(Database::open(QStringLiteral("main"), m_db, m_backups, QStringLiteral(TEST_APP_NAME), shippedMigrations()).ok());
+    LookupResult result = runLookup();
+    QCOMPARE(result.status, QStringLiteral("complete"));
+    result.item.sellerId = QStringLiteral("examplestore");
+    result.sold[0].sellerName = QStringLiteral("seller-b");
+    result.sold[0].sellerPositivePercent = 94.8;
+    result.sold[0].sellerFeedbackCount = 120;
+    const QList<Row> rows = classifyRows(result, m_words);
+    const app::ValueSettings settings;
+    const LookupStore store(QStringLiteral("main"));
+    QString error;
+    const std::optional<qint64> id = store.save(QStringLiteral("100000000070"), result, rows, valuate(result, rows, settings),
+                                                Depths{240, 240, 200}, 90, &error);
+    QVERIFY2(id, qPrintable(error));
+    const std::optional<SavedLookup> saved = store.load(*id, &error);
+    QVERIFY2(saved, qPrintable(error));
+    QCOMPARE(saved->result.item.sellerId, QStringLiteral("examplestore"));
+    const auto sold = std::find_if(saved->result.sold.cbegin(), saved->result.sold.cend(),
+                                   [](const SearchRecord &record) { return record.sellerName == QLatin1String("seller-b"); });
+    QVERIFY(sold != saved->result.sold.cend());
+    QCOMPARE(*sold->sellerPositivePercent, 94.8);
+    QCOMPARE(*sold->sellerFeedbackCount, 120);
+    // A card without a rating keeps none.
+    QVERIFY(std::any_of(saved->result.sold.cbegin(), saved->result.sold.cend(),
+                        [](const SearchRecord &record) { return !record.sellerPositivePercent && !record.sellerFeedbackCount; }));
+}
+
+void TestLookupStore::sellerRules()
+{
+    // Below the threshold with enough ratings: flagged; the count is shown.
+    RatingNote note = ratingNote(94.8, 1200, 96.0, 20);
+    QVERIFY(note.flagged);
+    QCOMPARE(note.text, QStringLiteral("Seller rating 94.8% (below 96%) - more problems than usual (1200 ratings)"));
+    QCOMPARE(note.badge, QStringLiteral("rating 94.8%"));
+    // At or above: nothing to say.
+    note = ratingNote(96.0, 50, 96.0, 20);
+    QVERIFY(!note.flagged);
+    QVERIFY(note.text.isEmpty() && note.badge.isEmpty());
+    note = ratingNote(100.0, 3, 96.0, 20);
+    QVERIFY(!note.flagged);
+    QCOMPARE(note.text, QStringLiteral("Seller rating 100% - only 3 ratings, too few to judge"));
+    QCOMPARE(note.badge, QStringLiteral("only 3 ratings"));
+    // Few ratings are never judged, even below the threshold.
+    note = ratingNote(80.0, 1, 96.0, 20);
+    QVERIFY(!note.flagged);
+    QCOMPARE(note.badge, QStringLiteral("only 1 rating"));
+    // Not shown: nothing (no guessing).
+    QVERIFY(ratingNote(std::nullopt, 500, 96.0, 20).text.isEmpty());
+    // Shown without a count: judged on the percentage alone.
+    QVERIFY(ratingNote(90.0, std::nullopt, 96.0, 20).flagged);
+    // Seller ids and the classic feedback address with the kind as fragment.
+    QVERIFY(isSellerId(QStringLiteral("seller_a.b-c*1")));
+    QVERIFY(!isSellerId(QStringLiteral("a b")));
+    QVERIFY(!isSellerId(QString()));
+    QVERIFY(!isSellerId(QString(65, QLatin1Char('a'))));
+    QCOMPARE(feedbackUrl(QStringLiteral("seller-a"), QStringLiteral("negative")),
+             QStringLiteral("https://www.ebay.com/fdbk/feedback_profile/seller-a?filter=feedback_page%3ARECEIVED_AS_SELLER&"
+                            "sort=RELEVANCEV2#negative"));
+    // Reasons: ids stored, labels shown; the owner's two added reasons.
+    QVERIFY(isMarkReason(QStringLiteral("fake_best_offer")));
+    QCOMPARE(markReasonLabel(QStringLiteral("fake_best_offer")), QStringLiteral("fake Best Offer (auto-declines)"));
+    QCOMPARE(markReasonLabel(QStringLiteral("overpriced_junk")), QStringLiteral("overpriced junk"));
+    QVERIFY(!isMarkReason(QStringLiteral("fake")));
+    // The extractor's data: refused without counts or with a wrong kind.
+    QVERIFY(!SellerFeedback::fromJson(QJsonObject{{"sellerId", "seller-a"}, {"kind", "positive"}}));
+    const QJsonObject data{{"sellerId", "seller-a"}, {"kind", "neutral"}, {"score", 12},
+                           {"positive", QJsonArray{1, 2, 3}}, {"neutral", QJsonArray{0, 1, 1}}, {"negative", QJsonArray{0, 0, 0}},
+                           {"reviews", QJsonArray{QJsonObject{{"when", "Past year"}, {"comment", "Slow"}, {"verified", false}}}}};
+    const std::optional<SellerFeedback> parsed = SellerFeedback::fromJson(data);
+    QVERIFY(parsed);
+    QCOMPARE(parsed->neutral[2], 1);
+    QCOMPARE(parsed->reviews.first().when, QStringLiteral("Past year"));
 }
 
 QTEST_GUILESS_MAIN(TestLookupStore)

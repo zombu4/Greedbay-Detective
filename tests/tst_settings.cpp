@@ -27,6 +27,7 @@ private slots:
     void preferredBrowser();
     void pageDelay();
     void dailyPageCap();
+    void sellerSettings();
     void searchDepths();
     void valueSettings();
     void updateCheck();
@@ -202,6 +203,38 @@ void TestSettings::pageDelay()
     const Settings edited(edit);
     QCOMPARE(edited.pageDelayMinMs(), 3000);
     QCOMPARE(edited.pageDelayMaxMs(), 6000);
+}
+
+void TestSettings::sellerSettings()
+{
+    QTemporaryDir tmp;
+    QVERIFY(tmp.isValid());
+    const QString path = tmp.path() + QStringLiteral("/settings.ini");
+    {
+        Settings settings(path);
+        // Owner: "flag sellers with a review rating below 96%".
+        QCOMPARE(settings.sellerRatingThreshold(), 96.0);
+        QCOMPARE(settings.sellerFewRatings(), 20);
+        QCOMPARE(settings.sellerFeedbackCacheDays(), 7);
+        QVERIFY(!settings.setSellerRatingThreshold(0));
+        QVERIFY(!settings.setSellerRatingThreshold(100.5));
+        QVERIFY(!settings.setSellerFewRatings(-1));
+        QVERIFY(!settings.setSellerFeedbackCacheDays(-1));
+        QVERIFY(!settings.setSellerFeedbackCacheDays(366));
+        QVERIFY(settings.setSellerRatingThreshold(97.5));
+        QVERIFY(settings.setSellerFewRatings(0));
+        QVERIFY(settings.setSellerFeedbackCacheDays(0));
+        QVERIFY(settings.sync());
+    }
+    const Settings again(path);
+    QCOMPARE(again.sellerRatingThreshold(), 97.5);
+    QCOMPARE(again.sellerFewRatings(), 0);
+    QCOMPARE(again.sellerFeedbackCacheDays(), 0);
+    const QString bad = tmp.path() + QStringLiteral("/bad.ini");
+    QVERIFY(writeTestFile(bad, "[sellers]\nratingThreshold=150\nfewRatings=-3\nfeedbackCacheDays=many\n"));
+    QCOMPARE(Settings(bad).sellerRatingThreshold(), 96.0);
+    QCOMPARE(Settings(bad).sellerFewRatings(), 20);
+    QCOMPARE(Settings(bad).sellerFeedbackCacheDays(), 7);
 }
 
 void TestSettings::dailyPageCap()

@@ -211,6 +211,9 @@ void LookupSession::onReady()
             case ebay::PageKind::Research:
                 m_step = StepResearch;
                 break;
+            case ebay::PageKind::Feedback:
+                // Not part of a lookup (the seller panel reads it).
+                break;
             }
             emit progressChanged();
             m_controller->fetch(url, kind);

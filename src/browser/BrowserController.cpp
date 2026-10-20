@@ -712,7 +712,8 @@ void BrowserController::evaluateExtractor(const QUrl &pageUrl, std::function<voi
         }
         const QJsonObject params{{QStringLiteral("expression"), Extractor::script(m_kind, pageUrl)},
                                  {QStringLiteral("contextId"), created.value(QStringLiteral("executionContextId"))},
-                                 {QStringLiteral("returnByValue"), true}};
+                                 {QStringLiteral("returnByValue"), true},
+                                 {QStringLiteral("awaitPromise"), true}};
         command(QStringLiteral("Runtime.evaluate"), params,
                 [this, serial, handle, changed](const QJsonObject &evaluated, const QJsonObject &error) {
             if (serial != m_serial || m_op != Op::Fetch)

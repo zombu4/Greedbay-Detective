@@ -102,6 +102,7 @@ private slots:
     void noAutomationMarker();
     void pageReadAgainAfterContinue();
     void failedLoadIsNotReadAfterContinue();
+    void feedbackPage();
     void dailyCapStopsLoads();
     void browserClosesCleanly();
 };
@@ -144,6 +145,8 @@ std::optional<QJsonObject> TestExtractors::extract(const char *fixture, const ch
     QUrl local(QStringLiteral("http://127.0.0.1:%1").arg(m_server.serverPort()));
     local.setPath(ebayUrl.path());
     local.setQuery(ebayUrl.query());
+    // The feedback page carries the kind to list in the fragment.
+    local.setFragment(ebayUrl.fragment());
     QSignalSpy done(m_controller, &BrowserController::done);
     m_controller->fetch(local, kind);
     if (!done.wait(60000) && done.isEmpty()) {
@@ -386,6 +389,8 @@ void TestExtractors::itemFromJsonLd()
     QCOMPARE(data.value("bestOfferOffered").toBool(), true);
     QCOMPARE(data.value("returnsText").toString(), QStringLiteral("30 days returns. Buyer pays for return shipping."));
     QCOMPARE(data.value("seller").toObject().value("name").toString(), QStringLiteral("examplestore"));
+    // The user id from the feedback links (recon 2026-10-20).
+    QCOMPARE(data.value("seller").toObject().value("id").toString(), QStringLiteral("examplestore"));
     QCOMPARE(data.value("seller").toObject().value("feedbackCount").toInt(), 4321);
     QCOMPARE(data.value("seller").toObject().value("positivePercent").toDouble(), 99.1);
     const QJsonArray specifics = data.value("specifics").toArray();
@@ -718,6 +723,56 @@ void TestExtractors::failedLoadIsNotReadAfterContinue()
     QCOMPARE(result->value("page").toString(), QStringLiteral("unexpected"));
     QVERIFY2(result->value("reason").toString().contains(QStringLiteral("HTTP status 403")),
              qPrintable(result->value("reason").toString()));
+}
+
+// The classic feedback page (recon 2026-10-20): the counts, then a click on
+// the 12-month count of the wanted kind and the list as it is after the page
+// replaced it in place. The buyer column is never read.
+void TestExtractors::feedbackPage()
+{
+    QString error;
+    const char *negative = "https://www.ebay.com/fdbk/feedback_profile/seller-a?filter=feedback_page%3ARECEIVED_AS_SELLER&sort=RELEVANCEV2#negative";
+    std::optional<QJsonObject> result = extract("feedback.html", negative, PageKind::Feedback, &error);
+    QVERIFY2(result, qPrintable(error));
+    QCOMPARE(result->value("page").toString(), QStringLiteral("expected"));
+    QJsonObject data = result->value("data").toObject();
+    QCOMPARE(data.value("sellerId").toString(), QStringLiteral("seller-a"));
+    QCOMPARE(data.value("kind").toString(), QStringLiteral("negative"));
+    QCOMPARE(data.value("score").toInt(), 3295);
+    QCOMPARE(data.value("positive").toArray(), QJsonArray({185, 1023, 2071}));
+    QCOMPARE(data.value("negative").toArray(), QJsonArray({0, 1, 2}));
+    const QJsonArray reviews = data.value("reviews").toArray();
+    QCOMPARE(reviews.size(), 2);
+    const QJsonObject first = reviews.at(0).toObject();
+    QCOMPARE(first.value("comment").toString(), QStringLiteral("Never arrived, no answer"));
+    QCOMPARE(first.value("item").toString(), QStringLiteral("Acme Q9 Signal Tracer"));
+    QCOMPARE(first.value("price").toString(), QStringLiteral("US $255.00"));
+    QCOMPARE(first.value("when").toString(), QStringLiteral("Past 6 months"));
+    QCOMPARE(first.value("verified").toBool(), true);
+    QCOMPARE(reviews.at(1).toObject().value("verified").toBool(), false);
+    const QByteArray text = QJsonDocument(data).toJson(QJsonDocument::Compact);
+    QVERIFY(!text.contains("Buyer") && !text.contains("***"));
+
+    // No neutral ratings: nothing is clicked, no reviews. (Another query than
+    // the page before: a change of the fragment alone is no new page load.)
+    const char *neutral = "https://www.ebay.com/fdbk/feedback_profile/seller-a?filter=feedback_page%3ARECEIVED_AS_SELLER&sort=TIME#neutral";
+    result = extract("feedback.html", neutral, PageKind::Feedback, &error);
+    QVERIFY2(result, qPrintable(error));
+    QCOMPARE(result->value("page").toString(), QStringLiteral("expected"));
+    data = result->value("data").toObject();
+    QCOMPARE(data.value("kind").toString(), QStringLiteral("neutral"));
+    QVERIFY(data.value("reviews").toArray().isEmpty());
+
+    // No kind in the address: not read.
+    result = extract("feedback.html", "https://www.ebay.com/fdbk/feedback_profile/seller-a?sort=RELEVANCEV2", PageKind::Feedback, &error);
+    QVERIFY2(result, qPrintable(error));
+    QCOMPARE(result->value("page").toString(), QStringLiteral("unexpected"));
+
+    // The list never switches: the extractor gives up and says so.
+    result = extract("feedback_stuck.html", negative, PageKind::Feedback, &error);
+    QVERIFY2(result, qPrintable(error));
+    QCOMPARE(result->value("page").toString(), QStringLiteral("unexpected"));
+    QVERIFY(result->value("reason").toString().contains(QStringLiteral("did not switch")));
 }
 
 void TestExtractors::dailyCapStopsLoads()

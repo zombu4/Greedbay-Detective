@@ -26,6 +26,7 @@ Backend::Backend(WorkFolder folder, const QString &connectionName, QObject *pare
     : QObject(parent), m_folder(std::move(folder)), m_store(connectionName), m_photos(new PhotoProvider),
       m_results(nullptr), m_recent(new RecentModel(this)), m_history(nullptr), m_settings(nullptr)
 {
+    m_connectionName = connectionName;
     QString error;
     m_known = lookup::KnownModels::builtIn(&error);
     if (m_known && !m_known->addUserFile(m_folder.knownModelsPath(), &error)) {
@@ -40,7 +41,12 @@ Backend::Backend(WorkFolder folder, const QString &connectionName, QObject *pare
 
     const QString settingsPath = m_folder.settingsPath();
     m_results = new ResultsController(
-        m_store, m_words ? &*m_words : nullptr, [settingsPath]() { return Settings(settingsPath).valueSettings(); },
+        m_store, lookup::SellerStore(connectionName), m_words ? &*m_words : nullptr,
+        [settingsPath]() { return Settings(settingsPath).valueSettings(); },
+        [settingsPath]() {
+            const Settings settings(settingsPath);
+            return lookup::SellerRules{settings.sellerRatingThreshold(), settings.sellerFewRatings()};
+        },
         [this](const QString &itemId) { return photoSourceOf(itemId); }, this);
     // The Home cards and the price history show the numbers stored with each
     // lookup.
@@ -52,6 +58,10 @@ Backend::Backend(WorkFolder folder, const QString &connectionName, QObject *pare
             emit sessionFailed(m_session ? m_session->errorText() : m_fatalError);
     });
     m_settings = new SettingsController(m_folder, [this]() { return m_session && m_session->isRunning(); }, this);
+    // Sellers (owner decisions 2026-10-20): the seller panel and the user's
+    // marks; a changed mark shows at once on Results.
+    m_sellers = new SellerController(m_folder, connectionName, [this]() { return m_session && m_session->isRunning(); }, this);
+    connect(m_sellers, &SellerController::marksChanged, m_results, &ResultsController::refreshSellerMarks);
 
     // Plugins: only the enabled ones run; matchers on each lookup before it
     // is saved, flaggers, valuators and exporters on the Results screen.
@@ -242,6 +252,19 @@ QVariantMap Backend::exportData()
     const std::optional<QString> json = saveExport(folder, stem + QStringLiteral(".json"), lookup::lookupsJson(lookups), &error);
     if (!json)
         return reply(false, QStringLiteral("Saved %1, but not the JSON file: %2").arg(QDir::toNativeSeparators(*csv), error), *csv);
+    // The user's marked sellers, when there are any (local data like the
+    // lookups).
+    const lookup::SellerStore sellers(m_connectionName);
+    const std::optional<QList<lookup::SellerMark>> marks = sellers.marks(&error);
+    if (!marks)
+        return reply(false, QStringLiteral("Saved the lookups, but the marked sellers cannot be read: %1").arg(error), *csv);
+    if (!marks->isEmpty()) {
+        const QString stemSellers = QStringLiteral("%1-marked-sellers-%2")
+                                        .arg(QString::fromLatin1(version::kPackageName),
+                                             QDateTime::currentDateTimeUtc().toString(QStringLiteral("yyyyMMdd-HHmmss")));
+        if (!saveExport(folder, stemSellers + QStringLiteral(".csv"), lookup::markedSellersCsv(*marks), &error))
+            return reply(false, QStringLiteral("Saved the lookups, but not the marked sellers: %1").arg(error), *csv);
+    }
     return reply(true,
                  QStringLiteral("Saved %1 as %2 and %3")
                      .arg(summaries->size() == 1 ? QStringLiteral("1 lookup") : QStringLiteral("%1 lookups").arg(summaries->size()),

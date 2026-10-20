@@ -59,7 +59,12 @@ SearchRecord SearchRecord::fromJson(const QJsonObject &item, bool sold)
     record.shippingCents = wholeNumber(item.value(QStringLiteral("shippingCents")));
     record.format = item.value(QStringLiteral("format")).toString();
     record.bids = count(item.value(QStringLiteral("bids")));
-    record.sellerName = item.value(QStringLiteral("seller")).toObject().value(QStringLiteral("name")).toString();
+    const QJsonObject seller = item.value(QStringLiteral("seller")).toObject();
+    record.sellerName = seller.value(QStringLiteral("name")).toString();
+    record.sellerFeedbackCount = count(seller.value(QStringLiteral("feedbackCount")));
+    if (const QJsonValue percent = seller.value(QStringLiteral("positivePercent")); percent.isDouble()
+        && percent.toDouble() >= 0 && percent.toDouble() <= 100)
+        record.sellerPositivePercent = percent.toDouble();
     record.bestOffer = item.value(QStringLiteral("bestOfferOffered")).toBool();
     record.timeLeft = item.value(QStringLiteral("timeLeft")).toString();
     record.auctionEndText = item.value(QStringLiteral("auctionEnd")).toString();
@@ -116,6 +121,7 @@ ItemRecord ItemRecord::fromJson(const QJsonObject &data)
     record.condition = data.value(QStringLiteral("conditionText")).toString();
     const QJsonObject seller = data.value(QStringLiteral("seller")).toObject();
     record.sellerName = seller.value(QStringLiteral("name")).toString();
+    record.sellerId = seller.value(QStringLiteral("id")).toString();
     record.sellerFeedbackCount = count(seller.value(QStringLiteral("feedbackCount")));
     if (const QJsonValue percent = seller.value(QStringLiteral("positivePercent")); percent.isDouble()
         && percent.toDouble() >= 0 && percent.toDouble() <= 100)

@@ -13,13 +13,15 @@ QString pageKindName(PageKind kind)
         return QStringLiteral("item");
     case PageKind::Research:
         return QStringLiteral("research");
+    case PageKind::Feedback:
+        return QStringLiteral("feedback");
     }
     return {};
 }
 
 std::optional<PageKind> pageKindFromName(const QString &name)
 {
-    for (PageKind kind : {PageKind::ActiveSearch, PageKind::SoldSearch, PageKind::Item, PageKind::Research}) {
+    for (PageKind kind : {PageKind::ActiveSearch, PageKind::SoldSearch, PageKind::Item, PageKind::Research, PageKind::Feedback}) {
         if (pageKindName(kind) == name)
             return kind;
     }

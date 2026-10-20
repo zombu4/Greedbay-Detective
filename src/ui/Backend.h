@@ -11,6 +11,7 @@
 #include "ui/PluginsController.h"
 #include "ui/RecentModel.h"
 #include "ui/ResultsController.h"
+#include "ui/SellerController.h"
 #include "ui/SettingsController.h"
 
 #include <QObject>
@@ -42,6 +43,7 @@ class Backend : public QObject {
     Q_PROPERTY(HistoryController *history READ history CONSTANT)
     Q_PROPERTY(PluginsController *plugins READ plugins CONSTANT)
     Q_PROPERTY(SettingsController *settings READ settings CONSTANT)
+    Q_PROPERTY(SellerController *sellers READ sellers CONSTANT)
     Q_PROPERTY(QString pagesTodayText READ pagesTodayText NOTIFY pagesChanged)
     // Problems found at start that the user should know about (the user's
     // known-models file is damaged, the recent lookups cannot be read).
@@ -69,6 +71,7 @@ public:
     HistoryController *history() const { return m_history; }
     PluginsController *plugins() const { return m_plugins; }
     SettingsController *settings() const { return m_settings; }
+    SellerController *sellers() const { return m_sellers; }
     QString pagesTodayText() const;
     QString notice() const { return m_notice; }
     QString appName() const;
@@ -142,6 +145,8 @@ private:
     PluginsController *m_plugins = nullptr;
     std::optional<bool> m_uninstallKeep;
     SettingsController *m_settings;
+    SellerController *m_sellers;
+    QString m_connectionName;
 };
 
 } // namespace app::ui

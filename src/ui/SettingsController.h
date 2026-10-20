@@ -33,6 +33,10 @@ class SettingsController : public QObject {
     Q_PROPERTY(int pageDelayMinSeconds READ pageDelayMinSeconds NOTIFY changed)
     Q_PROPERTY(int pageDelayMaxSeconds READ pageDelayMaxSeconds NOTIFY changed)
     Q_PROPERTY(int dailyPageCap READ dailyPageCap NOTIFY changed)
+    // Sellers (owner decisions 2026-10-20).
+    Q_PROPERTY(double sellerRatingThreshold READ sellerRatingThreshold NOTIFY changed)
+    Q_PROPERTY(int sellerFewRatings READ sellerFewRatings NOTIFY changed)
+    Q_PROPERTY(int sellerFeedbackCacheDays READ sellerFeedbackCacheDays NOTIFY changed)
     // "standard" when the three depths are the Standard preset, else "custom".
     Q_PROPERTY(QString depthPreset READ depthPreset NOTIFY changed)
     Q_PROPERTY(QString standardPresetText READ standardPresetText CONSTANT)
@@ -62,6 +66,9 @@ public:
     int pageDelayMinSeconds() const;
     int pageDelayMaxSeconds() const;
     int dailyPageCap() const;
+    double sellerRatingThreshold() const;
+    int sellerFewRatings() const;
+    int sellerFeedbackCacheDays() const;
     QString depthPreset() const;
     QString standardPresetText() const;
     int soldDepth() const;
@@ -81,6 +88,8 @@ public:
     Q_INVOKABLE QString setPreferredBrowser(const QString &browserId);
     Q_INVOKABLE QString setPageDelaySeconds(int minSeconds, int maxSeconds);
     Q_INVOKABLE QString setDailyPageCap(int cap);
+    // An empty answer: stored; else why not.
+    Q_INVOKABLE QString setSellerRules(double threshold, int fewRatings, int cacheDays);
     Q_INVOKABLE QString useStandardDepths();
     Q_INVOKABLE QString setDepths(int sold, int active, int research);
     Q_INVOKABLE QString setHistoryDays(int days);

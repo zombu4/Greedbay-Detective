@@ -33,7 +33,10 @@ struct SearchRecord {
     QString auctionEndText;
     std::optional<QDateTime> auctionEnd; // UTC
     bool auctionEndSeconds = false;
-    QString sellerName;
+    QString sellerName; // the seller's user id as the card shows it
+    // The card's "99.8% positive (215)", when shown.
+    std::optional<int> sellerFeedbackCount;
+    std::optional<double> sellerPositivePercent;
     // Sold search only. soldDate is YYYY-MM-DD or empty. confirmed: the shown
     // price is what the buyer paid (no "Best offer accepted" on the card,
     // recon section 2); unconfirmed: the accepted offer is not on the page.
@@ -70,7 +73,10 @@ struct ItemRecord {
     QString currency;
     std::optional<qint64> shippingCents;
     QString condition; // as eBay shows it (item extractor's conditionText)
-    QString sellerName;
+    QString sellerName; // as the seller card shows it (may be a store name)
+    // The seller's user id, from the seller card's feedback links
+    // ("username="); empty when the page has none.
+    QString sellerId;
     // The seller card's feedback score and positive percentage, when the
     // page showed them.
     std::optional<int> sellerFeedbackCount;

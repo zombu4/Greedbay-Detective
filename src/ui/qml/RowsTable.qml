@@ -14,6 +14,7 @@ ColumnLayout {
     property bool showReasons: false
     signal rowToggled(int row, bool included)
     signal openRequested(string itemId)
+    signal sellerClicked(string seller, double percent, int count)
 
     readonly property int useWidth: 56
     readonly property int whereWidth: 170
@@ -84,6 +85,11 @@ ColumnLayout {
             required property string broken
             required property string format
             required property string timeLeft
+            required property string seller
+            required property string sellerBadge
+            required property bool sellerMarked
+            required property double sellerPercent
+            required property int sellerCount
             required property bool view
             required property string viewNote
             width: list.width
@@ -190,6 +196,31 @@ ColumnLayout {
                             font.pixelSize: Theme.labelSize + 1
                             onActivated: if (line.itemId.length > 0) table.openRequested(line.itemId)
                         }
+                    }
+                    // The seller, with the user's mark and the rating badge.
+                    RowLayout {
+                        Layout.fillWidth: true
+                        visible: line.seller.length > 0
+                        spacing: 8
+                        LinkText {
+                            text: "seller: " + line.seller
+                            elide: Text.ElideRight
+                            Layout.maximumWidth: 260
+                            font.pixelSize: Theme.labelSize
+                            Accessible.name: "Seller " + line.seller + ", open the seller panel"
+                            onActivated: table.sellerClicked(line.seller, line.sellerPercent, line.sellerCount)
+                        }
+                        Pill {
+                            visible: line.sellerMarked
+                            text: "MARKED SELLER"
+                            kind: "danger"
+                        }
+                        Pill {
+                            visible: line.sellerBadge.length > 0
+                            text: line.sellerBadge
+                            kind: line.sellerBadge.startsWith("rating") ? "danger" : "neutral"
+                        }
+                        Item { Layout.fillWidth: true }
                     }
                     Text {
                         Layout.fillWidth: true

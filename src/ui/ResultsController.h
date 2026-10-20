@@ -2,6 +2,7 @@
 
 #include "core/Settings.h"
 #include "lookup/LookupStore.h"
+#include "lookup/SellerStore.h"
 
 #include <QAbstractListModel>
 #include <QObject>
@@ -47,6 +48,11 @@ public:
         TimeLeftRole,   // auctions: the time left, or ""
         ViewRole,       // true: a View button (for sale now, not an ended auction)
         ViewNoteRole,   // "listed when checked <when>" next to View, or ""
+        SellerRole,       // the seller's user id as the card shows it, or ""
+        SellerBadgeRole,  // "rating 94.8%" (below the threshold) / "only 7 ratings", or ""
+        SellerMarkedRole, // true: the user marked this seller
+        SellerPercentRole, // the card's positive percentage, -1 when not shown
+        SellerCountRole,   // the card's feedback count, -1 when not shown
     };
 
     struct Entry {
@@ -65,6 +71,11 @@ public:
         QString timeLeft;
         bool view = false;
         QString viewNote;
+        QString seller;
+        QString sellerBadge;
+        bool sellerMarked = false;
+        double sellerPercent = -1;
+        int sellerCount = -1;
     };
 
     explicit RowsModel(QObject *parent = nullptr);
@@ -130,6 +141,15 @@ class ResultsController : public QObject {
     Q_PROPERTY(QString cheapestItemId READ cheapestItemId NOTIFY changed)
     // LIKELY BROKEN (owner decision 2026-10-19): a warning about this listing,
     // the numbers do not change.
+    // Sellers (owner decisions 2026-10-20): the listing's seller as the user
+    // marked it (YOU MARKED THIS SELLER), and the low-rating flag.
+    Q_PROPERTY(QString sellerId READ sellerId NOTIFY changed)
+    Q_PROPERTY(double sellerPercent READ sellerPercent NOTIFY changed)
+    Q_PROPERTY(int sellerCount READ sellerCount NOTIFY changed)
+    Q_PROPERTY(bool markedFlag READ markedFlag NOTIFY changed)
+    Q_PROPERTY(QStringList markedLines READ markedLines NOTIFY changed)
+    Q_PROPERTY(bool ratingFlag READ ratingFlag NOTIFY changed)
+    Q_PROPERTY(QString ratingLine READ ratingLine NOTIFY changed)
     Q_PROPERTY(bool brokenFlag READ brokenFlag NOTIFY changed)
     Q_PROPERTY(QString brokenLine READ brokenLine NOTIFY changed)
     // Format (owner decision 2026-10-19 "Buy It Now vs auction").
@@ -211,8 +231,8 @@ public:
     // `photoSourceOf` gives the image source of a listing's saved photo, or
     // an empty string when there is none.
     // `words` must outlive the controller.
-    ResultsController(lookup::LookupStore store, const lookup::MatchWords *words,
-                      std::function<ValueSettings()> valueSettings,
+    ResultsController(lookup::LookupStore store, lookup::SellerStore sellers, const lookup::MatchWords *words,
+                      std::function<ValueSettings()> valueSettings, std::function<lookup::SellerRules()> sellerRules,
                       std::function<QString(const QString &itemId)> photoSourceOf, QObject *parent = nullptr);
 
     // Shows a saved lookup; false (and *error) when it cannot be read.
@@ -260,6 +280,15 @@ public:
     bool cheaperFlag() const;
     QString cheaperLine() const;
     QString cheapestItemId() const { return m_cheapestItemId; }
+    QString sellerId() const { return m_saved.result.item.sellerId; }
+    double sellerPercent() const { return m_saved.result.item.sellerPositivePercent.value_or(-1); }
+    int sellerCount() const { return m_saved.result.item.sellerFeedbackCount.value_or(-1); }
+    bool markedFlag() const;
+    QStringList markedLines() const;
+    bool ratingFlag() const;
+    QString ratingLine() const;
+    // The user marked or unmarked a seller: the flags and badges again.
+    Q_INVOKABLE void refreshSellerMarks();
     bool brokenFlag() const { return !brokenReason().isEmpty(); }
     QString brokenLine() const;
     QString formatText() const;
@@ -324,6 +353,8 @@ private:
     // Valuation, CHEAPEST marks, the cheapest listing and the bar, from the
     // rows as they are now.
     void recompute();
+    // m_marks from the database.
+    void loadSellerMarks();
     QList<RowsModel::Entry> entries(bool sameItem) const;
     // "last 3 years", "last 2 years", "last 90 days".
     QString periodText() const;
@@ -346,7 +377,11 @@ private:
     QVariantList m_exporters;
     QStringList m_pluginNotices;
     std::function<ValueSettings()> m_valueSettings;
+    std::function<lookup::SellerRules()> m_sellerRules;
     std::function<QString(const QString &)> m_photoSourceOf;
+    lookup::SellerStore m_sellers;
+    // The user's marks by lower-case seller id.
+    QHash<QString, lookup::SellerMark> m_marks;
     lookup::SavedLookup m_saved;
     lookup::Valuation m_valuation;
     QString m_photoSource;

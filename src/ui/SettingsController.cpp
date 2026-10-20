@@ -64,6 +64,9 @@ QString SettingsController::workFolder() const { return QDir::toNativeSeparators
 int SettingsController::pageDelayMinSeconds() const { return Settings(m_folder.settingsPath()).pageDelayMinMs() / kMsPerSecond; }
 int SettingsController::pageDelayMaxSeconds() const { return Settings(m_folder.settingsPath()).pageDelayMaxMs() / kMsPerSecond; }
 int SettingsController::dailyPageCap() const { return Settings(m_folder.settingsPath()).dailyPageCap(); }
+double SettingsController::sellerRatingThreshold() const { return Settings(m_folder.settingsPath()).sellerRatingThreshold(); }
+int SettingsController::sellerFewRatings() const { return Settings(m_folder.settingsPath()).sellerFewRatings(); }
+int SettingsController::sellerFeedbackCacheDays() const { return Settings(m_folder.settingsPath()).sellerFeedbackCacheDays(); }
 
 QString SettingsController::depthPreset() const
 {
@@ -116,6 +119,21 @@ QString SettingsController::setPageDelaySeconds(int minSeconds, int maxSeconds)
     Settings settings(m_folder.settingsPath());
     return stored(settings, settings.setPageDelay(minSeconds * kMsPerSecond, maxSeconds * kMsPerSecond),
                   QStringLiteral("The wait must be at least 1 second, and the longest wait at least the shortest."));
+}
+
+QString SettingsController::setSellerRules(double threshold, int fewRatings, int cacheDays)
+{
+    Settings settings(m_folder.settingsPath());
+    if (!(threshold > 0 && threshold <= 100))
+        return QStringLiteral("The rating limit must be above 0 and at most 100%.");
+    if (fewRatings < 0)
+        return QStringLiteral("The number of ratings cannot be negative.");
+    if (cacheDays < 0 || cacheDays > Settings::kMaxSellerFeedbackCacheDays)
+        return QStringLiteral("Keep reviews for 0 to %1 days.").arg(Settings::kMaxSellerFeedbackCacheDays);
+    return stored(settings,
+                  settings.setSellerRatingThreshold(threshold) && settings.setSellerFewRatings(fewRatings)
+                      && settings.setSellerFeedbackCacheDays(cacheDays),
+                  QStringLiteral("The seller settings were not stored."));
 }
 
 QString SettingsController::setDailyPageCap(int cap)

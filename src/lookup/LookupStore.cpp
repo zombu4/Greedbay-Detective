@@ -255,7 +255,7 @@ std::optional<qint64> LookupStore::save(const QString &input, const LookupResult
     format.prepare(QStringLiteral("UPDATE lookups SET auction = :auction, bids = :bids, buy_it_now = :buy_it_now, "
                                   "best_offer = :best_offer, ends_in = :ends_in, ends_at = :ends_at, auction_end = :auction_end, "
                                   "auction_end_seconds = :auction_end_seconds, seller_feedback_count = :feedback, "
-                                  "seller_positive_percent = :positive WHERE id = :id"));
+                                  "seller_positive_percent = :positive, seller_id = :seller_id WHERE id = :id"));
     format.bindValue(QStringLiteral(":auction"), item.auction ? 1 : 0);
     format.bindValue(QStringLiteral(":bids"), optionalInt(item.bids));
     format.bindValue(QStringLiteral(":buy_it_now"), item.buyItNow ? 1 : 0);
@@ -267,6 +267,7 @@ std::optional<qint64> LookupStore::save(const QString &input, const LookupResult
     format.bindValue(QStringLiteral(":feedback"), optionalInt(item.sellerFeedbackCount));
     format.bindValue(QStringLiteral(":positive"), item.sellerPositivePercent ? QVariant(*item.sellerPositivePercent)
                                                                              : QVariant(QMetaType::fromType<double>()));
+    format.bindValue(QStringLiteral(":seller_id"), textOrNull(item.sellerId));
     format.bindValue(QStringLiteral(":id"), lookupId);
     if (!run(format, error))
         return fail();
@@ -275,10 +276,12 @@ std::optional<qint64> LookupStore::save(const QString &input, const LookupResult
     insertRow.prepare(QStringLiteral(
         "INSERT INTO lookup_rows (lookup_id, source, position, item_id, title, condition_text, price_cents, price_text, "
         "shipping_cents, format, bids, seller_name, sold_date, confirmed, total_sold, last_sold_date, bucket, reasons, "
-        "included, best_offer, time_left, auction_end_text, auction_end, auction_end_seconds) VALUES (:lookup_id, "
+        "included, best_offer, time_left, auction_end_text, auction_end, auction_end_seconds, seller_feedback_count, "
+        "seller_positive_percent) VALUES (:lookup_id, "
         ":source, :position, :item_id, :title, :condition_text, :price_cents, :price_text, :shipping_cents, :format, "
         ":bids, :seller_name, :sold_date, :confirmed, :total_sold, :last_sold_date, :bucket, :reasons, :included, "
-        ":best_offer, :time_left, :auction_end_text, :auction_end, :auction_end_seconds)"));
+        ":best_offer, :time_left, :auction_end_text, :auction_end, :auction_end_seconds, :seller_feedback_count, "
+        ":seller_positive_percent)"));
     for (const Row &row : rows) {
         insertRow.bindValue(QStringLiteral(":lookup_id"), lookupId);
         insertRow.bindValue(QStringLiteral(":source"), rowSourceId(row.source));
@@ -306,6 +309,8 @@ std::optional<qint64> LookupStore::save(const QString &input, const LookupResult
             insertRow.bindValue(QStringLiteral(":auction_end_text"), QVariant(QMetaType::fromType<QString>()));
             insertRow.bindValue(QStringLiteral(":auction_end"), QVariant(QMetaType::fromType<QString>()));
             insertRow.bindValue(QStringLiteral(":auction_end_seconds"), 0);
+            insertRow.bindValue(QStringLiteral(":seller_feedback_count"), QVariant(QMetaType::fromType<int>()));
+            insertRow.bindValue(QStringLiteral(":seller_positive_percent"), QVariant(QMetaType::fromType<double>()));
         } else {
             const SearchRecord &record = row.source == Row::Source::Sold ? result.sold.at(row.index) : result.active.at(row.index);
             insertRow.bindValue(QStringLiteral(":item_id"), textOrNull(record.itemId));
@@ -326,6 +331,10 @@ std::optional<qint64> LookupStore::save(const QString &input, const LookupResult
             insertRow.bindValue(QStringLiteral(":auction_end_text"), textOrNull(record.auctionEndText));
             insertRow.bindValue(QStringLiteral(":auction_end"), timeOrNull(record.auctionEnd));
             insertRow.bindValue(QStringLiteral(":auction_end_seconds"), record.auctionEndSeconds ? 1 : 0);
+            insertRow.bindValue(QStringLiteral(":seller_feedback_count"), optionalInt(record.sellerFeedbackCount));
+            insertRow.bindValue(QStringLiteral(":seller_positive_percent"), record.sellerPositivePercent
+                                                                               ? QVariant(*record.sellerPositivePercent)
+                                                                               : QVariant(QMetaType::fromType<double>()));
         }
         if (!run(insertRow, error))
             return fail();
@@ -390,8 +399,8 @@ std::optional<SavedLookup> LookupStore::load(qint64 lookupId, QString *error) co
         "condition_text, seller_name, image_url, specifics, brand, model, product_name, identity_source, "
         "identity_confident, identity_reason, family, known_issues, queries, sold_depth, active_depth, research_depth, "
         "history_days, research_unavailable, research_summary, notes, pages_loaded, elapsed_ms, auction, bids, buy_it_now, "
-        "best_offer, ends_in, ends_at, auction_end, auction_end_seconds, seller_feedback_count, seller_positive_percent "
-        "FROM lookups WHERE id = ?"));
+        "best_offer, ends_in, ends_at, auction_end, auction_end_seconds, seller_feedback_count, seller_positive_percent, "
+        "seller_id FROM lookups WHERE id = ?"));
     query.addBindValue(lookupId);
     if (!run(query, error))
         return std::nullopt;
@@ -447,12 +456,13 @@ std::optional<SavedLookup> LookupStore::load(qint64 lookupId, QString *error) co
     item.sellerFeedbackCount = optionalCount(query.value(39));
     if (!query.value(40).isNull())
         item.sellerPositivePercent = query.value(40).toDouble();
+    item.sellerId = query.value(41).toString();
 
     QSqlQuery rowsQuery(db);
     rowsQuery.prepare(QStringLiteral(
         "SELECT source, item_id, title, condition_text, price_cents, price_text, shipping_cents, format, bids, "
         "seller_name, sold_date, confirmed, total_sold, last_sold_date, bucket, reasons, included, best_offer, time_left, "
-        "auction_end_text, auction_end, auction_end_seconds FROM lookup_rows "
+        "auction_end_text, auction_end, auction_end_seconds, seller_feedback_count, seller_positive_percent FROM lookup_rows "
         "WHERE lookup_id = ? ORDER BY CASE source WHEN 'sold' THEN 0 WHEN 'active' THEN 1 ELSE 2 END, position"));
     rowsQuery.addBindValue(lookupId);
     if (!run(rowsQuery, error))
@@ -498,6 +508,9 @@ std::optional<SavedLookup> LookupStore::load(qint64 lookupId, QString *error) co
             record.auctionEndText = rowsQuery.value(19).toString();
             record.auctionEnd = optionalTime(rowsQuery.value(20));
             record.auctionEndSeconds = rowsQuery.value(21).toInt() == 1;
+            record.sellerFeedbackCount = optionalCount(rowsQuery.value(22));
+            if (!rowsQuery.value(23).isNull())
+                record.sellerPositivePercent = rowsQuery.value(23).toDouble();
             const bool sold = source == QLatin1String("sold");
             QList<SearchRecord> &list = sold ? result.sold : result.active;
             row.source = sold ? Row::Source::Sold : Row::Source::Active;

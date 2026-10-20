@@ -1,6 +1,7 @@
 #pragma once
 
 #include "lookup/LookupStore.h"
+#include "lookup/Sellers.h"
 
 #include <QByteArray>
 #include <QJsonObject>
@@ -25,6 +26,11 @@ QByteArray lookupsCsv(const QList<LookupSummary> &lookups);
 // item number, title, total, eBay condition, date, bucket, reasons,
 // counted).
 QJsonObject lookupJson(const SavedLookup &lookup);
+
+// The user's marked sellers (local only; Settings "Export data"): one line
+// each, seller_id, reason (its label), note, marked_on. Same CSV rules as
+// lookupsCsv.
+QByteArray markedSellersCsv(const QList<SellerMark> &marks);
 
 // {"format": 1, "lookups": [lookupJson(...), ...]}, indented.
 QByteArray lookupsJson(const QList<SavedLookup> &lookups);

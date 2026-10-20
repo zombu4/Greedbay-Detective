@@ -6,6 +6,7 @@
 #include "plugins/PluginHost.h"
 #include "ui/Format.h"
 
+#include <QDebug>
 #include <QDir>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -117,6 +118,16 @@ QVariant RowsModel::data(const QModelIndex &index, int role) const
         return entry.view;
     case ViewNoteRole:
         return entry.viewNote;
+    case SellerRole:
+        return entry.seller;
+    case SellerBadgeRole:
+        return entry.sellerBadge;
+    case SellerMarkedRole:
+        return entry.sellerMarked;
+    case SellerPercentRole:
+        return entry.sellerPercent;
+    case SellerCountRole:
+        return entry.sellerCount;
     default:
         return {};
     }
@@ -127,15 +138,72 @@ QHash<int, QByteArray> RowsModel::roleNames() const
     return {{RowRole, "row"},         {IncludedRole, "included"}, {WhereRole, "where"},   {TotalRole, "total"},
             {ConditionRole, "condition"}, {DateRole, "date"},     {TitleRole, "title"},   {ItemIdRole, "itemId"},
             {ReasonRole, "reason"},   {MarkRole, "mark"},       {BrokenRole, "broken"},
-            {FormatRole, "format"}, {TimeLeftRole, "timeLeft"}, {ViewRole, "view"},   {ViewNoteRole, "viewNote"}};
+            {FormatRole, "format"}, {TimeLeftRole, "timeLeft"}, {ViewRole, "view"},   {ViewNoteRole, "viewNote"},
+            {SellerRole, "seller"}, {SellerBadgeRole, "sellerBadge"}, {SellerMarkedRole, "sellerMarked"},
+            {SellerPercentRole, "sellerPercent"}, {SellerCountRole, "sellerCount"}};
 }
 
-ResultsController::ResultsController(lookup::LookupStore store, const lookup::MatchWords *words,
+ResultsController::ResultsController(lookup::LookupStore store, lookup::SellerStore sellers, const lookup::MatchWords *words,
                                      std::function<ValueSettings()> valueSettings,
+                                     std::function<lookup::SellerRules()> sellerRules,
                                      std::function<QString(const QString &)> photoSourceOf, QObject *parent)
     : QObject(parent), m_store(std::move(store)), m_words(words), m_valueSettings(std::move(valueSettings)),
-      m_photoSourceOf(std::move(photoSourceOf)), m_sameItem(new RowsModel(this)), m_notThisItem(new RowsModel(this))
+      m_sellerRules(std::move(sellerRules)), m_photoSourceOf(std::move(photoSourceOf)), m_sellers(std::move(sellers)),
+      m_sameItem(new RowsModel(this)), m_notThisItem(new RowsModel(this))
 {
+}
+
+void ResultsController::loadSellerMarks()
+{
+    m_marks.clear();
+    QString error;
+    if (const std::optional<QList<lookup::SellerMark>> marks = m_sellers.marks(&error)) {
+        for (const lookup::SellerMark &mark : *marks)
+            m_marks.insert(mark.sellerId.toLower(), mark);
+    } else {
+        qWarning().noquote() << "results: the marked sellers cannot be read:" << error;
+    }
+}
+
+void ResultsController::refreshSellerMarks()
+{
+    loadSellerMarks();
+    if (!m_saved.result.item.itemId.isEmpty()) {
+        m_sameItem->update(entries(true));
+        m_notThisItem->update(entries(false));
+    }
+    emit changed();
+}
+
+bool ResultsController::markedFlag() const
+{
+    return !sellerId().isEmpty() && m_marks.contains(sellerId().toLower());
+}
+
+QStringList ResultsController::markedLines() const
+{
+    if (!markedFlag())
+        return {};
+    const lookup::SellerMark mark = m_marks.value(sellerId().toLower());
+    QStringList lines{QStringLiteral("You marked %1 on %2: %3").arg(mark.sellerId, mark.markedOn.toString(Qt::ISODate),
+                                                                     lookup::markReasonLabel(mark.reason))};
+    if (!mark.note.isEmpty())
+        lines.append(mark.note);
+    return lines;
+}
+
+bool ResultsController::ratingFlag() const
+{
+    const lookup::SellerRules rules = m_sellerRules();
+    return lookup::ratingNote(m_saved.result.item.sellerPositivePercent, m_saved.result.item.sellerFeedbackCount,
+                              rules.threshold, rules.fewRatings).flagged;
+}
+
+QString ResultsController::ratingLine() const
+{
+    const lookup::SellerRules rules = m_sellerRules();
+    return lookup::ratingNote(m_saved.result.item.sellerPositivePercent, m_saved.result.item.sellerFeedbackCount,
+                              rules.threshold, rules.fewRatings).text;
 }
 
 bool ResultsController::show(qint64 lookupId, QString *error)
@@ -147,6 +215,7 @@ bool ResultsController::show(qint64 lookupId, QString *error)
     m_storeError.clear();
     m_photoSource = m_photoSourceOf(m_saved.result.item.itemId);
     m_pluginNotices.clear();
+    loadSellerMarks();
     recompute();
     runPlugins();
     m_sameItem->reset(entries(true));
@@ -330,6 +399,13 @@ QList<RowsModel::Entry> ResultsController::entries(bool sameItem) const
         } else {
             const bool soldRow = row.source == Row::Source::Sold;
             const lookup::SearchRecord &record = soldRow ? result.sold.at(row.index) : result.active.at(row.index);
+            entry.seller = record.sellerName;
+            entry.sellerPercent = record.sellerPositivePercent.value_or(-1);
+            entry.sellerCount = record.sellerFeedbackCount.value_or(-1);
+            entry.sellerMarked = !record.sellerName.isEmpty() && m_marks.contains(record.sellerName.toLower());
+            const lookup::SellerRules rules = m_sellerRules();
+            entry.sellerBadge = lookup::ratingNote(record.sellerPositivePercent, record.sellerFeedbackCount, rules.threshold,
+                                                   rules.fewRatings).badge;
             entry.where = soldRow ? (record.confirmed ? QStringLiteral("sold") : QStringLiteral("sold, price not confirmed"))
                                   : QStringLiteral("for sale");
             entry.date = soldRow && !record.soldDate.isEmpty() ? record.soldDate : QStringLiteral("-");

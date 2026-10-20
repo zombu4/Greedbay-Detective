@@ -12,6 +12,14 @@ Item {
     readonly property ResultsController results: backend.results
     property int tab: 0
 
+    // Opens the seller panel for the listing's own seller: by its eBay user
+    // id only (the shown name can be a store name); lookups saved before the
+    // id was kept have none, and the panel then cannot mark or read reviews.
+    function openSeller() {
+        sellerPanel.show(screen.results.sellerId, screen.results.seller, screen.results.sellerPercent,
+                         screen.results.sellerCount)
+    }
+
     component Muted: Text {
         font.family: Theme.sans
         font.pixelSize: Theme.labelSize
@@ -155,11 +163,25 @@ Item {
                             font.weight: Font.DemiBold
                             color: Theme.text
                         }
-                        Muted {
+                        RowLayout {
                             Layout.fillWidth: true
-                            text: "eBay condition: " + (screen.results.condition.length > 0 ? screen.results.condition : "-")
-                                  + "  ·  seller: " + (screen.results.seller.length > 0 ? screen.results.seller : "-")
-                            color: Theme.secondaryText
+                            spacing: 0
+                            Muted {
+                                Layout.fillWidth: screen.results.seller.length === 0
+                                text: "eBay condition: " + (screen.results.condition.length > 0 ? screen.results.condition : "-")
+                                      + "  ·  seller: " + (screen.results.seller.length > 0 ? "" : "-")
+                                color: Theme.secondaryText
+                            }
+                            // The seller's name opens the seller panel.
+                            LinkText {
+                                Layout.fillWidth: true
+                                visible: screen.results.seller.length > 0
+                                text: screen.results.seller
+                                elide: Text.ElideRight
+                                font.pixelSize: Theme.labelSize
+                                Accessible.name: "Seller " + screen.results.seller + ", open the seller panel"
+                                onActivated: screen.openSeller()
+                            }
                         }
                         // Format (owner decision 2026-10-19): Buy It Now, Best
                         // Offer, or the auction with its bids and end.
@@ -229,7 +251,7 @@ Item {
             RowLayout {
                 Layout.fillWidth: true
                 visible: screen.results.brokenFlag || screen.results.isAuction || screen.results.shippingFlag
-                         || screen.results.cheaperFlag
+                         || screen.results.cheaperFlag || screen.results.markedFlag || screen.results.ratingFlag
                 spacing: Theme.gap
                 FlagCard {
                     Layout.fillWidth: true
@@ -246,6 +268,26 @@ Item {
                     kind: "danger"
                     label: "LIKELY BROKEN"
                     lines: [screen.results.brokenLine]
+                }
+                FlagCard {
+                    objectName: "markedFlag"
+                    Layout.fillWidth: true
+                    Layout.preferredWidth: 1
+                    visible: screen.results.markedFlag
+                    kind: "danger"
+                    label: "YOU MARKED THIS SELLER"
+                    lines: screen.results.markedLines
+                    linkText: "Open seller"
+                    onLinkActivated: screen.openSeller()
+                }
+                FlagCard {
+                    objectName: "ratingFlag"
+                    Layout.fillWidth: true
+                    Layout.preferredWidth: 1
+                    visible: screen.results.ratingFlag
+                    kind: "danger"
+                    label: "SELLER RATING"
+                    lines: [screen.results.ratingLine]
                 }
                 FlagCard {
                     Layout.fillWidth: true
@@ -513,6 +555,7 @@ Item {
                         rows: screen.results.sameItem
                         onRowToggled: (row, included) => screen.results.setIncluded(row, included)
                         onOpenRequested: (itemId) => screen.backend.openOnEbay(itemId)
+                        onSellerClicked: (seller, percent, count) => sellerPanel.show(seller, seller, percent, count)
                     }
                     RowsTable {
                         Layout.fillWidth: true
@@ -521,6 +564,7 @@ Item {
                         showReasons: true
                         onRowToggled: (row, included) => screen.results.setIncluded(row, included)
                         onOpenRequested: (itemId) => screen.backend.openOnEbay(itemId)
+                        onSellerClicked: (seller, percent, count) => sellerPanel.show(seller, seller, percent, count)
                     }
                     Muted {
                         Layout.fillWidth: true
@@ -543,5 +587,10 @@ Item {
             else
                 editor.error = screen.backend.session.errorText
         }
+    }
+
+    SellerPanel {
+        id: sellerPanel
+        backend: screen.backend
     }
 }

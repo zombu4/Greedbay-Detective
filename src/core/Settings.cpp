@@ -23,6 +23,9 @@ const QString kShippingMinKey = QStringLiteral("shipping/flagMinAboveCents");
 const QString kEnabledPluginsKey = QStringLiteral("plugins/enabled");
 const QString kPluginFailurePrefix = QStringLiteral("plugins/failed/");
 const QString kPluginTimeLimitKey = QStringLiteral("plugins/callTimeLimitMs");
+const QString kSellerThresholdKey = QStringLiteral("sellers/ratingThreshold");
+const QString kSellerFewRatingsKey = QStringLiteral("sellers/fewRatings");
+const QString kSellerCacheDaysKey = QStringLiteral("sellers/feedbackCacheDays");
 constexpr int kMinPageDelayMs = 1000;
 
 // The stored value as a finite number > 0, or `fallback`.
@@ -187,6 +190,48 @@ int Settings::dailyPageCap() const
 {
     const int cap = storedInt(m_settings, kDailyPageCapKey);
     return cap >= 1 ? cap : kDefaultDailyPageCap;
+}
+
+double Settings::sellerRatingThreshold() const
+{
+    const double value = storedPositive(m_settings, kSellerThresholdKey, kDefaultSellerRatingThreshold);
+    return value <= 100 ? value : kDefaultSellerRatingThreshold;
+}
+
+int Settings::sellerFewRatings() const
+{
+    const int value = storedInt(m_settings, kSellerFewRatingsKey);
+    return value >= 0 ? value : kDefaultSellerFewRatings;
+}
+
+int Settings::sellerFeedbackCacheDays() const
+{
+    const int value = storedInt(m_settings, kSellerCacheDaysKey);
+    return value >= 0 && value <= kMaxSellerFeedbackCacheDays ? value : kDefaultSellerFeedbackCacheDays;
+}
+
+bool Settings::setSellerRatingThreshold(double percent)
+{
+    if (!std::isfinite(percent) || percent <= 0 || percent > 100)
+        return false;
+    m_settings.setValue(kSellerThresholdKey, QString::number(percent));
+    return true;
+}
+
+bool Settings::setSellerFewRatings(int count)
+{
+    if (count < 0)
+        return false;
+    m_settings.setValue(kSellerFewRatingsKey, count);
+    return true;
+}
+
+bool Settings::setSellerFeedbackCacheDays(int days)
+{
+    if (days < 0 || days > kMaxSellerFeedbackCacheDays)
+        return false;
+    m_settings.setValue(kSellerCacheDaysKey, days);
+    return true;
 }
 
 bool Settings::setDailyPageCap(int cap)

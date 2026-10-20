@@ -15,8 +15,10 @@ Item {
     // A plugin the app turned off after a failure (during a lookup or on the
     // Results screen) shows as off, with why, whenever Settings is opened.
     onVisibleChanged: {
-        if (visible)
+        if (visible) {
             plugins.refresh()
+            backend.sellers.refreshMarks()
+        }
     }
 
     component Section: Card {
@@ -264,6 +266,193 @@ Item {
                                                                         Number(ratio.text), Number(above.text)), numbersResult)
                 }
                 Result { id: numbersResult }
+            }
+
+            Section {
+                objectName: "sellerSettings"
+                heading: "Sellers"
+                note: "Seller ratings are read from the listing. Marks and read reviews are kept only on this computer, "
+                      + "never uploaded or shared."
+                GridLayout {
+                    columns: 2
+                    columnSpacing: 12
+                    rowSpacing: 8
+                    FieldLabel { text: "Flag sellers below (% positive)" }
+                    AppTextField {
+                        id: sellerThreshold; mono: true; Layout.preferredWidth: 160
+                        text: screen.settings.sellerRatingThreshold.toString()
+                        validator: DoubleValidator { bottom: 0; top: 100; decimals: 1; notation: DoubleValidator.StandardNotation; locale: "C" }
+                        Accessible.name: "Flag sellers below this percent positive"
+                    }
+                    FieldLabel { text: "Don't judge with fewer ratings than" }
+                    NumberBox { id: sellerFew; from: 0; to: 1000000; value: screen.settings.sellerFewRatings; Accessible.name: "Do not judge sellers with fewer ratings than" }
+                    FieldLabel { text: "Keep read reviews (days, 0 = always read again)" }
+                    NumberBox { id: sellerCache; from: 0; to: 365; value: screen.settings.sellerFeedbackCacheDays; Accessible.name: "Days to keep read reviews, 0 reads again every time" }
+                }
+                AppButton {
+                    text: "Save"
+                    onClicked: screen.report(screen.settings.setSellerRules(Number(sellerThreshold.text), sellerFew.value,
+                                                                            sellerCache.value), sellerResult)
+                }
+                Result { id: sellerResult }
+
+                Text {
+                    Layout.topMargin: 8
+                    text: "My marked sellers"
+                    font.family: Theme.sans
+                    font.pixelSize: Theme.bodySize + 1
+                    font.weight: Font.DemiBold
+                    color: Theme.text
+                }
+                ColumnLayout {
+                    objectName: "markedSellersList"
+                    Layout.fillWidth: true
+                    spacing: 8
+                    FieldLabel {
+                        visible: screen.backend.sellers.marks.length === 0
+                        text: "No marked sellers."
+                    }
+                    Repeater {
+                        model: screen.backend.sellers.marks
+                        Card {
+                            id: markRow
+                            required property var modelData
+                            property bool editing: false
+                            property bool confirming: false
+                            property string error: ""
+                            Layout.fillWidth: true
+                            fill: Theme.raised
+                            ColumnLayout {
+                                anchors.fill: parent
+                                spacing: 6
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 8
+                                    Text {
+                                        Layout.fillWidth: true
+                                        text: markRow.modelData.sellerId
+                                        elide: Text.ElideRight
+                                        font.family: Theme.mono
+                                        font.pixelSize: Theme.bodySize
+                                        color: Theme.text
+                                        Accessible.name: "Seller id " + text
+                                    }
+                                    Pill { text: markRow.modelData.reasonLabel; kind: "danger" }
+                                    Text {
+                                        text: markRow.modelData.date
+                                        font.family: Theme.mono
+                                        font.pixelSize: Theme.labelSize
+                                        color: Theme.mutedText
+                                    }
+                                }
+                                FieldLabel {
+                                    Layout.fillWidth: true
+                                    visible: markRow.modelData.note.length > 0
+                                    wrapMode: Text.WordWrap
+                                    text: markRow.modelData.note
+                                    color: Theme.secondaryText
+                                }
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    visible: !markRow.editing
+                                    spacing: 12
+                                    AppButton {
+                                        visible: !markRow.confirming
+                                        text: "Edit"
+                                        Accessible.name: "Edit the mark on " + markRow.modelData.sellerId
+                                        onClicked: {
+                                            markReason.currentIndex = Math.max(0, markReason.indexOfValue(markRow.modelData.reason))
+                                            markNote.text = markRow.modelData.note
+                                            markRow.error = ""
+                                            markRow.editing = true
+                                        }
+                                    }
+                                    AppButton {
+                                        visible: !markRow.confirming
+                                        text: "Unmark"
+                                        Accessible.name: "Unmark " + markRow.modelData.sellerId
+                                        onClicked: markRow.confirming = true
+                                    }
+                                    Text {
+                                        visible: markRow.confirming
+                                        text: "Remove your mark?"
+                                        font.family: Theme.sans
+                                        font.pixelSize: Theme.bodySize
+                                        color: Theme.text
+                                    }
+                                    AppButton {
+                                        visible: markRow.confirming
+                                        text: "Yes"
+                                        primary: true
+                                        Accessible.name: "Yes, remove the mark on " + markRow.modelData.sellerId
+                                        onClicked: {
+                                            markRow.confirming = false
+                                            if (!screen.backend.sellers.unmark(markRow.modelData.sellerId))
+                                                markRow.error = screen.backend.sellers.error
+                                        }
+                                    }
+                                    AppButton {
+                                        visible: markRow.confirming
+                                        text: "No"
+                                        Accessible.name: "No, keep the mark on " + markRow.modelData.sellerId
+                                        onClicked: markRow.confirming = false
+                                    }
+                                    Item { Layout.fillWidth: true }
+                                }
+                                // The inline edit: a reason and a note.
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    visible: markRow.editing
+                                    spacing: 12
+                                    ComboBox {
+                                        id: markReason
+                                        Layout.preferredWidth: 260
+                                        implicitHeight: Theme.target
+                                        model: screen.backend.sellers.reasons
+                                        textRole: "label"
+                                        valueRole: "id"
+                                        Accessible.name: "Reason for the mark on " + markRow.modelData.sellerId
+                                    }
+                                    AppTextField {
+                                        id: markNote
+                                        Layout.fillWidth: true
+                                        maximumLength: 2000
+                                        placeholderText: "Note (optional)"
+                                        Accessible.name: "Note for the mark on " + markRow.modelData.sellerId
+                                    }
+                                }
+                                RowLayout {
+                                    Layout.alignment: Qt.AlignRight
+                                    visible: markRow.editing
+                                    spacing: 12
+                                    AppButton {
+                                        text: "Cancel"
+                                        onClicked: {
+                                            markRow.editing = false
+                                            markRow.error = ""
+                                        }
+                                    }
+                                    AppButton {
+                                        text: "Save"
+                                        primary: true
+                                        enabled: markReason.currentIndex >= 0
+                                        Accessible.name: "Save the mark on " + markRow.modelData.sellerId
+                                        onClicked: {
+                                            if (screen.backend.sellers.saveMarkFor(markRow.modelData.sellerId,
+                                                                                   markReason.currentValue, markNote.text)) {
+                                                markRow.editing = false
+                                                markRow.error = ""
+                                            } else {
+                                                markRow.error = screen.backend.sellers.error
+                                            }
+                                        }
+                                    }
+                                }
+                                Result { message: markRow.error; ok: false }
+                            }
+                        }
+                    }
+                }
             }
 
             Section {

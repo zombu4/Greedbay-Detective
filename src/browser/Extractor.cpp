@@ -28,6 +28,8 @@ QString kindScriptPath(ebay::PageKind kind)
         return QStringLiteral(":/extractors/item.js");
     case ebay::PageKind::Research:
         return QStringLiteral(":/extractors/research.js");
+    case ebay::PageKind::Feedback:
+        return QStringLiteral(":/extractors/feedback.js");
     }
     return {};
 }
@@ -48,7 +50,10 @@ QString Extractor::script(ebay::PageKind kind, const QUrl &url)
     const QString inputLiteral = QString::fromUtf8(QJsonDocument(input).toJson(QJsonDocument::Compact));
     return QStringLiteral("(function (input) {\n'use strict';\n") + resourceText(QStringLiteral(":/extractors/common.js"))
            + QLatin1Char('\n') + resourceText(kindScriptPath(kind))
-           + QStringLiteral("\nreturn JSON.stringify(extract(input));\n})(") + inputLiteral + QStringLiteral(");");
+           // extract() may return a promise (the feedback extractor waits for
+           // the page to update after a click); the browser awaits it.
+           + QStringLiteral("\nreturn Promise.resolve(extract(input)).then(function (result) { return JSON.stringify(result); });\n})(")
+           + inputLiteral + QStringLiteral(");");
 }
 
 QJsonObject Extractor::parseResult(const QJsonValue &value)

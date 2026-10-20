@@ -14,6 +14,7 @@ enum class PageKind {
     SoldSearch,   // /sch/i.html?_nkw=<query>&LH_Sold=1&LH_Complete=1
     Item,         // /itm/<item number>
     Research,     // /sh/research?...&tabName=SOLD (Seller Hub Product Research)
+    Feedback,     // /fdbk/feedback_profile/<seller>?... (classic feedback view; #negative or #neutral)
 };
 
 // The names used in the browser worker protocol and in extractor results.

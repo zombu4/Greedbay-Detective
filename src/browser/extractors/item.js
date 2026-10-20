@@ -180,7 +180,31 @@ function shippingFromBlock() {
     return {costCents: costs.length === 1 ? costs[0] : null, location: location};
 }
 
-function sellerFromCard() {
+// The seller's user id: the "username" of the page's feedback links for
+// this listing (recon 2026-10-20: /fdbk/mweb_profile?...&item_id=<id>&
+// username=<id>...; search cards show the same id). Without the item
+// number (a page outside www.ebay.com, such as a test page) only when every
+// feedback link names the same user. null when none.
+function sellerIdOf(itemId) {
+    const ids = new Set();
+    for (const link of document.querySelectorAll('a[href*="/fdbk/"]')) {
+        let url;
+        try {
+            url = new URL(link.href);
+        } catch (e) {
+            continue;
+        }
+        const id = url.searchParams.get('username');
+        if (!id || !/^[A-Za-z0-9._*-]{1,64}$/.test(id))
+            continue;
+        if (itemId && url.searchParams.get('item_id') === itemId)
+            return id;
+        ids.add(id);
+    }
+    return !itemId && ids.size === 1 ? ids.values().next().value : null;
+}
+
+function sellerFromCard(itemId) {
     const card = document.querySelector('[data-testid="x-sellercard-atf"]');
     if (!card)
         return null;
@@ -204,6 +228,7 @@ function sellerFromCard() {
     }
     return {
         name: name,
+        id: sellerIdOf(itemId),
         feedbackCount: count ? intOf(count[1]) : null,
         positivePercent: percent ? parseFloat(percent[1]) : null,
     };
@@ -277,7 +302,7 @@ function extract(input) {
         endsIn: endsInText(),
         endsAt: textOf(document.querySelector('[data-testid="x-end-time"] .ux-timer__time-left')),
         returnsText: textOf(document.querySelector('.ux-labels-values--returns')),
-        seller: sellerFromCard(),
+        seller: sellerFromCard(input.itemId),
         specifics: itemSpecifics(),
         watchers: intOf(uniqueWholeTextMatch(/^(\d{1,3}(?:,\d{3})+|\d+) watchers?$/, 'watcher')),
         soldCount: intOf(uniqueWholeTextMatch(/^(\d{1,3}(?:,\d{3})+|\d+) sold$/, 'sold')),

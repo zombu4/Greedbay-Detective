@@ -68,6 +68,19 @@ QByteArray lookupsCsv(const QList<LookupSummary> &lookups)
     return (lines.join(QStringLiteral("\r\n")) + QStringLiteral("\r\n")).toUtf8();
 }
 
+QByteArray markedSellersCsv(const QList<SellerMark> &marks)
+{
+    QStringList lines{QStringLiteral("seller_id,reason,note,marked_on")};
+    for (const SellerMark &mark : marks) {
+        const QStringList fields{mark.sellerId, markReasonLabel(mark.reason), mark.note, mark.markedOn.toString(Qt::ISODate)};
+        QStringList quoted;
+        for (const QString &field : fields)
+            quoted.append(csvField(field));
+        lines.append(quoted.join(QLatin1Char(',')));
+    }
+    return (lines.join(QStringLiteral("\r\n")) + QStringLiteral("\r\n")).toUtf8();
+}
+
 QJsonObject lookupJson(const SavedLookup &lookup)
 {
     const LookupResult &result = lookup.result;

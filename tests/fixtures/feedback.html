@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<!-- Synthetic classic feedback page (structure recorded 2026-10-20). The
+     12-month Negative count is a button that replaces the list in place
+     after a short delay, as eBay's page does; nothing is loaded. -->
+<html>
+<head><meta charset="utf-8"><title>Feedback Profile</title></head>
+<body>
+<h2><span>seller-a (3,295)</span></h2>
+<table>
+  <tr><th></th><th><span>1 month</span></th><th><span>6 months</span></th><th><span>12 months</span></th></tr>
+  <tr><td>Positive</td>
+    <td><button aria-label="positive feedback in last 1 month">185</button></td>
+    <td><button aria-label="positive feedback in last 6 months">1,023</button></td>
+    <td><button aria-label="positive feedback in last 12 months">2,071</button></td></tr>
+  <tr><td>Neutral</td>
+    <td><button aria-label="neutral feedback in last 1 month">0</button></td>
+    <td><button aria-label="neutral feedback in last 6 months">0</button></td>
+    <td><button aria-label="neutral feedback in last 12 months">0</button></td></tr>
+  <tr><td>Negative</td>
+    <td><button aria-label="negative feedback in last 1 month">0</button></td>
+    <td><button aria-label="negative feedback in last 6 months">1</button></td>
+    <td><button id="neg12" aria-label="negative feedback in last 12 months">2</button></td></tr>
+</table>
+<table id="feedback-cards">
+  <thead><tr><th>FEEDBACK</th><th>FROM</th><th>WHEN</th></tr></thead>
+  <tbody id="rows">
+    <tr><td><div class="card__feedback-container"><div class="card__rating"><svg class="imagePosition icon icon--feedback-positive"></svg></div>
+      <div class="card__feedback"><div class="card__comment">Great part, fast shipping</div></div><div class="card__item">Acme Q9 knob</div></div></td>
+      <td><div class="card__from"><span>Buyer: x***1 (40)</span><div class="card__price">US $9.99</div>Verified purchase</div></td>
+      <td><div class="card__links">Past month</div></td></tr>
+  </tbody>
+</table>
+<script>
+document.getElementById('neg12').addEventListener('click', function () {
+  setTimeout(function () {
+    document.getElementById('rows').innerHTML =
+      '<tr><td><div class="card__feedback-container"><div class="card__rating"><svg class="imagePosition icon icon--feedback-negative"></svg></div>' +
+      '<div class="card__feedback"><div class="card__comment">Never arrived, no answer</div></div><div class="card__item">Acme Q9 Signal Tracer</div></div></td>' +
+      '<td><div class="card__from"><span>Buyer: y***2 (7)</span><div class="card__price">US $255.00</div>Verified purchase</div></td>' +
+      '<td><div class="card__links">Past 6 months</div></td></tr>' +
+      '<tr><td><div class="card__feedback-container"><div class="card__rating"><svg class="imagePosition icon icon--feedback-negative"></svg></div>' +
+      '<div class="card__feedback"><div class="card__comment">Not as described</div></div><div class="card__item">Acme Z1 meter</div></div></td>' +
+      '<td><div class="card__from"><span>Buyer: z***3 (120)</span><div class="card__price">US $40.00</div></div></td>' +
+      '<td><div class="card__links">More than a year ago</div></td></tr>';
+  }, 300);
+});
+</script>
+</body>
+</html>

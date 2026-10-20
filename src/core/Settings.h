@@ -135,6 +135,26 @@ public:
     // Returns false and stores nothing outside the range above.
     bool setPluginCallTimeLimitMs(int ms);
 
+    // Sellers (owner decisions 2026-10-20). Key "sellers/ratingThreshold":
+    // a seller whose positive percentage is below it is flagged (default
+    // 96.0; outside 0 < value <= 100 reads as the default). Key
+    // "sellers/fewRatings": with fewer ratings the app says "only N ratings"
+    // instead of judging (default 20; below 0 reads as the default). Key
+    // "sellers/feedbackCacheDays": a seller's reviews read from eBay are
+    // shown again without a page load for this many days (default 7; 0 =
+    // always read again; below 0 or above 365 reads as the default).
+    static constexpr double kDefaultSellerRatingThreshold = 96.0;
+    static constexpr int kDefaultSellerFewRatings = 20;
+    static constexpr int kDefaultSellerFeedbackCacheDays = 7;
+    static constexpr int kMaxSellerFeedbackCacheDays = 365;
+    double sellerRatingThreshold() const;
+    int sellerFewRatings() const;
+    int sellerFeedbackCacheDays() const;
+    // Each returns false and stores nothing outside its range.
+    bool setSellerRatingThreshold(double percent);
+    bool setSellerFewRatings(int count);
+    bool setSellerFeedbackCacheDays(int days);
+
     // A plugin id: 1 to 64 characters, lowercase a-z, 0-9 and "-", starting
     // with a letter or digit.
     static bool isPluginId(const QString &id);

@@ -21,7 +21,7 @@ void TestMigrations::shippedMigrationsLoad()
     QString error;
     const auto migrations = app::loadMigrations(QStringLiteral(":/migrations"), &error);
     QVERIFY2(migrations, qPrintable(error));
-    QCOMPARE(migrations->size(), 4);
+    QCOMPARE(migrations->size(), 5);
     const Migration &init = migrations->first();
     QCOMPARE(init.version, 1);
     QCOMPARE(init.name, QStringLiteral("init"));
@@ -45,6 +45,11 @@ void TestMigrations::shippedMigrationsLoad()
     QCOMPARE(ratings.name, QStringLiteral("seller_ratings"));
     // Two columns of lookups.
     QCOMPARE(ratings.statements.size(), 2);
+    const Migration &sellers = migrations->at(4);
+    QCOMPARE(sellers.version, 5);
+    QCOMPARE(sellers.name, QStringLiteral("sellers"));
+    // One column of lookups, two of lookup_rows, two tables.
+    QCOMPARE(sellers.statements.size(), 5);
 }
 
 void TestMigrations::contiguityCheck()

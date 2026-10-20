@@ -237,6 +237,10 @@ void TestUi::everyScreenLoads()
     QVERIFY(render(window));
     // The sold-for numbers in their own bordered boxes, the bar with its
     // legend (ui-spec 2).
+    // The seller panel, the seller flag cards and the Settings section exist
+    // (owner decisions 2026-10-20).
+    for (const char *name : {"sellerPanel", "markedFlag", "ratingFlag", "sellerSettings", "markedSellersList"})
+        QVERIFY2(window->findChild<QObject *>(QLatin1String(name)), name);
     for (const char *name : {"soldBox", "researchBox", "forSaleBox", "barBox", "barLegend"}) {
         auto *item = window->findChild<QQuickItem *>(QLatin1String(name));
         QVERIFY2(item && item->isVisible(), name);

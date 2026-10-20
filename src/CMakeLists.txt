@@ -52,6 +52,7 @@ qt_add_resources(appcore "migrations"
         db/migrations/0002_saved_lookups.sql
         db/migrations/0003_formats.sql
         db/migrations/0004_seller_ratings.sql
+        db/migrations/0005_sellers.sql
 )
 
 # appbrowser: drives the user's installed browser over the DevTools protocol
@@ -81,6 +82,7 @@ qt_add_resources(appbrowser "extractors"
     BASE "browser/extractors"
     FILES
         browser/extractors/common.js
+        browser/extractors/feedback.js
         browser/extractors/item.js
         browser/extractors/research.js
         browser/extractors/search.js
@@ -113,6 +115,10 @@ qt_add_library(applookup STATIC
     lookup/Matcher.h
     lookup/Records.cpp
     lookup/Records.h
+    lookup/SellerStore.cpp
+    lookup/SellerStore.h
+    lookup/Sellers.cpp
+    lookup/Sellers.h
     lookup/Stats.cpp
     lookup/Stats.h
     lookup/Text.cpp
@@ -194,6 +200,10 @@ qt_add_library(appui STATIC
     ui/RecentModel.h
     ui/ResultsController.cpp
     ui/ResultsController.h
+    ui/SellerController.cpp
+    ui/SellerController.h
+    ui/SellerSession.cpp
+    ui/SellerSession.h
     ui/SettingsController.cpp
     ui/SettingsController.h
 )
@@ -237,6 +247,7 @@ set(app_qml_files
     ui/qml/ResultsScreen.qml
     ui/qml/ReviewSearchesPanel.qml
     ui/qml/RowsTable.qml
+    ui/qml/SellerPanel.qml
     ui/qml/SessionOverlay.qml
     ui/qml/SettingsScreen.qml
     ui/qml/StartupError.qml

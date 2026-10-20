@@ -34,7 +34,7 @@ public:
     static std::optional<QJsonObject> outcomeFromUrl(const QUrl &url, ebay::PageKind kind);
 
     // The complete script for `kind`, with `url` (the page's URL) as input.
-    // It evaluates to a JSON string.
+    // It evaluates to a promise of a JSON string (run it with awaitPromise).
     static QString script(ebay::PageKind kind, const QUrl &url);
 
     // Checks a script result (the JSON string the script evaluated to; an

@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<!-- Synthetic classic feedback page whose Negative count does nothing: the
+     list never switches, so the extractor must give up and say so. -->
+<html>
+<head><meta charset="utf-8"><title>Feedback Profile</title></head>
+<body>
+<h2><span>seller-a (12)</span></h2>
+<table>
+  <tr><th></th><th><span>1 month</span></th><th><span>6 months</span></th><th><span>12 months</span></th></tr>
+  <tr><td>Negative</td>
+    <td><button aria-label="negative feedback in last 1 month">0</button></td>
+    <td><button aria-label="negative feedback in last 6 months">1</button></td>
+    <td><button aria-label="negative feedback in last 12 months">1</button></td></tr>
+</table>
+<table id="feedback-cards">
+  <tbody>
+    <tr><td><div class="card__rating"><svg class="icon icon--feedback-positive"></svg></div><div class="card__comment">Fine</div></td>
+      <td><div class="card__from">Buyer: x***1 (4)</div></td><td><div class="card__links">Past month</div></td></tr>
+  </tbody>
+</table>
+</body>
+</html>
