@@ -532,11 +532,11 @@ Identity identify(const ItemRecord &item, const KnownModels &known, const MatchW
     }
     if (identity.model.isEmpty()) {
         QStringList afterBrand;
-        QStringList found = modelCandidatesAfterBrand(item.title, identity.matchNames, words, &afterBrand);
-        found.removeIf([&](const QString &candidate) { return shortOfKnownModel(candidate, identity.brandId, known); });
-        afterBrand.removeIf([&](const QString &candidate) { return !found.contains(candidate); });
-        allCandidates = found;
-        const QStringList picked = afterBrand.size() == 1 ? afterBrand : narrowed(found, afterBrand, titleList, words);
+        QStringList inTitle = modelCandidatesAfterBrand(item.title, identity.matchNames, words, &afterBrand);
+        inTitle.removeIf([&](const QString &candidate) { return shortOfKnownModel(candidate, identity.brandId, known); });
+        afterBrand.removeIf([&](const QString &candidate) { return !inTitle.contains(candidate); });
+        allCandidates = inTitle;
+        const QStringList picked = afterBrand.size() == 1 ? afterBrand : narrowed(inTitle, afterBrand, titleList, words);
         if (picked.size() == 1) {
             identity.model = picked.first();
             identity.source = specificCodes.contains(normalizeCode(identity.model)) ? QStringLiteral("item specifics")

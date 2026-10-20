@@ -86,13 +86,17 @@ endif()
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     set(CPACK_GENERATOR "DEB")
-    # The desktop entry goes to /usr/share/applications, outside the
-    # program's prefix: CPACK_SET_DESTDIR "may help (or simply be necessary)
-    # if some install rules uses absolute DESTINATION" (CMake docs); CPack
-    # then packages CMAKE_INSTALL_PREFIX (APP_LINUX_INSTALL_PREFIX).
+    # CPack installs into its staging folder with DESTDIR and the program's
+    # prefix (APP_LINUX_INSTALL_PREFIX, CPACK_SET_DESTDIR docs).
     set(CPACK_SET_DESTDIR ON)
+    # The desktop entry goes to /usr/share/applications, outside that prefix.
+    # CMake: "absolute paths do not work with ... the cpack installer
+    # generators, it is strongly recommended to use relative paths" (install()
+    # docs, CMake 4.4), so the destination is the path from the prefix to it
+    # ("../../usr/share/applications").
+    file(RELATIVE_PATH app_desktop_dir "${CMAKE_INSTALL_PREFIX}" "/usr/share/applications")
     configure_file("${PROJECT_SOURCE_DIR}/packaging/linux/app.desktop.in" "${PROJECT_BINARY_DIR}/${APP_PACKAGE_NAME}.desktop" @ONLY)
-    install(FILES "${PROJECT_BINARY_DIR}/${APP_PACKAGE_NAME}.desktop" DESTINATION /usr/share/applications)
+    install(FILES "${PROJECT_BINARY_DIR}/${APP_PACKAGE_NAME}.desktop" DESTINATION "${app_desktop_dir}")
     # Dependencies from the binaries themselves: dpkg-shlibdeps, which CPack
     # runs with the $ORIGIN folders of the package as private library folders
     # and --ignore-missing-info (CMake 4.4 CPackDeb.cmake).
