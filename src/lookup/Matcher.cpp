@@ -140,7 +140,10 @@ Match matchRow(const QString &title, const Identity &identity, const MatchWords 
     }
     // A model of digits only ("2022") also stands for years and quantities:
     // it counts only right after a brand name.
-    if (!hasLetterAndDigit(normalizeCode(codeList.at(models.first()))) && !identity.model.isEmpty()
+    const QString firstCode = normalizeCode(codeList.at(models.first()));
+    const bool digitsOnly = !firstCode.isEmpty()
+                            && std::all_of(firstCode.cbegin(), firstCode.cend(), [](QChar c) { return c.isDigit(); });
+    if (digitsOnly && !identity.model.isEmpty()
         && std::none_of(models.cbegin(), models.cend(), [&brands](qsizetype at) { return brands.contains(at - 1); })) {
         reasons.append(QStringLiteral("model %1 is digits only and does not follow the brand name: check").arg(identity.model));
         return done(Bucket::ToCheck);
