@@ -352,8 +352,13 @@ void TestUi::manySuggestionsShortList()
     QObject *pills = panel->findChild<QObject *>(QStringLiteral("suggestionPills"));
     QVERIFY(pills);
     QCOMPARE(pills->property("count").toInt(), 12);
+    QObject *link = panel->findChild<QObject *>(QStringLiteral("showAllLink"));
+    QVERIFY(link);
+    QVERIFY(link->property("visible").toBool());
+    QCOMPARE(link->property("text").toString(), QStringLiteral("Show all 20"));
     panel->setProperty("showAllSuggestions", true);
     QCOMPARE(pills->property("count").toInt(), 20);
+    QVERIFY(!link->property("visible").toBool());
     panel->setProperty("suggestions", QStringList{"Z53", "M7"});
     QCOMPARE(panel->property("showAllSuggestions").toBool(), false);
     QCOMPARE(pills->property("count").toInt(), 2);

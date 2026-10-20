@@ -12,7 +12,8 @@ namespace app::lookup {
 
 // Brands and models the lookup knows (owner rules 23, 25, 27, 28):
 //   - built in: data/known-models.json (:/lookup/known-models.json), where
-//     every fact names its source (a URL or "owner");
+//     every fact names its source (a URL, "owner", "owner purchase" or
+//     "eBay titles (count N)");
 //   - the user's additions: <work>/known-models.json, the same format plus
 //     "listings": the identity the user confirmed for each listing (rule 7).
 //     Written only by saveConfirmed(); facts there have the source "user".

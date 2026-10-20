@@ -166,7 +166,7 @@
         ]
     },
     "likelyBroken": {
-        "source": "owner decision 2026-10-19 \"red flag likely broken\" (DECISIONS.md, verbatim list): words meaning it was not tested or works only partly - all mean broken; a warning only, never grading",
+        "source": "owner decision 2026-10-19 \"red flag likely broken\" (verbatim list): words meaning it was not tested or works only partly - all mean broken; a warning only, never grading",
         "words": [
             "untested",
             "not tested",

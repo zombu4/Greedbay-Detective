@@ -15,7 +15,8 @@ namespace app::lookup {
 // names) or, failing that, contains one as whole words; an unknown "Brand"
 // value is taken as written (a new brand with that one name), unless it is
 // one of the notBrands values ("Unbranded"). Without a usable "Brand"
-// specific, the known brand whose name appears first in the title.
+// specific, the first known brand named in the title that has a known model
+// there, else the known brand whose name appears first in the title.
 //
 // Model: first a known model (or family member) of that brand appearing as a
 // whole word, or 2-4 neighbouring words written together (the longest first),
@@ -40,8 +41,9 @@ struct Identity {
     QList<BrandName> allNames; // every name of the brand, with its scope
     QString model;             // manufacturer's spelling; empty when unknown
     QStringList family;        // codes that count as the same item
-    // Normalized codes of the brand's other known models that begin with this
-    // model's code ("Game Boy" -> GAMEBOYCOLOR; PR57 -> PR570): never this item.
+    // Normalized codes of the brand's other known models (and their family
+    // members) that contain this model's code ("Game Boy" -> GAMEBOYCOLOR,
+    // "NES" -> SUPERNES, PR57 -> PR570): never this item.
     QStringList longerModels;
     bool searchFamily = false; // the family members are searched too
     QString productName;

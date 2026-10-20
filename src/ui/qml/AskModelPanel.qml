@@ -106,6 +106,7 @@ ColumnLayout {
             }
         }
         LinkText {
+            objectName: "showAllLink"
             visible: !panel.showAllSuggestions && panel.suggestions.length > panel.shortList
             text: "Show all " + panel.suggestions.length
             onActivated: panel.showAllSuggestions = true

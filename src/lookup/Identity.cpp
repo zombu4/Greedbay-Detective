@@ -67,16 +67,27 @@ void setNewBrand(Identity *identity, const QString &name)
     applyNames(identity);
 }
 
-// The normalized codes of the brand's other known models that begin with
-// `model`'s code.
+// The normalized codes (models and family members) of the brand's other
+// known models that contain `model`'s code: "Game Boy Color" for "Game Boy",
+// "Super NES" for "NES", "Macintosh Classic II" for "Macintosh".
 QStringList longerModelsOf(const KnownModels &known, const KnownModel &model)
 {
     const QString code = normalizeCode(model.model);
+    QStringList own{code};
+    for (const QString &member : model.family)
+        own.append(normalizeCode(member));
     QStringList longer;
     for (const KnownModel *other : known.modelsOf(model.brandId)) {
-        const QString otherCode = normalizeCode(other->model);
-        if (otherCode.size() > code.size() && otherCode.startsWith(code))
-            longer.append(otherCode);
+        if (other == &model)
+            continue;
+        QStringList codes{other->model};
+        codes.append(other->family);
+        for (const QString &otherCode : std::as_const(codes)) {
+            const QString normalized = normalizeCode(otherCode);
+            if (normalized.size() > code.size() && normalized.contains(code) && !own.contains(normalized)
+                && !longer.contains(normalized))
+                longer.append(normalized);
+        }
     }
     return longer;
 }
@@ -117,6 +128,60 @@ const Brand *firstBrandIn(const QString &text, const KnownModels &known, QString
         }
     }
     return best;
+}
+
+// Every known brand named in `text`, in the order they stand (at the same
+// place the longer name first), with the name as it stands there.
+QList<QPair<const Brand *, QString>> brandsIn(const QString &text, const KnownModels &known)
+{
+    const QStringList words = titleWords(text);
+    struct Hit {
+        const Brand *brand;
+        qsizetype at;
+        qsizetype length;
+        QString name;
+    };
+    QList<Hit> hits;
+    for (const Brand &brand : known.brands()) {
+        for (const BrandName &name : brand.names) {
+            const QStringList parts = titleWords(name.name);
+            const QList<qsizetype> at = phrasePositions(words, parts.join(QLatin1Char(' ')));
+            if (!at.isEmpty())
+                hits.append({&brand, at.first(), parts.size(), words.mid(at.first(), parts.size()).join(QLatin1Char(' '))});
+        }
+    }
+    std::stable_sort(hits.begin(), hits.end(), [](const Hit &a, const Hit &b) {
+        return a.at != b.at ? a.at < b.at : a.length > b.length;
+    });
+    QList<QPair<const Brand *, QString>> result;
+    for (const Hit &hit : std::as_const(hits)) {
+        if (std::none_of(result.cbegin(), result.cend(), [&hit](const auto &entry) { return entry.first == hit.brand; }))
+            result.append({hit.brand, hit.name});
+    }
+    return result;
+}
+
+// A known model of `brand` in `list`: one word or 2-4 neighbouring words
+// written together ("IM 13"), the longest first; in a title, a digits-only
+// model only right after a brand name or its product name.
+const KnownModel *knownModelIn(const QStringList &list, const Brand &brand, const KnownModels &known, bool inTitle)
+{
+    QStringList brandNames;
+    for (const BrandName &name : brand.names)
+        brandNames.append(name.name);
+    for (qsizetype i = 0; i < list.size(); ++i) {
+        for (qsizetype n = std::min<qsizetype>(4, list.size() - i); n >= 1; --n) {
+            const QString joined = list.mid(i, n).join(QString());
+            const KnownModel *model = known.findModel(brand.id, joined);
+            if (!model)
+                continue;
+            if (inTitle && isDigitsOnly(joined)
+                && !positionsAfterNames(list, brandNames + QStringList{model->productName}).contains(i))
+                continue;
+            return model;
+        }
+    }
+    return nullptr;
 }
 
 } // namespace
@@ -211,7 +276,21 @@ Identity identify(const ItemRecord &item, const KnownModels &known, const MatchW
         else
             brand = firstBrandIn(brandSpecific, known, &found);
     } else {
-        brand = firstBrandIn(item.title, known, &found);
+        // Several brands named in the title ("Analogue Heathkit IM-13"): the
+        // first one with a known model there, else the first one.
+        const QList<QPair<const Brand *, QString>> named = brandsIn(item.title, known);
+        const QStringList titleList = titleWords(item.title);
+        for (const auto &entry : named) {
+            if (knownModelIn(titleList, *entry.first, known, true)) {
+                brand = entry.first;
+                found = entry.second;
+                break;
+            }
+        }
+        if (!brand && !named.isEmpty()) {
+            brand = named.first().first;
+            found = named.first().second;
+        }
     }
     if (brand)
         setBrand(&identity, *brand, found);
@@ -232,24 +311,10 @@ Identity identify(const ItemRecord &item, const KnownModels &known, const MatchW
     // words written together ("IM 13"), the longest first.
     if (brand) {
         for (const auto &source : sources) {
-            const QStringList list = titleWords(source.text);
             const bool inTitle = &source == &sources[std::size(sources) - 1];
-            QStringList brandNames;
-            for (const BrandName &name : brand->names)
-                brandNames.append(name.name);
-            for (qsizetype i = 0; i < list.size() && identity.model.isEmpty(); ++i) {
-                for (qsizetype n = std::min<qsizetype>(4, list.size() - i); n >= 1; --n) {
-                    const QString joined = list.mid(i, n).join(QString());
-                    const KnownModel *model = known.findModel(brand->id, joined);
-                    if (!model)
-                        continue;
-                    if (inTitle && isDigitsOnly(joined)
-                        && !positionsAfterNames(list, brandNames + QStringList{model->productName}).contains(i))
-                        continue;
-                    setKnownModel(&identity, *model, known);
-                    identity.source = QStringLiteral("known model");
-                    break;
-                }
+            if (const KnownModel *model = knownModelIn(titleWords(source.text), *brand, known, inTitle)) {
+                setKnownModel(&identity, *model, known);
+                identity.source = QStringLiteral("known model");
             }
             if (!identity.model.isEmpty())
                 break;

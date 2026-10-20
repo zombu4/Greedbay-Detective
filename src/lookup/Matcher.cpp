@@ -34,13 +34,15 @@ QList<qsizetype> modelPositions(const QStringList &words, const Identity &identi
         codes.append(normalizeCode(member));
     QList<qsizetype> positions;
     for (qsizetype i = 0; i < words.size(); ++i) {
-        // A longer known model of the brand standing here ("Game Boy Color"
-        // for "Game Boy") is another model.
-        QString longer;
+        // A longer known model of the brand covering this word ("Game Boy
+        // Color" for "Game Boy", "Super NES" for "NES") is another model.
         bool another = false;
-        for (qsizetype n = 0; n < 5 && i + n < words.size() && !another; ++n) {
-            longer += normalizeCode(words.at(i + n));
-            another = identity.longerModels.contains(longer);
+        for (qsizetype from = std::max<qsizetype>(0, i - 3); from <= i && !another; ++from) {
+            QString longer;
+            for (qsizetype n = 0; n < 5 && from + n < words.size() && !another; ++n) {
+                longer += normalizeCode(words.at(from + n));
+                another = from + n >= i && identity.longerModels.contains(longer);
+            }
         }
         if (another)
             continue;
@@ -180,7 +182,15 @@ Match matchRow(const QString &title, const Identity &identity, const MatchWords 
     QStringList namesBefore = identity.matchNames;
     if (!identity.productName.isEmpty())
         namesBefore.append(identity.productName);
-    const QList<qsizetype> afterNames = positionsAfterNames(codeList, namesBefore);
+    QList<qsizetype> afterNames = positionsAfterNames(codeList, namesBefore);
+    // A brand name inside a slash-joined word ("Marconi/IFR 2022").
+    for (qsizetype k = 0; k < codeList.size(); ++k) {
+        const QStringList parts = listWords(codeList.at(k));
+        if (parts.size() > 1 && std::any_of(identity.matchNames.cbegin(), identity.matchNames.cend(), [&parts](const QString &name) {
+                return parts.contains(name.toLower());
+            }))
+            afterNames.append(k + 1);
+    }
     if (digitsOnly && std::none_of(models.cbegin(), models.cend(), [&](qsizetype at) {
             return brands.contains(at - 1) || afterNames.contains(at);
         })) {

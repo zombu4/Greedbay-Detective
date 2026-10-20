@@ -114,6 +114,11 @@ void TestMatching::dataFilesNameTheirSources()
         "models":[{"brand":"x","model":"M7X","source":"owner","year":{"first":1990}}]})";
     QVERIFY(!KnownModels::fromJson(yearNoSource, true, &error));
     QVERIFY(KnownModels::fromJson(yearNoSource, false, &error));
+    const QByteArray lastYear = R"({"format":1,"brands":[{"id":"x","names":[{"name":"X","search":true,"source":"owner"}]}],
+        "models":[{"brand":"x","model":"M7X","source":"owner","year":{"first":1980,"last":1993,"source":"owner"}}]})";
+    const std::optional<KnownModels> withLast = KnownModels::fromJson(lastYear, true, &error);
+    QVERIFY2(withLast, qPrintable(error));
+    QCOMPARE(withLast->findModel(QStringLiteral("x"), QStringLiteral("M7X"))->lastYear, 1993);
     // Word lists: a missing list is refused.
     QVERIFY(!MatchWords::fromJson(R"({"format":1})", &error));
 }
@@ -317,6 +322,22 @@ void TestMatching::identityPerCase()
              QStringLiteral("Game Boy Color"));
     QCOMPARE(identify(item(QStringLiteral("Radio Shack TRS-80 Color Computer 2")), m_known, m_words).model,
              QStringLiteral("TRS-80 Color Computer 2"));
+    // A shorter model inside a longer one; the same machine under its
+    // other code; the brand that has a known model in the title wins.
+    QCOMPARE(identify(item(QStringLiteral("Nintendo Super NES console")), m_known, m_words).model, QStringLiteral("Super NES"));
+    QCOMPARE(identify(item(QStringLiteral("Apple Macintosh Classic II")), m_known, m_words).model, QStringLiteral("Classic II"));
+    QCOMPARE(identify(item(QStringLiteral("Commodore Amiga 2000 computer")), m_known, m_words).model, QStringLiteral("A2000"));
+    QCOMPARE(identify(item(QStringLiteral("Commodore C64 computer")), m_known, m_words).model, QStringLiteral("64"));
+    const Identity twoBrands = identify(item(QStringLiteral("Analogue Heathkit IM-13 meter")), m_known, m_words);
+    QCOMPARE(twoBrands.brandId, QStringLiteral("heathkit"));
+    QCOMPARE(twoBrands.model, QStringLiteral("IM-13"));
+    // Earlier owners' names and misspellings name the brand.
+    const Identity etco = identify(item(QStringLiteral("etco 666 tube tester")), m_known, m_words);
+    QCOMPARE(etco.brandId, QStringLiteral("eico"));
+    QCOMPARE(etco.model, QStringLiteral("666"));
+    QCOMPARE(buildQueries(etco), QStringList({"EICO 666"}));
+    QCOMPARE(identify(item(QStringLiteral("Heath Schlumberger SM-5238 counter")), m_known, m_words).brandId,
+             QStringLiteral("heathkit"));
     // "Knight" alone is no brand; Allied Knight is.
     QVERIFY(identify(item(QStringLiteral("Moon Knight A7 trading card")), m_known, m_words).brandId != QStringLiteral("knight"));
     const Identity knight = identify(item(QStringLiteral("Allied Knight KG-625 VTVM")), m_known, m_words);
@@ -468,11 +489,16 @@ void TestMatching::rows_data()
     QTest::newRow("R5 right after brand") << "Racal-Dana" << "1992" << "Racal-Dana 1992 counter" << "" << Bucket::SameItem;
     QTest::newRow("R5 a year") << "Racal-Dana" << "1992" << "1992 Ford" << "" << Bucket::NoMatch;
     QTest::newRow("R5 manual") << "Racal-Dana" << "1992" << "Racal Dana counter 1992 manual" << "" << Bucket::Documentation;
+    QTest::newRow("R5 EICO") << "EICO" << "625" << "EICO 625 tube tester" << "" << Bucket::SameItem;
+    QTest::newRow("R5 Marconi") << "Marconi" << "2305" << "Marconi 2305 modulation meter" << "" << Bucket::SameItem;
+    QTest::newRow("R5 slash brand") << "Marconi" << "2022" << "Marconi/IFR 2022 signal generator" << "" << Bucket::SameItem;
     QTest::newRow("R5 after product name") << "Marconi" << "2022" << "Marconi AM/FM Signal Generator 2022" << ""
                                            << Bucket::SameItem;
     // A longer known model of the brand is another model; a misspelt brand
     // still matches.
     QTest::newRow("longer model") << "Nintendo" << "Game Boy" << "Nintendo Game Boy Color console" << "" << Bucket::NoMatch;
+    QTest::newRow("inside a longer model") << "Nintendo" << "NES" << "Nintendo Super NES console" << "" << Bucket::NoMatch;
+    QTest::newRow("same machine, other code") << "Commodore" << "64" << "Commodore C64 computer" << "" << Bucket::SameItem;
     QTest::newRow("shorter model") << "Nintendo" << "Game Boy" << "Nintendo Game Boy DMG-01 handheld" << "" << Bucket::SameItem;
     QTest::newRow("misspelt brand") << "Sencore" << "LC102" << "Sencor LC102 Auto-Z analyzer" << "" << Bucket::SameItem;
     QTest::newRow("8 untested") << "Marconi" << "2022" << "Marconi Instruments 2022 AM/FM signal generator untested" << ""

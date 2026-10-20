@@ -1,6 +1,6 @@
 {
     "format": 1,
-    "about": "Brands and models the lookup knows. Every fact names its source: a URL, or \"owner\" for the project owner's own statements and decisions. A brand name with \"search\": true is used in search queries; every name is accepted when matching result titles. A name with \"onlyFor\" applies only to models of that category. A model's \"year\" holds the first and, optionally, the last year it was made or sold.",
+    "about": "Brands and models the lookup knows. Every fact names its source: a URL, or \"owner\" for the project owner's own statements and decisions. A brand name with \"search\": true is used in search queries; every name is accepted when matching result titles. A name with \"onlyFor\" applies only to models of that category. A model's \"year\" holds the first and, optionally, the last year it was made or sold. Sources are a URL, \"owner\" (an owner statement or decision), \"owner purchase\" (a model the owner bought), or \"eBay titles\" (how sellers write it, with the number of titles seen).",
     "brands": [
         {
             "id": "hp",
@@ -1121,7 +1121,7 @@
         {
             "brand": "heathkit",
             "model": "IP-2717A",
-            "source": "owner (matching-cases.md case 10: the item specifics of listing 237132663160)",
+            "source": "owner (case 10: the item specifics of a listing)",
             "category": {
                 "name": "test equipment",
                 "source": "owner (case 10: high voltage power supply)"
@@ -5470,7 +5470,12 @@
             "brand": "commodore",
             "model": "64",
             "source": "https://en.wikipedia.org/wiki/List_of_home_computers",
-            "family": [],
+            "family": [
+                {
+                    "model": "C64",
+                    "source": "owner purchase (\"C64\"); owner approved 2026-10-19"
+                }
+            ],
             "notes": [],
             "category": {
                 "name": "computer",
@@ -5605,10 +5610,6 @@
             "brand": "radioshack",
             "model": "TRS-80 Color Computer",
             "source": "https://en.wikipedia.org/wiki/List_of_home_computers",
-            "productName": {
-                "name": "CoCo, Coco 2, Coco 3",
-                "source": "https://en.wikipedia.org/wiki/List_of_home_computers"
-            },
             "family": [],
             "notes": [],
             "category": {
@@ -6244,7 +6245,12 @@
             "brand": "sega",
             "model": "Dreamcast",
             "source": "https://en.wikipedia.org/wiki/List_of_home_video_game_consoles",
-            "family": [],
+            "family": [
+                {
+                    "model": "HKT-3000",
+                    "source": "owner purchase (\"Sega Dreamcast HKT-3000\"); owner approved 2026-10-19"
+                }
+            ],
             "notes": [],
             "category": {
                 "name": "console",
@@ -6503,14 +6509,12 @@
                 "name": "Amiga 2000",
                 "source": "owner purchase"
             },
-            "family": [],
-            "notes": []
-        },
-        {
-            "brand": "commodore",
-            "model": "C64",
-            "source": "owner purchase",
-            "family": [],
+            "family": [
+                {
+                    "model": "Amiga 2000",
+                    "source": "owner purchase (\"Amiga 2000 / A2000\"); owner approved 2026-10-19"
+                }
+            ],
             "notes": []
         },
         {
@@ -6531,24 +6535,18 @@
             "brand": "apple",
             "model": "Classic II",
             "source": "owner purchase",
-            "family": [],
+            "family": [
+                {
+                    "model": "Macintosh Classic II",
+                    "source": "owner purchase (\"Macintosh Classic II\"); owner approved 2026-10-19"
+                }
+            ],
             "notes": []
         },
         {
             "brand": "radioshack",
             "model": "TRS-80 Color Computer 2",
             "source": "owner purchase",
-            "family": [],
-            "notes": []
-        },
-        {
-            "brand": "sega",
-            "model": "HKT-3000",
-            "source": "owner purchase",
-            "productName": {
-                "name": "Dreamcast",
-                "source": "owner purchase"
-            },
             "family": [],
             "notes": []
         }
