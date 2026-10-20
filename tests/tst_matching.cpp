@@ -60,6 +60,7 @@ private slots:
     void identityWithoutKnownBrand();
     void identityBrandScan();
     void identityCase11();
+    void identityCase12();
     void ownListingIsNeverNotThisItem();
     void rows_data();
     void rows();
@@ -572,6 +573,43 @@ void TestMatching::identityCase11()
         {QStringLiteral("specifics"), QJsonArray{QJsonObject{{QStringLiteral("label"), QStringLiteral("Condition")},
                                                              {QStringLiteral("value"), QStringLiteral("New: A brand-new, unused item.")}}}}});
     QCOMPARE(parsed.specific(QStringLiteral("Condition")), QStringLiteral("New"));
+}
+
+void TestMatching::identityCase12()
+{
+    using Specifics = QList<ItemRecord::Specific>;
+    auto identityOf = [this](const char *title, const Specifics &specifics) {
+        return identify(item(QLatin1String(title), specifics), m_known, m_words);
+    };
+    // The owner's case: an unknown maker, "Unbranded/Generic" in the Brand
+    // specific, a seller's code at the end, specs and an ASIN.
+    const Specifics generic = {{QStringLiteral("Brand"), QStringLiteral("Unbranded/Generic")},
+                               {QStringLiteral("MPN"), QStringLiteral("Does not Apply")},
+                               {QStringLiteral("ASIN"), QStringLiteral("B0Q9ZZ12XY")},
+                               {QStringLiteral("UPC"), QStringLiteral("Does not Apply")},
+                               {QStringLiteral("Vertical sensitivity"), QStringLiteral("50 mV/div ~ 500 V/div")}};
+    const Identity scope = identityOf("Zentrix 1014D 7\" LCD 2 Channel Signal Generator Digital Storage Oscilloscope H0V2", generic);
+    QVERIFY2(scope.confident, qPrintable(scope.reason));
+    QCOMPARE(scope.brandName, QStringLiteral("Zentrix"));
+    QCOMPARE(scope.model, QStringLiteral("1014D"));
+    QCOMPARE(buildQueries(scope), QStringList({"Zentrix 1014D"}));
+    // notBrands values, alone or joined with "/", never fill the brand.
+    for (const char *value : {"Unbranded", "Generic", "Does not apply", "N/A", "Unbranded/Generic", "Generic / Unbranded"}) {
+        const Identity none = identityOf("scope 100MHz", {{QStringLiteral("Brand"), QLatin1String(value)}});
+        QVERIFY2(none.brandName.isEmpty(), value);
+    }
+    // Title openers are no brand; numbers are no brand.
+    QCOMPARE(identityOf("Vintage Zentrix 1014D scope", {}).brandName, QStringLiteral("Zentrix"));
+    QCOMPARE(identityOf("New Zentrix QX9 scope", {}).model, QStringLiteral("QX9"));
+    QVERIFY(identityOf("2 QX9 scope", {}).brandName.isEmpty());
+    // A product code in the title is never the model.
+    const Identity asin = identityOf("Zentrix B0Q9ZZ12XY 1014D scope", {{QStringLiteral("ASIN"), QStringLiteral("B0Q9ZZ12XY")}});
+    QCOMPARE(asin.model, QStringLiteral("1014D"));
+    // Two candidates, neither right after the brand nor a seller's code at
+    // the end: ask, with the first one suggested (it pre-fills the prompt).
+    const Identity ask = identityOf("Zentrix scope QX9 KQ7 tested", {{QStringLiteral("Brand"), QStringLiteral("Zentrix")}});
+    QVERIFY(!ask.confident);
+    QCOMPARE(ask.candidates.value(0), QStringLiteral("QX9"));
 }
 
 void TestMatching::ownListingIsNeverNotThisItem()

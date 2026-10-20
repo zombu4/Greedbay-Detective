@@ -14,9 +14,13 @@ namespace app::lookup {
 // Brand: the item specific "Brand" when it names a known brand (any of its
 // names) or, failing that, contains one as whole words; an unknown "Brand"
 // value is taken as written (a new brand with that one name), unless it is
-// one of the notBrands values ("Unbranded"). Without a usable "Brand"
-// specific, the first known brand named in the title that has a known model
-// there, else the known brand whose name appears first in the title.
+// one of the notBrands values ("Unbranded", also "Unbranded/Generic": each
+// "/" part one). Without a usable "Brand" specific, the first known brand
+// named in the title that has a known model there, else the known brand
+// whose name appears first in the title, else (owner case 12) the title's
+// first word after any titleOpeners, when it is letters only and the next
+// word is model-like ("FNIRSI 1014D ..." -> FNIRSI). Values of the
+// productCodeLabels specifics (ASIN, UPC, ...) are never models.
 //
 // Model (owner case 11: the listing's own title first, then the "Model"
 // specific, then the "MPN" specific):

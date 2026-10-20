@@ -333,6 +333,44 @@ QStringList narrowed(QStringList candidates, const QStringList &afterBrand, cons
     return candidates;
 }
 
+// A Brand specific that names no brand: a notBrands value as a whole, or
+// one in each of its "/" parts ("Unbranded/Generic").
+bool namesNoBrand(const QString &value, const MatchWords &words)
+{
+    if (words.notBrands.contains(value, Qt::CaseInsensitive))
+        return true;
+    const QStringList parts = value.split(QLatin1Char('/'), Qt::SkipEmptyParts);
+    return parts.size() > 1 && std::all_of(parts.cbegin(), parts.cend(), [&words](const QString &part) {
+               return words.notBrands.contains(part.simplified(), Qt::CaseInsensitive);
+           });
+}
+
+// Owner case 12: without a known brand, the title's first word is the brand
+// when the next word is model-like ("FNIRSI 1014D ..."): a word of letters,
+// after any title openers ("New", "Vintage"). One word only: two words
+// before the model are mostly a product name ("bench meter M7X").
+QString brandBeforeModel(const QString &title, const MatchWords &words)
+{
+    const QStringList list = titleWords(title);
+    qsizetype start = 0;
+    while (start < list.size()) {
+        if (words.titleOpeners.contains(list.at(start), Qt::CaseInsensitive)) {
+            ++start;
+        } else if (start + 1 < list.size()
+                   && words.titleOpeners.contains(list.at(start) + QLatin1Char(' ') + list.at(start + 1), Qt::CaseInsensitive)) {
+            start += 2;
+        } else {
+            break;
+        }
+    }
+    if (start + 1 >= list.size() || !isModelLike(list, start + 1, words))
+        return {};
+    const QString &name = list.at(start);
+    const bool letters = std::any_of(name.cbegin(), name.cend(), [](QChar c) { return c.isLetter(); })
+                         && std::none_of(name.cbegin(), name.cend(), [](QChar c) { return c.isDigit(); });
+    return letters && !words.notBrands.contains(name, Qt::CaseInsensitive) ? name : QString();
+}
+
 } // namespace
 
 QStringList namesBeforeModel(const QStringList &names, const MatchWords &matchWords)
@@ -472,8 +510,9 @@ Identity identify(const ItemRecord &item, const KnownModels &known, const MatchW
 
     Identity identity;
     QString brandSpecific = item.specific(QStringLiteral("Brand")).simplified();
-    // "Unbranded", "Does not apply", ...: no brand is named there.
-    if (words.notBrands.contains(brandSpecific, Qt::CaseInsensitive))
+    // "Unbranded", "Unbranded/Generic", "Does not apply", ...: no brand is
+    // named there.
+    if (namesNoBrand(brandSpecific, words))
         brandSpecific.clear();
     QString found;
     const Brand *brand = nullptr;
@@ -504,6 +543,17 @@ Identity identify(const ItemRecord &item, const KnownModels &known, const MatchW
         setBrand(&identity, *brand, found);
     else if (!brandSpecific.isEmpty())
         setNewBrand(&identity, brandSpecific);
+    else if (const QString titleBrand = brandBeforeModel(item.title, words); !titleBrand.isEmpty())
+        setNewBrand(&identity, titleBrand);
+
+    // Product codes (ASIN, UPC, ...) are never models (owner case 12).
+    QStringList productCodes;
+    for (const QString &label : words.productCodeLabels) {
+        const QString code = normalizeCode(item.specific(label));
+        if (!code.isEmpty())
+            productCodes.append(code);
+    }
+    auto isProductCode = [&productCodes](const QString &candidate) { return productCodes.contains(normalizeCode(candidate)); };
 
     // Owner case 11: the listing's own title comes first, then the "Model"
     // specific, then the "MPN" specific; a specific counts only when the
@@ -533,9 +583,16 @@ Identity identify(const ItemRecord &item, const KnownModels &known, const MatchW
     if (identity.model.isEmpty()) {
         QStringList afterBrand;
         QStringList inTitle = modelCandidatesAfterBrand(item.title, identity.matchNames, words, &afterBrand);
-        inTitle.removeIf([&](const QString &candidate) { return shortOfKnownModel(candidate, identity.brandId, known); });
+        inTitle.removeIf([&](const QString &candidate) {
+            return shortOfKnownModel(candidate, identity.brandId, known) || isProductCode(candidate);
+        });
         afterBrand.removeIf([&](const QString &candidate) { return !inTitle.contains(candidate); });
-        allCandidates = inTitle;
+        // The candidates right after the brand are suggested first.
+        allCandidates = afterBrand;
+        for (const QString &candidate : std::as_const(inTitle)) {
+            if (!allCandidates.contains(candidate))
+                allCandidates.append(candidate);
+        }
         const QStringList picked = afterBrand.size() == 1 ? afterBrand : narrowed(inTitle, afterBrand, titleList, words);
         if (picked.size() == 1) {
             identity.model = picked.first();
@@ -564,7 +621,9 @@ Identity identify(const ItemRecord &item, const KnownModels &known, const MatchW
         }
         QStringList ignored;
         QStringList candidates = modelCandidatesAfterBrand(text, identity.matchNames, words, &ignored);
-        candidates.removeIf([&](const QString &candidate) { return shortOfKnownModel(candidate, identity.brandId, known); });
+        candidates.removeIf([&](const QString &candidate) {
+            return shortOfKnownModel(candidate, identity.brandId, known) || isProductCode(candidate);
+        });
         for (const QString &candidate : std::as_const(candidates)) {
             if (!allCandidates.contains(candidate))
                 allCandidates.append(candidate);

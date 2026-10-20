@@ -56,6 +56,8 @@ std::optional<MatchWords> MatchWords::fromJson(const QByteArray &json, QString *
         {wordsOf("notCodePrefixes"), &words.notCodePrefixes, "notCodePrefixes"},
         {wordsOf("tubeTypes"), &words.tubeTypes, "tubeTypes"},
         {wordsOf("notBrands"), &words.notBrands, "notBrands"},
+        {wordsOf("titleOpeners"), &words.titleOpeners, "titleOpeners"},
+        {wordsOf("productCodeLabels"), &words.productCodeLabels, "productCodeLabels"},
         {wordsOf("lot"), &words.lot, "lot"},
         {wordsOf("documentation"), &words.documentation, "documentation"},
         {wordsOf("partFits"), &words.partFits, "partFits"},

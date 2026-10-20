@@ -1923,7 +1923,33 @@
             "Generic",
             "Unknown",
             "N/A",
-            "None"
+            "None",
+            "Not Applicable",
+            "No Brand"
+        ]
+    },
+    "titleOpeners": {
+        "words": [
+            "New",
+            "Brand New",
+            "Vintage",
+            "Antique",
+            "Used",
+            "Genuine",
+            "Original",
+            "Rare",
+            "NOS",
+            "NIB",
+            "Sealed"
+        ]
+    },
+    "productCodeLabels": {
+        "words": [
+            "ASIN",
+            "EAN",
+            "UPC",
+            "GTIN",
+            "ISBN"
         ]
     },
     "lot": {

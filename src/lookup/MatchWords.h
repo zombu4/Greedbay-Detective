@@ -24,7 +24,9 @@ struct MatchWords {
     QStringList modelWords;       // "<brand> model <code>": the code counts as right after the brand
     QStringList notCodePrefixes;  // short words never joined with the next number into a model ("No 5")
     QStringList tubeTypes;        // vacuum tube types: not another model of the item
-    QStringList notBrands;        // Brand values that name no brand
+    QStringList notBrands;        // Brand values that name no brand ("Unbranded/Generic": each part is one)
+    QStringList titleOpeners;     // words opening a title that are no brand ("New", "Vintage")
+    QStringList productCodeLabels; // specifics holding a product code (ASIN, UPC): their values are never models
     QStringList lot;
     QStringList documentation;
     QStringList partFits;     // a part on its own

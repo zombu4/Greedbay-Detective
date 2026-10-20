@@ -508,7 +508,15 @@ QStringList LookupSession::askSuggestions() const
 }
 
 QString LookupSession::askBrand() const { return m_runner ? m_runner->result().identity.brandName : QString(); }
-QString LookupSession::askModel() const { return m_runner ? m_runner->result().identity.model : QString(); }
+// The model found, else the best suggestion (owner case 12: the field is
+// pre-filled with the best candidate).
+QString LookupSession::askModel() const
+{
+    if (!m_runner)
+        return {};
+    const lookup::Identity &identity = m_runner->result().identity;
+    return identity.model.isEmpty() ? identity.candidates.value(0) : identity.model;
+}
 QString LookupSession::askProductName() const { return m_runner ? m_runner->result().identity.productName : QString(); }
 
 } // namespace app::ui
