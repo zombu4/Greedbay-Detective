@@ -2109,6 +2109,32 @@
             "for"
         ]
     },
+    "withExtras": {
+        "words": [
+            "with",
+            "w/",
+            "includes",
+            "including",
+            "plus",
+            "+"
+        ]
+    },
+    "notTheItem": {
+        "words": [
+            "license key",
+            "licence key",
+            "unlock key",
+            "unlock code",
+            "option key",
+            "software key",
+            "license code",
+            "activation key",
+            "firmware file",
+            "firmware update",
+            "firmware upgrade",
+            "hack key"
+        ]
+    },
     "likelyBroken": {
         "words": [
             "untested",

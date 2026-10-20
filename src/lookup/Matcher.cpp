@@ -136,8 +136,15 @@ QStringList otherModelCodes(const QStringList &words, const Identity &identity, 
     QStringList own{normalizeCode(identity.model)};
     for (const QString &member : identity.family)
         own.append(normalizeCode(member));
+    // Codes after an extras word come with the item ("7603 mainframe with
+    // 7A26 and 7B53A plug-ins").
+    qsizetype extrasFrom = words.size();
+    for (qsizetype i = 0; i < words.size() && extrasFrom == words.size(); ++i) {
+        if (matchWords.withExtras.contains(words.at(i), Qt::CaseInsensitive))
+            extrasFrom = i;
+    }
     QStringList others;
-    for (qsizetype i = 0; i < words.size(); ++i) {
+    for (qsizetype i = 0; i < extrasFrom; ++i) {
         if (!isModelLike(words, i, matchWords))
             continue;
         const QString code = normalizeCode(words.at(i));
@@ -334,6 +341,11 @@ Match matchRow(const QString &title, const Identity &identity, const MatchWords 
     reasons.append(QStringLiteral("model %1 and brand %2 found").arg(written, brandWord));
 
     const bool system = isSystem(identity, words);
+    // A key, code or firmware for the item, not the item itself.
+    if (firstPhrase(list, words.notTheItem, &word) >= 0) {
+        reasons.append(QStringLiteral("not the item itself (\"%1\")").arg(word));
+        return done(Bucket::NoMatch);
+    }
     if (firstPhrase(list, words.lot, &word) >= 0) {
         reasons.append(QStringLiteral("lot (\"%1\")").arg(word));
         return done(Bucket::Lot);
@@ -367,8 +379,26 @@ Match matchRow(const QString &title, const Identity &identity, const MatchWords 
     // the brand's own complete kit is the item; any other kit is unsure. A
     // kit word after a with-item word belongs to the item ("with NOS tube
     // set", S10).
+    // A kit word right after an accessory word names the accessory ("probe
+    // set", "test lead kit"): the accessory check below decides.
     QString kit;
-    if (firstNotWithItem(list, words.kitWords, words, &kit) >= 0) {
+    QStringList accessoryWords = words.accessory;
+    if (system)
+        accessoryWords.append(words.systemAccessory);
+    bool kitFound = false;
+    for (const QString &phrase : words.kitWords) {
+        for (const qsizetype at : phrasePositions(list, phrase)) {
+            bool withItem = false;
+            for (qsizetype k = std::max<qsizetype>(0, at - 3); k < at && !withItem; ++k)
+                withItem = words.withItem.contains(list.at(k), Qt::CaseInsensitive);
+            const bool afterAccessory = at > 0 && accessoryWords.contains(list.at(at - 1), Qt::CaseInsensitive);
+            if (!withItem && !afterAccessory && !kitFound) {
+                kitFound = true;
+                kit = phrase;
+            }
+        }
+    }
+    if (kitFound) {
         if (firstPhrase(list, words.kitParts, &word) >= 0) {
             reasons.append(QStringLiteral("parts kit (\"%1\" ... \"%2\")").arg(word, kit));
             return done(Bucket::PartFits);

@@ -252,6 +252,8 @@ void TestMatching::specifications_data()
     QTest::newRow("2-PORT") << "analyzer 2-PORT" << "2-PORT" << true;
     QTest::newRow("16BIT") << "generator 16BIT" << "16BIT" << true;
     QTest::newRow("250MSa/s") << "generator 250MSa/s" << "250MSa/s" << true;
+    QTest::newRow("1GSa/s") << "scope 1GSa/s" << "1GSa/s" << true;
+    QTest::newRow("100MHz") << "scope 100MHz" << "100MHz" << true;
     QTest::newRow("20GSa/s") << "scope 20GSa/s" << "20GSa/s" << true;
     QTest::newRow("0-8V/3A") << "supply 0-8V/3A" << "0-8V/3A" << true;
     QTest::newRow("+-25V/1A") << "supply +-25V/1A" << "+-25V/1A" << true;
@@ -839,6 +841,27 @@ void TestMatching::rows_data()
     QTest::newRow("chip with the computer") << "Commodore" << "64" << "Commodore 64 computer, new SID chip" << ""
                                             << Bucket::SameItem;
     QTest::newRow("wave guide") << "HP" << "X281A" << "HP X281A wave guide adapter" << "" << Bucket::SameItem;
+    // Oscilloscopes: mainframes and plug-ins, probes, keys, specs.
+    const QString tek = QStringLiteral("Tektronix");
+    const QString rigol = QStringLiteral("Rigol");
+    QTest::newRow("scope mainframe with plug-ins") << tek << "7603" << "Tektronix 7603 oscilloscope mainframe with 7A26 and 7B53A plug-ins"
+                                                   << "" << Bucket::SameItem;
+    // A digits-only model away from the brand is "to check" (owner decision
+    // 2026-10-19), never counted.
+    QTest::newRow("scope plug-in for the mainframe") << tek << "7603" << "Tektronix 7A26 plug-in for 7603 mainframe" << ""
+                                                     << Bucket::ToCheck;
+    QTest::newRow("scope the plug-in itself") << tek << "7A26" << "Tektronix 7A26 plug-in for 7603 mainframe" << ""
+                                              << Bucket::SameItem;
+    QTest::newRow("scope license key") << rigol << "DS1054Z" << "Rigol DS1054Z license key unlock all options" << ""
+                                       << Bucket::NoMatch;
+    QTest::newRow("scope firmware update") << rigol << "DS1054Z" << "Rigol DS1054Z firmware update service" << ""
+                                           << Bucket::NoMatch;
+    QTest::newRow("scope specs") << rigol << "DS1054Z" << "Rigol DS1054Z 50MHz unlocked 100MHz 1GSa/s 4CH" << ""
+                                 << Bucket::SameItem;
+    QTest::newRow("scope probe set") << rigol << "DS1054Z" << "Rigol DS1054Z probe set" << "" << Bucket::Accessory;
+    QTest::newRow("scope probes for it") << rigol << "DS1054Z" << "Rigol PVP2350 probe set for DS1054Z" << ""
+                                         << Bucket::Companion;
+    QTest::newRow("scope accessory for Tektronix") << tek << "2445" << "Probe for Tektronix 2445" << "" << Bucket::Accessory;
 }
 
 void TestMatching::rows()

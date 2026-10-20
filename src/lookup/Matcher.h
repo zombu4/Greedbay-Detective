@@ -41,6 +41,8 @@ namespace app::lookup {
 //                  name or the product name (or "<name> model"), in a
 //                  documentation title
 //   ToCheck        such a model in any other title (a year?)
+//   NoMatch        a key, code or firmware for the item ("license key",
+//                  "firmware update"), not the item itself
 //   Lot            a lot word ("lot of", "station package", S16)
 //   Documentation  a documentation word not following a with-item word
 //                  ("with manual" belongs to the item; S7, R3)
@@ -50,7 +52,8 @@ namespace app::lookup {
 //                  (partPatterns, R10) - both not when a system title names
 //                  the system itself ("computer, new SID chip")
 //   PartFits       a kit word (kit, set) not following a with-item word
-//                  (S10) with a kit-parts word (recap, cap, capacitors,
+//                  (S10) nor an accessory word ("probe set": the accessory
+//                  decides) with a kit-parts word (recap, cap, capacitors,
 //                  diodes, repair, upgrade, ...) or "kit for" (owner case 9)
 //   ToCheck        a kit word without those and without a complete-kit word
 //                  (unbuilt, complete): a complete kit or parts for it?
@@ -65,8 +68,8 @@ namespace app::lookup {
 //   Accessory      a system title that names another system (R6)
 //   PartFits       a part word with another model code in the title; two
 //                  or more other model codes in the title (rules 4, 14; tube
-//                  types and a seller's code at the end are no other model,
-//                  S3, S4)
+//                  types, a seller's code at the end and codes after an
+//                  extras word - "with 7A26 plug-in" - are no other model)
 //   Accessory      an accessory word (for systems also controllers, power
 //                  supplies, cables, unless the title names the system
 //                  itself; R2) that does not follow a with-item word ("w/
