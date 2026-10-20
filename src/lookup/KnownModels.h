@@ -11,12 +11,10 @@
 namespace app::lookup {
 
 // Brands and models the lookup knows (owner rules 23, 25, 27, 28):
-//   - built in: data/known-models.json (:/lookup/known-models.json), where
-//     every fact names its source (a URL, "owner", "owner purchase" or
-//     "eBay titles (count N)");
+//   - built in: data/known-models.json (:/lookup/known-models.json);
 //   - the user's additions: <work>/known-models.json, the same format plus
 //     "listings": the identity the user confirmed for each listing (rule 7).
-//     Written only by saveConfirmed(); facts there have the source "user".
+//     Written only by saveConfirmed().
 //
 // A brand has several names (aliases, successor names as sellers write
 // them); a name with "search" true is used in search queries, every name is
@@ -64,11 +62,10 @@ class KnownModels {
 public:
     // The built-in data. std::nullopt (and *error) when it cannot be read.
     static std::optional<KnownModels> builtIn(QString *error);
-    // Data in the file format; `requireSources`: every fact must name a
-    // source (the built-in data); "listings" are read when present. A model
+    // Data in the file format; "listings" are read when present. A model
     // may name a brand of the file or one of `otherBrandIds` (the user's file
     // adds models to built-in brands).
-    static std::optional<KnownModels> fromJson(const QByteArray &json, bool requireSources, QString *error,
+    static std::optional<KnownModels> fromJson(const QByteArray &json, QString *error,
                                                const QStringList &otherBrandIds = {});
 
     // Adds the user's file at `path`. A missing file adds nothing and is no

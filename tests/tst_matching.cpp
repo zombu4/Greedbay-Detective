@@ -99,24 +99,27 @@ void TestMatching::dataFilesNameTheirSources()
     QVERIFY(!m_known.brandByName(QStringLiteral("Knight")));
     QCOMPARE(m_known.brandByName(QStringLiteral("Allied Knight"))->id, QStringLiteral("knight"));
     QVERIFY(!m_known.findModel(QStringLiteral("sencore"), QStringLiteral("PR5700")));
-    // A fact without a source is refused in shipped data, accepted in the
-    // user's file.
-    const QByteArray noSource = R"({"format":1,"brands":[{"id":"x","names":[{"name":"X","search":true}]}],"models":[]})";
+    // The shipped data holds only what the app reads: no "source" or
+    // "decision" fields at any level, in either file.
+    QFile builtInFile(QStringLiteral(":/lookup/known-models.json"));
+    QVERIFY(builtInFile.open(QIODevice::ReadOnly));
+    const QByteArray builtInJson = builtInFile.readAll();
+    QVERIFY(!builtInJson.contains("\"source\""));
+    QVERIFY(!builtInJson.contains("\"decision\""));
+    QFile wordsFile(QStringLiteral(":/lookup/match-words.json"));
+    QVERIFY(wordsFile.open(QIODevice::ReadOnly));
+    QVERIFY(!wordsFile.readAll().contains("\"source\""));
     QString error;
-    QVERIFY(!KnownModels::fromJson(noSource, true, &error));
-    QVERIFY2(error.contains(QStringLiteral("no source")), qPrintable(error));
-    QVERIFY(KnownModels::fromJson(noSource, false, &error));
-    const QByteArray badYear = R"({"format":1,"brands":[{"id":"x","names":[{"name":"X","search":true,"source":"owner"}]}],
-        "models":[{"brand":"x","model":"M7X","source":"owner","year":{"first":1990,"last":1980,"source":"owner"}}]})";
-    QVERIFY(!KnownModels::fromJson(badYear, true, &error));
+    const QByteArray badYear = R"({"format":1,"brands":[{"id":"x","names":[{"name":"X","search":true}]}],
+        "models":[{"brand":"x","model":"M7X","year":{"first":1990,"last":1980}}]})";
+    QVERIFY(!KnownModels::fromJson(badYear, &error));
     QVERIFY2(error.contains(QStringLiteral("year")), qPrintable(error));
-    const QByteArray yearNoSource = R"({"format":1,"brands":[{"id":"x","names":[{"name":"X","search":true,"source":"owner"}]}],
-        "models":[{"brand":"x","model":"M7X","source":"owner","year":{"first":1990}}]})";
-    QVERIFY(!KnownModels::fromJson(yearNoSource, true, &error));
-    QVERIFY(KnownModels::fromJson(yearNoSource, false, &error));
-    const QByteArray lastYear = R"({"format":1,"brands":[{"id":"x","names":[{"name":"X","search":true,"source":"owner"}]}],
-        "models":[{"brand":"x","model":"M7X","source":"owner","year":{"first":1980,"last":1993,"source":"owner"}}]})";
-    const std::optional<KnownModels> withLast = KnownModels::fromJson(lastYear, true, &error);
+    const QByteArray firstYear = R"({"format":1,"brands":[{"id":"x","names":[{"name":"X","search":true}]}],
+        "models":[{"brand":"x","model":"M7X","year":{"first":1990}}]})";
+    QVERIFY2(KnownModels::fromJson(firstYear, &error), qPrintable(error));
+    const QByteArray lastYear = R"({"format":1,"brands":[{"id":"x","names":[{"name":"X","search":true}]}],
+        "models":[{"brand":"x","model":"M7X","year":{"first":1980,"last":1993}}]})";
+    const std::optional<KnownModels> withLast = KnownModels::fromJson(lastYear, &error);
     QVERIFY2(withLast, qPrintable(error));
     QCOMPARE(withLast->findModel(QStringLiteral("x"), QStringLiteral("M7X"))->lastYear, 1993);
     // Word lists: a missing list is refused.

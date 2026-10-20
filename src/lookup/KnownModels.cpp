@@ -18,11 +18,6 @@ namespace {
 // is not one.
 constexpr qint64 kMaxUserFileBytes = 4 * 1024 * 1024;
 
-bool hasSource(const QJsonObject &object)
-{
-    return !object.value(QStringLiteral("source")).toString().trimmed().isEmpty();
-}
-
 QString simplifiedLower(const QString &text)
 {
     return text.simplified().toLower();
@@ -60,10 +55,10 @@ std::optional<KnownModels> KnownModels::builtIn(QString *error)
         *error = QStringLiteral("the built-in known-models data is missing");
         return std::nullopt;
     }
-    return fromJson(file.readAll(), true, error);
+    return fromJson(file.readAll(), error);
 }
 
-std::optional<KnownModels> KnownModels::fromJson(const QByteArray &json, bool requireSources, QString *error,
+std::optional<KnownModels> KnownModels::fromJson(const QByteArray &json, QString *error,
                                                  const QStringList &otherBrandIds)
 {
     const QJsonDocument document = QJsonDocument::fromJson(json);
@@ -88,8 +83,6 @@ std::optional<KnownModels> KnownModels::fromJson(const QByteArray &json, bool re
             const QString text = name.value(QStringLiteral("name")).toString().simplified();
             if (text.isEmpty() || !name.value(QStringLiteral("search")).isBool())
                 return fail(QStringLiteral("a name of brand %1 has no text or no search flag").arg(brand.id));
-            if (requireSources && !hasSource(name))
-                return fail(QStringLiteral("the brand name %1 has no source").arg(text));
             brand.names.append({text, name.value(QStringLiteral("search")).toBool(),
                                 name.value(QStringLiteral("onlyFor")).toString().simplified()});
         }
@@ -104,33 +97,20 @@ std::optional<KnownModels> KnownModels::fromJson(const QByteArray &json, bool re
         model.model = object.value(QStringLiteral("model")).toString().simplified();
         if (model.model.isEmpty() || (!data.brandById(model.brandId) && !otherBrandIds.contains(model.brandId)))
             return fail(QStringLiteral("a model has no code or an unknown brand"));
-        if (requireSources && !hasSource(object))
-            return fail(QStringLiteral("the model %1 has no source").arg(model.model));
         const QJsonObject product = object.value(QStringLiteral("productName")).toObject();
-        if (!product.isEmpty()) {
-            if (requireSources && !hasSource(product))
-                return fail(QStringLiteral("the product name of %1 has no source").arg(model.model));
+        if (!product.isEmpty())
             model.productName = product.value(QStringLiteral("name")).toString().simplified();
-        }
         const QJsonObject category = object.value(QStringLiteral("category")).toObject();
-        if (!category.isEmpty()) {
-            if (requireSources && !hasSource(category))
-                return fail(QStringLiteral("the category of %1 has no source").arg(model.model));
+        if (!category.isEmpty())
             model.category = category.value(QStringLiteral("name")).toString().simplified();
-        }
-        // "searchFamily": {"value": true, "source": ...}: every family member
+        // "searchFamily": {"value": true}: every family member
         // is searched too, not only matched (owner case 10).
         const QJsonObject searchFamily = object.value(QStringLiteral("searchFamily")).toObject();
-        if (!searchFamily.isEmpty()) {
-            if (requireSources && !hasSource(searchFamily))
-                return fail(QStringLiteral("searchFamily of %1 has no source").arg(model.model));
+        if (!searchFamily.isEmpty())
             model.searchFamily = searchFamily.value(QStringLiteral("value")).toBool();
-        }
-        // "year": {"first": 1977, "last": 1993, "source": ...}; "last" is optional.
+        // "year": {"first": 1977, "last": 1993}; "last" is optional.
         const QJsonObject year = object.value(QStringLiteral("year")).toObject();
         if (!year.isEmpty()) {
-            if (requireSources && !hasSource(year))
-                return fail(QStringLiteral("the year of %1 has no source").arg(model.model));
             model.firstYear = year.value(QStringLiteral("first")).toInt();
             model.lastYear = year.value(QStringLiteral("last")).toInt();
             if (model.firstYear <= 0 || model.lastYear < 0 || (model.lastYear > 0 && model.lastYear < model.firstYear))
@@ -138,14 +118,10 @@ std::optional<KnownModels> KnownModels::fromJson(const QByteArray &json, bool re
         }
         for (const QJsonValue &memberValue : object.value(QStringLiteral("family")).toArray()) {
             const QJsonObject member = memberValue.toObject();
-            if (requireSources && !hasSource(member))
-                return fail(QStringLiteral("a family member of %1 has no source").arg(model.model));
             model.family.append(member.value(QStringLiteral("model")).toString().simplified());
         }
         for (const QJsonValue &noteValue : object.value(QStringLiteral("notes")).toArray()) {
             const QJsonObject note = noteValue.toObject();
-            if (requireSources && !hasSource(note))
-                return fail(QStringLiteral("a note on %1 has no source").arg(model.model));
             model.notes.append(note.value(QStringLiteral("text")).toString());
         }
         data.m_models.append(model);
@@ -179,7 +155,7 @@ bool KnownModels::addUserFile(const QString &path, QString *error)
     const std::optional<QJsonObject> object = readUserObject(path, error);
     if (!object)
         return false;
-    const std::optional<KnownModels> data = fromJson(QJsonDocument(*object).toJson(), false, error, brandIds());
+    const std::optional<KnownModels> data = fromJson(QJsonDocument(*object).toJson(), error, brandIds());
     if (!data)
         return false;
     add(*data);
@@ -215,18 +191,15 @@ bool KnownModels::saveConfirmed(const QString &path, const QString &itemId, cons
         brandId = QStringLiteral("user:") + simplifiedLower(brandText);
         brands.append(QJsonObject{{QStringLiteral("id"), brandId},
                                   {QStringLiteral("names"), QJsonArray{QJsonObject{{QStringLiteral("name"), brandText},
-                                                                                   {QStringLiteral("search"), true},
-                                                                                   {QStringLiteral("source"), QStringLiteral("user")}}}}});
+                                                                                   {QStringLiteral("search"), true}}}}});
     }
     if (!findModel(brandId, modelText)) {
         QJsonObject model{{QStringLiteral("brand"), brandId},
                           {QStringLiteral("model"), modelText},
-                          {QStringLiteral("source"), QStringLiteral("user")},
                           {QStringLiteral("family"), QJsonArray()},
                           {QStringLiteral("notes"), QJsonArray()}};
         if (!identity.productName.simplified().isEmpty())
-            model.insert(QStringLiteral("productName"), QJsonObject{{QStringLiteral("name"), identity.productName.simplified()},
-                                                                    {QStringLiteral("source"), QStringLiteral("user")}});
+            model.insert(QStringLiteral("productName"), QJsonObject{{QStringLiteral("name"), identity.productName.simplified()}});
         models.append(model);
     }
     QJsonObject listings = root->value(QStringLiteral("listings")).toObject();
@@ -239,7 +212,7 @@ bool KnownModels::saveConfirmed(const QString &path, const QString &itemId, cons
     root->insert(QStringLiteral("listings"), listings);
 
     // Checked before writing: what is saved must read back.
-    const std::optional<KnownModels> saved = fromJson(QJsonDocument(*root).toJson(), false, error, brandIds());
+    const std::optional<KnownModels> saved = fromJson(QJsonDocument(*root).toJson(), error, brandIds());
     if (!saved)
         return false;
     QSaveFile file(path);

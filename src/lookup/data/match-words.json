@@ -1,8 +1,7 @@
 {
     "format": 1,
-    "about": "Words the matcher uses, as data. Phrases are matched as whole words, without regard to case. Each list names where its words come from: the project owner's matching rules and cases (docs: rule N / case N) or the design (DESIGN 3.3). The app does not grade condition (owner decision 2026-10-19); eBay's own condition text is shown as it is.",
+    "about": "Words the matcher uses, as data. Phrases are matched as whole words, without regard to case. The app does not grade condition; eBay's own condition text is shown as it is.",
     "specUnits": {
-        "source": "owner rule 24 and case 7 (DC-600 KHZ, 0-1500V, 50kv, 10Hz-50 MHz, 100:1, 15 MEG, 4 channels); GHz, mA, mV, VAC, VDC added in the phase-4 review (frequency ranges of signal generators and mains voltages are written that way)",
         "words": [
             "Hz",
             "kHz",
@@ -21,13 +20,11 @@
         ]
     },
     "specPrefixes": {
-        "source": "owner rule 24 (DC-600)",
         "words": [
             "DC"
         ]
     },
     "notModels": {
-        "source": "phase-4 review: model-like words that are counts, decades, ordinals or versions, not model codes",
         "patterns": [
             "^\\d+s$",
             "^\\d+(st|nd|rd|th)$",
@@ -36,7 +33,6 @@
         ]
     },
     "notBrands": {
-        "source": "phase-4 review: Brand values that name no brand; the user is asked instead",
         "words": [
             "Unbranded",
             "Does not apply",
@@ -48,7 +44,6 @@
         ]
     },
     "lot": {
-        "source": "owner rule 4 (\"lot of\", quantities), case 1 (LOT OF 13 ...); DESIGN 3.3 (2x)",
         "words": [
             "lot",
             "lot of",
@@ -60,7 +55,6 @@
         ]
     },
     "documentation": {
-        "source": "owner rule 4 (manual, schematic, booklet), cases 1, 3, 7",
         "words": [
             "manual",
             "manuals",
@@ -70,7 +64,6 @@
         ]
     },
     "partFits": {
-        "source": "owner rule 4 (fits, replacement), case 1 (P/N), case 3 (compatible)",
         "words": [
             "fits",
             "replacement",
@@ -79,7 +72,6 @@
         ]
     },
     "partWords": {
-        "source": "owner rule 14 (several model codes + part words: knobs, feet, cover, cord) and case 4; alone they do not make a part (a title saying the item needs a cord is the item)",
         "words": [
             "knob",
             "knobs",
@@ -91,7 +83,6 @@
         ]
     },
     "kitWords": {
-        "source": "owner case 9 (\"RECAP KIT\"; \"kit\"/\"set\" with component types): the word that makes a kit; alone it decides nothing, because the brand's own kits of complete devices are the item",
         "words": [
             "kit",
             "kits",
@@ -99,7 +90,6 @@
         ]
     },
     "kitParts": {
-        "source": "owner case 9: repair/upgrade kits and parts sets for the model (recap, cap, capacitor, rebuild, restoration, repair, upgrade, parts kit; component types capacitors, diodes, resistors, transistors, tubes, knobs); with a kit word -> part/fits",
         "words": [
             "recap",
             "cap",
@@ -124,7 +114,6 @@
         ]
     },
     "kitFor": {
-        "source": "owner case 9: \"kit for\" is a kit for something, not the item",
         "words": [
             "kit for",
             "kits for",
@@ -132,14 +121,12 @@
         ]
     },
     "completeKit": {
-        "source": "owner case 9 (\"Heathkit IP-20 kit unbuilt\": an unbuilt complete brand kit IS the item); a kit with none of these and no parts word is \"to check\"",
         "words": [
             "unbuilt",
             "complete"
         ]
     },
     "accessory": {
-        "source": "owner rule 4 (probe, leads, case), case 5 (holster)",
         "words": [
             "probe",
             "probes",
@@ -150,7 +137,6 @@
         ]
     },
     "withItem": {
-        "source": "owner case 1: the real comp \"... w/ Leads\" is the item with its leads; \"in\" (\"in original case\") added in the phase-4 review; \"and\" is not one (\"Operation and Calibration Manual\" is documentation)",
         "words": [
             "w/",
             "with",
@@ -160,13 +146,11 @@
         ]
     },
     "companion": {
-        "source": "owner rule 13 (\"<other model> ... for <model>\")",
         "words": [
             "for"
         ]
     },
     "likelyBroken": {
-        "source": "owner decision 2026-10-19 \"red flag likely broken\" (verbatim list): words meaning it was not tested or works only partly - all mean broken; a warning only, never grading",
         "words": [
             "untested",
             "not tested",
@@ -187,7 +171,6 @@
         ]
     },
     "partsConditions": {
-        "source": "owner decision 2026-10-19 \"red flag likely broken\": eBay's own condition wording",
         "words": [
             "For parts or not working",
             "Parts Only"

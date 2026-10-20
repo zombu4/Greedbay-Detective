@@ -10,7 +10,7 @@ namespace app::lookup {
 
 // The word lists of the matcher (data/match-words.json, built in as
 // :/lookup/match-words.json). Every list is data, not code: what each one
-// does is described in Matcher.h; where its words come from is in the file.
+// does is described in Matcher.h.
 struct MatchWords {
     QStringList specUnits;    // a number with one of these is a specification
     QStringList specPrefixes; // <prefix>-<number> is a specification (DC-600)
