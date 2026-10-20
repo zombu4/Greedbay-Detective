@@ -21,6 +21,13 @@ Not released yet.
   with the time left.
 - Flags: shipping far above normal, cheaper listings of the same item for
   sale right now, "likely broken" when eBay or the title says so.
+- Sellers: mark a seller you had trouble with (got junk, not as described,
+  scam, never shipped, fake Best Offer, overpriced junk, other) with your own
+  note - kept only on your computer; a marked seller is flagged on every
+  later lookup. Sellers below 96% positive are flagged (the limit is a
+  setting; sellers with very few ratings are not judged). A click on a
+  seller shows the seller's negative or neutral reviews of the last 12
+  months from eBay's feedback page.
 - Rows that are not the same item are kept apart, each with its reason:
   manuals, parts, kits, accessories, lots, other models, software and
   controllers for game systems, re-issues, merchandise. You can tick or

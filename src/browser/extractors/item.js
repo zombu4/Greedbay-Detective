@@ -195,7 +195,8 @@ function sellerIdOf(itemId) {
             continue;
         }
         const id = url.searchParams.get('username');
-        if (!id || !/^[A-Za-z0-9._*-]{1,64}$/.test(id))
+        // The app's own id check (lookup/Sellers.h isSellerId).
+        if (!id || !/^[^\s\/?#&%]{1,64}$/.test(id))
             continue;
         if (itemId && url.searchParams.get('item_id') === itemId)
             return id;

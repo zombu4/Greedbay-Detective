@@ -41,11 +41,12 @@ QJsonObject outcome(const char *page, const QString &reason)
 
 } // namespace
 
-QString Extractor::script(ebay::PageKind kind, const QUrl &url)
+QString Extractor::script(ebay::PageKind kind, const QUrl &url, const QString &option)
 {
     const QJsonObject input{{QStringLiteral("url"), url.toString(QUrl::FullyEncoded)},
                             {QStringLiteral("kind"), ebay::pageKindName(kind)},
-                            {QStringLiteral("itemId"), ebay::itemIdFromUrl(url)}};
+                            {QStringLiteral("itemId"), ebay::itemIdFromUrl(url)},
+                            {QStringLiteral("option"), option}};
     // JSON is valid JavaScript, so the input is passed as a literal.
     const QString inputLiteral = QString::fromUtf8(QJsonDocument(input).toJson(QJsonDocument::Compact));
     return QStringLiteral("(function (input) {\n'use strict';\n") + resourceText(QStringLiteral(":/extractors/common.js"))

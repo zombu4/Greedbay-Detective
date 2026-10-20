@@ -794,7 +794,8 @@ Item {
                 Layout.fillWidth: true
                 Layout.leftMargin: 32
                 wrapMode: Text.WordWrap
-                text: "Kept: the saved lookups, their backups, and the brands and models you confirmed; installing the "
+                text: "Kept: the saved lookups (with your marked sellers and the seller reviews read), their backups, and "
+                      + "the brands and models you confirmed; installing the "
                       + "app again uses them. Deleted: settings, logs, the app's browser profiles with your eBay "
                       + "sign-in and cookies, installed plugins and temporary files."
             }

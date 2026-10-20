@@ -122,7 +122,7 @@ SectionEnd
 Section "Uninstall"
   ; The user's data: kept unless the user says otherwise.
   StrCpy $DATA_CHOICE "keep"
-  MessageBox MB_YESNO|MB_ICONQUESTION "Keep your saved lookups and history?$\n$\nYes: they stay in $LOCALAPPDATA\${APP_DATA}, and installing ${APP_SHOWN} again uses them. Settings, logs, the app's browser profiles (with your eBay sign-in) and plugins are deleted.$\n$\nNo: everything ${APP_SHOWN} saved is deleted." /SD IDYES IDYES dataChosen
+  MessageBox MB_YESNO|MB_ICONQUESTION "Keep your saved lookups and history?$\n$\nYes: they stay (with your marked sellers) in $LOCALAPPDATA\${APP_DATA}, and installing ${APP_SHOWN} again uses them. Settings, logs, the app's browser profiles (with your eBay sign-in) and plugins are deleted.$\n$\nNo: everything ${APP_SHOWN} saved is deleted." /SD IDYES IDYES dataChosen
     StrCpy $DATA_CHOICE "delete"
   dataChosen:
 

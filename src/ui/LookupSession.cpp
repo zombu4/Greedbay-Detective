@@ -129,6 +129,10 @@ bool LookupSession::startCorrected(const lookup::SavedLookup &saved, const QStri
 
 bool LookupSession::startSession(const QString &input, const std::optional<lookup::ItemRecord> &item, bool reviewFirst)
 {
+    if (m_browserBusy && m_browserBusy()) {
+        setError(QStringLiteral("The seller panel is reading a seller's reviews; check again when it has finished."));
+        return false;
+    }
     const Settings settings(m_folder.settingsPath());
     const std::optional<browser::InstalledBrowser> chosen =
         browser::BrowserCatalog::choose(browser::BrowserCatalog::installed(), settings.preferredBrowser());

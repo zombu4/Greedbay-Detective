@@ -9,6 +9,8 @@
 #include "db/Migrations.h"
 #include "lookup/LookupReport.h"
 #include "lookup/LookupStore.h"
+#include "lookup/SellerStore.h"
+#include "ui/SellerController.h"
 #include "ui/Backend.h"
 #include "ui/HistoryController.h"
 #include "ui/Fonts.h"
@@ -106,6 +108,7 @@ private slots:
     void nothingFoundIsSaid();
     void auctionsAndFormats();
     void priceHistoryScreen();
+    void sellers();
 };
 
 void TestUi::initTestCase()
@@ -695,6 +698,138 @@ void TestUi::priceHistoryScreen()
     QVERIFY(empty.items().isEmpty());
     QVERIFY(!empty.message().isEmpty());
     QVERIFY(!empty.canRecheck());
+}
+
+// Owner decisions 2026-10-20: the low-rating flag and badges, the user's own
+// marks on Results (also right after a mark or a settings change), and the
+// seller panel's stored reviews and refusals (no browser is started).
+void TestUi::sellers()
+{
+    LookupResult result;
+    result.status = QStringLiteral("complete");
+    result.item.itemId = QStringLiteral("100000000097");
+    result.item.title = QStringLiteral("Acme Q7 meter");
+    result.item.sellerName = QStringLiteral("Example Store");
+    result.item.sellerId = QStringLiteral("seller-a");
+    result.item.sellerPositivePercent = 94.0;
+    result.item.sellerFeedbackCount = 500;
+    result.identity.brandName = QStringLiteral("Acme");
+    result.identity.model = QStringLiteral("Q7");
+    result.identity.confident = true;
+    result.queries = {QStringLiteral("Acme Q7")};
+    SearchRecord low;
+    low.itemId = QStringLiteral("200000000301");
+    low.title = QStringLiteral("Acme Q7 meter");
+    low.priceCents = 5000;
+    low.shippingCents = 0;
+    low.format = QStringLiteral("fixed_price");
+    low.sellerName = QStringLiteral("seller-b");
+    low.sellerPositivePercent = 90.5;
+    low.sellerFeedbackCount = 300;
+    SearchRecord few = low;
+    few.itemId = QStringLiteral("200000000302");
+    few.sellerName = QStringLiteral("seller-c");
+    few.sellerPositivePercent = 80.0;
+    few.sellerFeedbackCount = 3;
+    result.active = {low, few};
+    QList<Row> rows;
+    for (qsizetype i = 0; i < 2; ++i) {
+        Row row;
+        row.source = Row::Source::Active;
+        row.index = i;
+        row.match.bucket = Bucket::SameItem;
+        row.included = true;
+        rows.append(row);
+    }
+    QString error;
+    const std::optional<qint64> id = LookupStore(QStringLiteral("app")).save(
+        QStringLiteral("100000000097"), result, rows, Valuation(), app::lookup::Depths{240, 240, 200}, 1095, &error);
+    QVERIFY2(id, qPrintable(error));
+    app::ui::Backend backend(*m_folder, QStringLiteral("app"));
+    std::unique_ptr<app::ui::PhotoProvider> photos(backend.takePhotoProvider());
+    QVERIFY(backend.openSaved(*id));
+    app::ui::ResultsController *results = backend.results();
+    // 94.0% with 500 ratings: below 96% -> flagged; the panel opens by id.
+    QCOMPARE(results->sellerId(), QStringLiteral("seller-a"));
+    QVERIFY(results->ratingFlag());
+    QCOMPARE(results->ratingLine(), QStringLiteral("Seller rating 94% (below 96%) - more problems than usual (500 ratings)"));
+    QVERIFY(!results->markedFlag());
+    auto roleOf = [results](const QString &seller, int role) {
+        for (int i = 0; i < results->sameItem()->count(); ++i) {
+            const QModelIndex index = results->sameItem()->index(i);
+            if (index.data(app::ui::RowsModel::SellerRole).toString() == seller)
+                return index.data(role);
+        }
+        return QVariant();
+    };
+    QCOMPARE(roleOf(QStringLiteral("seller-b"), app::ui::RowsModel::SellerBadgeRole).toString(), QStringLiteral("rating 90.5%"));
+    QCOMPARE(roleOf(QStringLiteral("seller-c"), app::ui::RowsModel::SellerBadgeRole).toString(), QStringLiteral("only 3 ratings"));
+    QCOMPARE(roleOf(QStringLiteral("seller-b"), app::ui::RowsModel::SellerPercentRole).toDouble(), 90.5);
+
+    // Marking: the listing's flag and the row's badge at once.
+    app::ui::SellerController *sellers = backend.sellers();
+    QSignalSpy rowChanges(results->sameItem(), &QAbstractItemModel::dataChanged);
+    QVERIFY(sellers->saveMarkFor(QStringLiteral("SELLER-B"), QStringLiteral("overpriced_junk"), QStringLiteral("asks new price")));
+    QVERIFY(!rowChanges.isEmpty());
+    QVERIFY(roleOf(QStringLiteral("seller-b"), app::ui::RowsModel::SellerMarkedRole).toBool());
+    QVERIFY(!roleOf(QStringLiteral("seller-c"), app::ui::RowsModel::SellerMarkedRole).toBool());
+    sellers->open(QStringLiteral("seller-a"), QStringLiteral("Example Store"), 94.0, 500);
+    QVERIFY(sellers->canAct());
+    QVERIFY(sellers->ratingFlagged());
+    QVERIFY(sellers->saveMark(QStringLiteral("fake_best_offer"), QString()));
+    QVERIFY(results->markedFlag());
+    QCOMPARE(results->markedLines().first(),
+             QStringLiteral("You marked seller-a on %1: fake Best Offer (auto-declines)").arg(QDate::currentDate().toString(Qt::ISODate)));
+    QCOMPARE(sellers->marks().size(), 2);
+    QVERIFY(sellers->unmark(QStringLiteral("seller-a")));
+    QVERIFY(!results->markedFlag());
+    QVERIFY(sellers->unmark(QStringLiteral("seller-b")));
+    QVERIFY(!roleOf(QStringLiteral("seller-b"), app::ui::RowsModel::SellerMarkedRole).toBool());
+
+    // A lower limit in Settings: the flag and the badge follow at once.
+    QCOMPARE(backend.settings()->setSellerRules(90.0, 20, 7), QString());
+    QVERIFY(!results->ratingFlag());
+    QVERIFY(roleOf(QStringLiteral("seller-b"), app::ui::RowsModel::SellerBadgeRole).toString().isEmpty());
+    QCOMPARE(backend.settings()->setSellerRules(96.0, 20, 7), QString());
+
+    // Stored reviews younger than the cache days: shown without a page load.
+    const SellerStore store(QStringLiteral("app"));
+    SellerFeedback feedback;
+    feedback.sellerId = QStringLiteral("seller-a");
+    feedback.kind = QStringLiteral("negative");
+    feedback.score = 1234;
+    feedback.negative[0] = 0;
+    feedback.negative[1] = 1;
+    feedback.negative[2] = 1;
+    feedback.reviews = {{QStringLiteral("Past 6 months"), QStringLiteral("Never shipped"), QString(), QString(), false}};
+    feedback.fetchedAt = QDateTime::currentDateTimeUtc().addDays(-2);
+    QVERIFY(store.saveFeedback(feedback, &error));
+    sellers->showReviews(QStringLiteral("negative"), false);
+    QVERIFY(!sellers->session()->busy());
+    QCOMPARE(sellers->reviews().size(), 1);
+    QCOMPARE(sellers->session()->pagesUsed(), 0);
+    QCOMPARE(sellers->reviewSummary(),
+             QStringLiteral("Feedback score 1,234. Negative ratings - last month: 0, last 6 months: 1, last 12 months: 1"));
+
+    // Older than the cache days, while a lookup holds the browser: refused,
+    // nothing read.
+    app::ui::SellerController busy(*m_folder, QStringLiteral("app"), []() { return true; });
+    busy.open(QStringLiteral("seller-a"), QString(), -1, -1);
+    QCOMPARE(busy.ratingText(), QStringLiteral("-"));
+    SellerFeedback old = feedback;
+    old.fetchedAt = QDateTime::currentDateTimeUtc().addDays(-30);
+    QVERIFY(store.saveFeedback(old, &error));
+    busy.showReviews(QStringLiteral("negative"), false);
+    QVERIFY(!busy.session()->busy());
+    QVERIFY(busy.error().contains(QStringLiteral("lookup is using the browser")));
+    // A lookup saved before the seller id was kept: nothing to act on.
+    busy.open(QString(), QStringLiteral("Example Store"), 94.0, 500);
+    QVERIFY(!busy.canAct());
+    QVERIFY(!busy.saveMark(QStringLiteral("scam"), QString()));
+    // The session refuses an id or kind it cannot use, without a browser.
+    QVERIFY(!busy.session()->read(QStringLiteral("a b"), QStringLiteral("negative")));
+    QVERIFY(!busy.session()->read(QStringLiteral("seller-a"), QStringLiteral("positive")));
+    QVERIFY(!busy.session()->busy());
 }
 
 int main(int argc, char *argv[])

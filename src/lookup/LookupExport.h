@@ -22,9 +22,9 @@ namespace app::lookup {
 // spreadsheet never reads a seller's title as a formula.
 QByteArray lookupsCsv(const QList<LookupSummary> &lookups);
 
-// One lookup with its listing, identity, searches and every row (source,
-// item number, title, total, eBay condition, date, bucket, reasons,
-// counted).
+// One lookup with its listing (with the seller's id and rating), identity,
+// searches and every row (source, the card's seller and rating, item number,
+// title, total, eBay condition, date, bucket, reasons, counted).
 QJsonObject lookupJson(const SavedLookup &lookup);
 
 // The user's marked sellers (local only; Settings "Export data"): one line

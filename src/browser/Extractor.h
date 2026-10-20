@@ -35,7 +35,9 @@ public:
 
     // The complete script for `kind`, with `url` (the page's URL) as input.
     // It evaluates to a promise of a JSON string (run it with awaitPromise).
-    static QString script(ebay::PageKind kind, const QUrl &url);
+    // `option`: what the app asked of the page beyond its URL (the feedback
+    // page: "negative" or "neutral", from the requested URL's fragment).
+    static QString script(ebay::PageKind kind, const QUrl &url, const QString &option = QString());
 
     // Checks a script result (the JSON string the script evaluated to; an
     // undefined or non-string result arrives as a null QJsonValue) and turns

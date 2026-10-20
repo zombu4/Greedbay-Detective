@@ -23,6 +23,9 @@ class SellerController : public QObject {
     QML_ELEMENT
     QML_UNCREATABLE("Owned by the backend")
     Q_PROPERTY(QString sellerId READ sellerId NOTIFY changed)
+    // The seller id is one the app can use (lookups saved before the id was
+    // kept have none): marking and reading reviews need it.
+    Q_PROPERTY(bool canAct READ canAct NOTIFY changed)
     Q_PROPERTY(QString displayName READ displayName NOTIFY changed)
     // "99.8% positive, 3,295 ratings", or "-" when the page showed none.
     Q_PROPERTY(QString ratingText READ ratingText NOTIFY changed)
@@ -52,6 +55,7 @@ public:
                      QObject *parent = nullptr);
 
     QString sellerId() const { return m_sellerId; }
+    bool canAct() const { return lookup::isSellerId(m_sellerId); }
     QString displayName() const { return m_displayName; }
     QString ratingText() const;
     QString ratingNote() const;

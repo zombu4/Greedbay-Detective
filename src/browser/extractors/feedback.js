@@ -1,8 +1,9 @@
 // eBay's classic feedback page of a seller (recon 2026-10-20, "seller
 // feedback pages"): /fdbk/feedback_profile/<seller id>?filter=
-// feedback_page%3ARECEIVED_AS_SELLER&sort=RELEVANCEV2, with the kind to list
-// in the URL's fragment: #negative or #neutral (the fragment never reaches
-// eBay).
+// feedback_page%3ARECEIVED_AS_SELLER&sort=RELEVANCEV2. The kind to list
+// ("negative" or "neutral") comes as input.option: the app requests the URL
+// with it as the fragment (never sent to eBay) and passes it on, so the
+// page's own scripts cannot change it.
 //
 // The page: "<seller id> (<feedback score>)"; a table of rating counts by
 // period whose counts are BUTTONs labeled "negative feedback in last 12
@@ -13,9 +14,12 @@
 // click on a count button replaces the list IN PLACE with that kind and
 // period (same URL, no page load).
 //
-// Reads the counts, clicks the 12-month count of the wanted kind (when it is
-// not 0), waits until every listed row carries that kind's icon, and returns
-// the reviews. The buyer column (masked names) is never read.
+// Reads the counts. When the list already shows exactly the wanted reviews
+// (every row of that kind, as many as the 12-month count, at most 25 - also
+// when the page is read again after the user acted in the window), it is
+// read as it is; otherwise the 12-month count of the wanted kind is clicked
+// (when it is not 0) and the list is read once it shows exactly that. The
+// buyer column (masked names) is never read.
 
 const PERIODS = ['1 month', '6 months', '12 months'];
 const WAIT_MS = 10000;
@@ -40,15 +44,24 @@ function countButtons() {
     return {counts: counts, buttons: buttons};
 }
 
-// The seller id from the URL path.
+// The seller id from the URL path (percent-decoded; the app's own id check,
+// lookup/Sellers.h isSellerId).
 function sellerIdOfPage() {
-    const match = /^\/fdbk\/feedback_profile\/([A-Za-z0-9._*-]{1,64})\/?$/.exec(location.pathname);
-    return match ? match[1] : null;
+    const match = /^\/fdbk\/feedback_profile\/([^\/]+)\/?$/.exec(location.pathname);
+    if (!match)
+        return null;
+    let id;
+    try {
+        id = decodeURIComponent(match[1]);
+    } catch (e) {
+        return null;
+    }
+    return /^[^\s\/?#&%]{1,64}$/.test(id) ? id : null;
 }
 
 // "<seller id> (3,295)" -> 3295; null when not shown.
 function scoreOf(sellerId) {
-    const pattern = new RegExp('^' + sellerId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ' \\((\\d{1,3}(?:,\\d{3})+|\\d+)\\)');
+    const pattern = new RegExp('^' + sellerId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ' \\((\\d{1,3}(?:,\\d{3})+|\\d+)\\)', 'i');
     for (const element of document.querySelectorAll('h1, h2, h3, span, a, div')) {
         if (element.children.length > 3)
             continue;
@@ -80,13 +93,16 @@ function reviewOf(row) {
         comment: textOf(row.querySelector('.card__comment')),
         item: textOf(row.querySelector('.card__item')),
         price: textOf(row.querySelector('.card__price')),
-        verified: /Verified purchase/.test(row.textContent),
+        // In the FROM cell: "Buyer: x***y (N)", the price, "Verified purchase".
+        verified: /Verified purchase/.test(textOf(row.querySelector('.card__from')) || ''),
     };
 }
 
-function listShows(kind) {
+// The list shows exactly the wanted reviews: every row of that kind, as many
+// as the page's count (one page holds at most 25).
+function listShows(kind, wanted) {
     const rows = listRows();
-    return rows.length > 0 && rows.every(function (row) { return ratingOf(row) === kind; });
+    return rows.length === Math.min(wanted, 25) && rows.every(function (row) { return ratingOf(row) === kind; });
 }
 
 function extract(input) {
@@ -95,9 +111,9 @@ function extract(input) {
     const sellerId = sellerIdOfPage();
     if (!document.querySelector('table#feedback-cards') || sellerId === null)
         return missingKeyElements('the feedback list (table#feedback-cards) is missing');
-    const kind = (location.hash || '').replace(/^#/, '');
+    const kind = input.option || '';
     if (kind !== 'negative' && kind !== 'neutral')
-        return notExpected('unexpected', 'no review kind (#negative or #neutral) in the address');
+        return notExpected('unexpected', 'no review kind (negative or neutral) was asked for');
     const found = countButtons();
     const base = {
         sellerId: sellerId,
@@ -114,11 +130,15 @@ function extract(input) {
     const button = found.buttons[kind];
     if (!button || wanted < 0)
         return missingKeyElements('the rating count table has no ' + kind + ' count for 12 months');
+    if (listShows(kind, wanted)) {
+        base.reviews = listRows().map(reviewOf);
+        return expected(base);
+    }
     button.click();
     return new Promise(function (resolve) {
         const started = Date.now();
         const timer = setInterval(function () {
-            if (listShows(kind)) {
+            if (listShows(kind, wanted)) {
                 clearInterval(timer);
                 base.reviews = listRows().slice(0, 25).map(reviewOf);
                 resolve(expected(base));

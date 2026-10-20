@@ -34,6 +34,16 @@ QJsonValue centsJson(const std::optional<qint64> &cents)
     return cents ? QJsonValue(static_cast<double>(*cents)) : QJsonValue(QJsonValue::Null);
 }
 
+QJsonValue optionalJson(const std::optional<double> &value)
+{
+    return value ? QJsonValue(*value) : QJsonValue(QJsonValue::Null);
+}
+
+QJsonValue optionalJson(const std::optional<int> &value)
+{
+    return value ? QJsonValue(*value) : QJsonValue(QJsonValue::Null);
+}
+
 } // namespace
 
 QByteArray lookupsCsv(const QList<LookupSummary> &lookups)
@@ -90,8 +100,17 @@ QJsonObject lookupJson(const SavedLookup &lookup)
         specifics.append(QJsonObject{{QStringLiteral("label"), specific.label}, {QStringLiteral("value"), specific.value}});
     QJsonArray rows;
     for (const Row &row : lookup.rows) {
+        // The card's seller and its rating (search rows only).
+        QJsonObject seller;
+        if (row.source != Row::Source::Research) {
+            const SearchRecord &record = row.source == Row::Source::Sold ? result.sold.at(row.index) : result.active.at(row.index);
+            seller = QJsonObject{{QStringLiteral("id"), record.sellerName},
+                                 {QStringLiteral("positivePercent"), optionalJson(record.sellerPositivePercent)},
+                                 {QStringLiteral("feedbackCount"), optionalJson(record.sellerFeedbackCount)}};
+        }
         rows.append(QJsonObject{
             {QStringLiteral("source"), rowSourceName(row.source)},
+            {QStringLiteral("seller"), seller.isEmpty() ? QJsonValue(QJsonValue::Null) : QJsonValue(seller)},
             {QStringLiteral("itemId"), rowItemId(result, row)},
             {QStringLiteral("title"), rowTitle(result, row)},
             {QStringLiteral("totalCents"), centsJson(rowTotal(result, row))},
@@ -116,6 +135,9 @@ QJsonObject lookupJson(const SavedLookup &lookup)
                      {QStringLiteral("currency"), item.currency},
                      {QStringLiteral("condition"), item.condition},
                      {QStringLiteral("sellerName"), item.sellerName},
+                     {QStringLiteral("sellerId"), item.sellerId},
+                     {QStringLiteral("sellerPositivePercent"), optionalJson(item.sellerPositivePercent)},
+                     {QStringLiteral("sellerFeedbackCount"), optionalJson(item.sellerFeedbackCount)},
                      {QStringLiteral("specifics"), specifics}}},
         {QStringLiteral("identity"),
          QJsonObject{{QStringLiteral("brand"), result.identity.brandName},

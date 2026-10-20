@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<!-- Synthetic classic feedback page whose list already shows exactly the
+     wanted reviews (as after the user acted in the window and the page is
+     read again): the extractor must read it without clicking - a click here
+     would replace the list with a positive review. -->
+<html>
+<head><meta charset="utf-8"><title>Feedback Profile</title></head>
+<body>
+<h2><span>seller-a (40)</span></h2>
+<table>
+  <tr><th></th><th><span>1 month</span></th><th><span>6 months</span></th><th><span>12 months</span></th></tr>
+  <tr><td>Negative</td>
+    <td><button aria-label="negative feedback in last 1 month">0</button></td>
+    <td><button aria-label="negative feedback in last 6 months">1</button></td>
+    <td><button id="neg12" aria-label="negative feedback in last 12 months">1</button></td></tr>
+</table>
+<table id="feedback-cards">
+  <tbody id="rows">
+    <tr><td><div class="card__rating"><svg class="icon icon--feedback-negative"></svg></div><div class="card__comment">Wrong part sent</div></td>
+      <td><div class="card__from">Buyer: x***1 (4)</div></td><td><div class="card__links">Past 6 months</div></td></tr>
+  </tbody>
+</table>
+<script>
+document.getElementById('neg12').addEventListener('click', function () {
+  document.getElementById('rows').innerHTML =
+    '<tr><td><div class="card__rating"><svg class="icon icon--feedback-positive"></svg></div><div class="card__comment">clicked</div></td>' +
+    '<td><div class="card__from">Buyer: z***3 (1)</div></td><td><div class="card__links">Past month</div></td></tr>';
+});
+</script>
+</body>
+</html>

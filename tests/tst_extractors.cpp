@@ -768,6 +768,24 @@ void TestExtractors::feedbackPage()
     QVERIFY2(result, qPrintable(error));
     QCOMPARE(result->value("page").toString(), QStringLiteral("unexpected"));
 
+    // Only negatives already, but fewer than the count: clicked, and read once
+    // the whole list is there.
+    result = extract("feedback_partial.html", negative, PageKind::Feedback, &error);
+    QVERIFY2(result, qPrintable(error));
+    QCOMPARE(result->value("page").toString(), QStringLiteral("expected"));
+    QCOMPARE(result->value("data").toObject().value("reviews").toArray().size(), 2);
+    QCOMPARE(result->value("data").toObject().value("reviews").toArray().at(1).toObject().value("comment").toString(),
+             QStringLiteral("Broken on arrival"));
+    // Exactly the wanted reviews already (a page read again after Continue):
+    // read as it is, no click.
+    const char *ready = "https://www.ebay.com/fdbk/feedback_profile/seller-a?filter=feedback_page%3ARECEIVED_AS_SELLER&sort=TIME#negative";
+    result = extract("feedback_ready.html", ready, PageKind::Feedback, &error);
+    QVERIFY2(result, qPrintable(error));
+    QCOMPARE(result->value("page").toString(), QStringLiteral("expected"));
+    const QJsonArray readyReviews = result->value("data").toObject().value("reviews").toArray();
+    QCOMPARE(readyReviews.size(), 1);
+    QCOMPARE(readyReviews.at(0).toObject().value("comment").toString(), QStringLiteral("Wrong part sent"));
+
     // The list never switches: the extractor gives up and says so.
     result = extract("feedback_stuck.html", negative, PageKind::Feedback, &error);
     QVERIFY2(result, qPrintable(error));

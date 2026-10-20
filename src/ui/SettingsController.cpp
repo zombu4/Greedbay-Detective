@@ -130,10 +130,13 @@ QString SettingsController::setSellerRules(double threshold, int fewRatings, int
         return QStringLiteral("The number of ratings cannot be negative.");
     if (cacheDays < 0 || cacheDays > Settings::kMaxSellerFeedbackCacheDays)
         return QStringLiteral("Keep reviews for 0 to %1 days.").arg(Settings::kMaxSellerFeedbackCacheDays);
-    return stored(settings,
-                  settings.setSellerRatingThreshold(threshold) && settings.setSellerFewRatings(fewRatings)
-                      && settings.setSellerFeedbackCacheDays(cacheDays),
-                  QStringLiteral("The seller settings were not stored."));
+    const QString answer = stored(settings,
+                                  settings.setSellerRatingThreshold(threshold) && settings.setSellerFewRatings(fewRatings)
+                                      && settings.setSellerFeedbackCacheDays(cacheDays),
+                                  QStringLiteral("The seller settings were not stored."));
+    if (answer.isEmpty())
+        emit sellerRulesChanged();
+    return answer;
 }
 
 QString SettingsController::setDailyPageCap(int cap)

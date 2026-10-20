@@ -47,7 +47,10 @@ struct SellerRules {
     int fewRatings = 20;
 };
 
-// A user id as eBay writes it: letters, digits and . _ - * (1-64 chars).
+// The app's own check of a seller id, taken as eBay's links give it: 1-64
+// characters (the app's limit; eBay's own rules were not looked up), no
+// white space and none of / ? # & % (the id goes into a URL path, percent-
+// encoded).
 bool isSellerId(const QString &id);
 
 // The low-rating flag (owner: "flag sellers with a review rating below 96%").

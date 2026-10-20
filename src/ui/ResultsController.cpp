@@ -74,7 +74,7 @@ void RowsModel::update(const QList<Entry> &entries)
     }
     m_entries = entries;
     if (!m_entries.isEmpty())
-        emit dataChanged(index(0), index(count() - 1), {IncludedRole, MarkRole});
+        emit dataChanged(index(0), index(count() - 1), {IncludedRole, MarkRole, SellerBadgeRole, SellerMarkedRole});
 }
 
 int RowsModel::rowCount(const QModelIndex &parent) const
@@ -380,6 +380,8 @@ QList<RowsModel::Entry> ResultsController::entries(bool sameItem) const
             return totalA.has_value();
         return totalA && *totalA < *totalB;
     });
+    // The settings once per table (they are read from the settings file).
+    const lookup::SellerRules rules = m_sellerRules();
     QList<RowsModel::Entry> list;
     for (const int i : order) {
         const Row &row = m_saved.rows.at(i);
@@ -403,7 +405,6 @@ QList<RowsModel::Entry> ResultsController::entries(bool sameItem) const
             entry.sellerPercent = record.sellerPositivePercent.value_or(-1);
             entry.sellerCount = record.sellerFeedbackCount.value_or(-1);
             entry.sellerMarked = !record.sellerName.isEmpty() && m_marks.contains(record.sellerName.toLower());
-            const lookup::SellerRules rules = m_sellerRules();
             entry.sellerBadge = lookup::ratingNote(record.sellerPositivePercent, record.sellerFeedbackCount, rules.threshold,
                                                    rules.fewRatings).badge;
             entry.where = soldRow ? (record.confirmed ? QStringLiteral("sold") : QStringLiteral("sold, price not confirmed"))

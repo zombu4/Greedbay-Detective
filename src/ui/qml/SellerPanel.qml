@@ -11,6 +11,9 @@ Popup {
     required property var backend
     readonly property var sellers: backend.sellers
     readonly property var session: backend.sellers.session
+    // The browser read is about the seller shown (another seller's read may
+    // still be running or have left its message).
+    readonly property bool sessionHere: session.sellerId === sellers.sellerId
     // The mark form is open (a new mark or an edit), and the inline question
     // before a mark is removed.
     property bool editing: false
@@ -158,8 +161,14 @@ Popup {
                 }
                 Item { Layout.fillWidth: true }
             }
+            Muted {
+                visible: !panel.sellers.canAct
+                text: "This lookup was saved before the app kept the seller's eBay user id. Check the listing again "
+                      + "to mark the seller or read the reviews."
+            }
             AppButton {
                 visible: !panel.sellers.marked && !panel.editing
+                enabled: panel.sellers.canAct
                 text: "Mark seller"
                 Accessible.name: "Mark this seller"
                 onClicked: panel.startForm()
@@ -287,12 +296,12 @@ Popup {
                 spacing: 12
                 AppButton {
                     text: "Show negative reviews"
-                    enabled: !panel.session.busy
+                    enabled: !panel.session.busy && panel.sellers.canAct
                     onClicked: panel.sellers.showReviews("negative", false)
                 }
                 AppButton {
                     text: "Show neutral reviews"
-                    enabled: !panel.session.busy
+                    enabled: !panel.session.busy && panel.sellers.canAct
                     onClicked: panel.sellers.showReviews("neutral", false)
                 }
                 AppButton {
@@ -305,7 +314,7 @@ Popup {
             }
             RowLayout {
                 Layout.fillWidth: true
-                visible: panel.session.busy
+                visible: panel.session.busy && panel.sessionHere
                 spacing: 12
                 Text {
                     Layout.fillWidth: true
@@ -323,7 +332,7 @@ Popup {
             }
             RowLayout {
                 Layout.fillWidth: true
-                visible: panel.session.waitingForUser
+                visible: panel.session.waitingForUser && panel.sessionHere
                 spacing: 12
                 Text {
                     Layout.fillWidth: true
@@ -353,7 +362,7 @@ Popup {
             Muted {
                 visible: panel.sellers.readText.length > 0
                 text: panel.sellers.readText
-                      + (panel.session.pagesUsed > 0 ? " - " + panel.session.pagesUsed + " eBay "
+                      + (panel.sessionHere && panel.session.pagesUsed > 0 ? " - " + panel.session.pagesUsed + " eBay "
                          + (panel.session.pagesUsed === 1 ? "page" : "pages") + " used this time" : "")
             }
             Repeater {
@@ -422,7 +431,7 @@ Popup {
             Muted {
                 visible: panel.sellers.reviewKind.length > 0 && !panel.session.busy && !panel.session.waitingForUser
                          && panel.sellers.reviews.length === 0 && panel.sellers.readText.length > 0
-                         && panel.sellers.error.length === 0 && panel.session.error.length === 0
+                         && panel.sellers.error.length === 0 && (!panel.sessionHere || panel.session.error.length === 0)
                 text: "No reviews of this kind in the last 12 months."
             }
             Text {
@@ -436,7 +445,7 @@ Popup {
             }
             Text {
                 Layout.fillWidth: true
-                visible: text.length > 0
+                visible: panel.sessionHere && text.length > 0
                 text: panel.session.error
                 wrapMode: Text.WordWrap
                 font.family: Theme.sans

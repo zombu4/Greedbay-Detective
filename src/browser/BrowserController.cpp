@@ -710,7 +710,9 @@ void BrowserController::evaluateExtractor(const QUrl &pageUrl, std::function<voi
             handle(changed);
             return;
         }
-        const QJsonObject params{{QStringLiteral("expression"), Extractor::script(m_kind, pageUrl)},
+        // The requested URL's fragment is the page's option (the feedback
+        // page's kind); the page's own scripts may change location.hash.
+        const QJsonObject params{{QStringLiteral("expression"), Extractor::script(m_kind, pageUrl, m_url.fragment())},
                                  {QStringLiteral("contextId"), created.value(QStringLiteral("executionContextId"))},
                                  {QStringLiteral("returnByValue"), true},
                                  {QStringLiteral("awaitPromise"), true}};

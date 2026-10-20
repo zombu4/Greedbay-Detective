@@ -2,11 +2,14 @@
 
 #include "browser/BrowserCatalog.h"
 #include "browser/BrowserController.h"
+#include "core/PageBudget.h"
 #include "core/Settings.h"
 #include "lookup/Sellers.h"
 
 #include <QJsonObject>
 #include <QUrl>
+
+#include <algorithm>
 
 namespace app::ui {
 
@@ -55,6 +58,8 @@ bool SellerSession::read(const QString &sellerId, const QString &kind)
     m_userMessage.clear();
     m_browserError.clear();
     m_answered = false;
+    m_cancelled = false;
+    m_usedBefore = PageBudget(m_folder.pageCountPath(), settings.dailyPageCap()).usedToday();
     connect(controller, &browser::BrowserController::ready, this, [this]() {
         qInfo().noquote() << "sellers: reading the" << m_kind << "reviews of a seller";
         m_controller->fetch(QUrl(lookup::feedbackUrl(m_sellerId, m_kind)), ebay::PageKind::Feedback);
@@ -83,10 +88,14 @@ void SellerSession::onDone(const QJsonObject &reply)
 {
     m_answered = true;
     m_userMessage.clear();
+    // Every page the cap counted, also one whose reading failed or was
+    // stopped after the load.
+    const PageBudget budget(m_folder.pageCountPath(), Settings(m_folder.settingsPath()).dailyPageCap());
+    m_pages = std::max(0, budget.usedToday() - m_usedBefore);
     const QString status = reply.value(QStringLiteral("status")).toString();
-    if (status == QLatin1String("ok") || status == QLatin1String("unexpected_page"))
-        m_pages = 1;
-    if (status == QLatin1String("ok")) {
+    if (m_cancelled) {
+        // "Stopped." stays the message.
+    } else if (status == QLatin1String("ok")) {
         std::optional<lookup::SellerFeedback> feedback =
             lookup::SellerFeedback::fromJson(reply.value(QStringLiteral("result")).toObject());
         QString error;
@@ -130,7 +139,9 @@ void SellerSession::cancel()
     if (!m_controller)
         return;
     m_answered = true;
+    m_cancelled = true;
     m_error = QStringLiteral("Stopped.");
+    emit changed();
     close();
 }
 

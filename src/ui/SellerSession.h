@@ -29,7 +29,7 @@ class SellerSession : public QObject {
     // What the browser window needs from the user (sign in, a check page).
     Q_PROPERTY(QString userMessage READ userMessage NOTIFY changed)
     Q_PROPERTY(QString error READ error NOTIFY changed)
-    // eBay pages this session loaded (0 or 1).
+    // eBay pages the last read loaded (counted in the daily page cap; 0 or 1).
     Q_PROPERTY(int pagesUsed READ pagesUsed NOTIFY changed)
 
 public:
@@ -40,6 +40,10 @@ public:
     QString userMessage() const { return m_userMessage; }
     QString error() const { return m_error; }
     int pagesUsed() const { return m_pages; }
+
+    // The seller the last read is (or was) about.
+    Q_PROPERTY(QString sellerId READ sellerId NOTIFY changed)
+    QString sellerId() const { return m_sellerId; }
 
     // Starts reading; false (and error) when it cannot start.
     bool read(const QString &sellerId, const QString &kind);
@@ -65,7 +69,10 @@ private:
     QString m_error;
     QString m_browserError;
     int m_pages = 0;
+    // Today's count of the page cap when the read started (pages counted).
+    int m_usedBefore = 0;
     bool m_answered = false;
+    bool m_cancelled = false;
 };
 
 } // namespace app::ui

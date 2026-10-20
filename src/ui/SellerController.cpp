@@ -95,6 +95,8 @@ QString SellerController::reviewSummary() const
                                                         parts.join(QStringLiteral(", ")));
     if (counts[2] > m_feedback->reviews.size())
         text += QStringLiteral(" (eBay lists %1 of them on its page)").arg(m_feedback->reviews.size());
+    if (m_feedback->score)
+        text = QStringLiteral("Feedback score %1. ").arg(QLocale(QLocale::English, QLocale::UnitedStates).toString(*m_feedback->score)) + text;
     return text;
 }
 
@@ -163,6 +165,10 @@ void SellerController::showReviews(const QString &kind, bool refresh)
         std::optional<lookup::SellerFeedback> stored = m_store.feedback(m_sellerId, kind, &error);
         if (stored && days > 0 && stored->fetchedAt.isValid() && stored->fetchedAt.addDays(days) > QDateTime::currentDateTimeUtc()) {
             m_feedback = std::move(stored);
+            // Shown from the database: no page used now, no message of an
+            // earlier read.
+            if (!m_session->busy())
+                m_session->clearError();
             emit changed();
             return;
         }

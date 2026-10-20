@@ -88,7 +88,7 @@ public:
     Q_INVOKABLE QString setPreferredBrowser(const QString &browserId);
     Q_INVOKABLE QString setPageDelaySeconds(int minSeconds, int maxSeconds);
     Q_INVOKABLE QString setDailyPageCap(int cap);
-    // An empty answer: stored; else why not.
+    // An empty answer: stored (and sellerRulesChanged); else why not.
     Q_INVOKABLE QString setSellerRules(double threshold, int fewRatings, int cacheDays);
     Q_INVOKABLE QString useStandardDepths();
     Q_INVOKABLE QString setDepths(int sold, int active, int research);
@@ -105,6 +105,7 @@ public:
     Q_INVOKABLE void refreshBrowsers();
 
 signals:
+    void sellerRulesChanged();
     void changed();
 
 private:

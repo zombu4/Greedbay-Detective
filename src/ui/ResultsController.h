@@ -82,7 +82,8 @@ public:
 
     // A new list (other rows): the model is reset.
     void reset(const QList<Entry> &entries);
-    // The same rows with new checkboxes and marks: dataChanged for all.
+    // The same rows with new checkboxes, marks and seller badges: dataChanged
+    // for all.
     void update(const QList<Entry> &entries);
 
     int count() const { return static_cast<int>(m_entries.size()); }
@@ -139,8 +140,6 @@ class ResultsController : public QObject {
     Q_PROPERTY(bool cheaperFlag READ cheaperFlag NOTIFY changed)
     Q_PROPERTY(QString cheaperLine READ cheaperLine NOTIFY changed)
     Q_PROPERTY(QString cheapestItemId READ cheapestItemId NOTIFY changed)
-    // LIKELY BROKEN (owner decision 2026-10-19): a warning about this listing,
-    // the numbers do not change.
     // Sellers (owner decisions 2026-10-20): the listing's seller as the user
     // marked it (YOU MARKED THIS SELLER), and the low-rating flag.
     Q_PROPERTY(QString sellerId READ sellerId NOTIFY changed)
@@ -150,6 +149,8 @@ class ResultsController : public QObject {
     Q_PROPERTY(QStringList markedLines READ markedLines NOTIFY changed)
     Q_PROPERTY(bool ratingFlag READ ratingFlag NOTIFY changed)
     Q_PROPERTY(QString ratingLine READ ratingLine NOTIFY changed)
+    // LIKELY BROKEN (owner decision 2026-10-19): a warning about this listing,
+    // the numbers do not change.
     Q_PROPERTY(bool brokenFlag READ brokenFlag NOTIFY changed)
     Q_PROPERTY(QString brokenLine READ brokenLine NOTIFY changed)
     // Format (owner decision 2026-10-19 "Buy It Now vs auction").

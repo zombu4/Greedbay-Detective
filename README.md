@@ -101,7 +101,9 @@ installed in `/opt/greedbay-detective` and appears in your applications as
 Everything the app saves is in one work folder: `$HOME/Library/Application
 Support/GreedbayDetective` on macOS, `%LOCALAPPDATA%\GreedbayDetective` on
 Windows, `$HOME/.local/share/GreedbayDetective` on Linux. That includes the
-browser profile the app uses for eBay (your eBay sign-in and cookies). On
+browser profile the app uses for eBay (your eBay sign-in and cookies), and
+the sellers you marked and the seller reviews the app read (in the saved
+lookups' database; never uploaded or shared). On
 macOS the browser also makes `$HOME/Library/Caches/GreedbayDetective`, which
 the uninstall removes too. Exports go to your Downloads folder and are yours
 to keep.
@@ -111,8 +113,9 @@ to keep.
 Use **Settings > Your data > Uninstall...** in the app. It asks whether to
 keep your saved lookups and history:
 
-- **Keep**: the saved lookups, their backups and the brands and models you
-  confirmed stay; installing the app again uses them. Everything else the
+- **Keep**: the saved lookups (with your marked sellers and the seller
+  reviews read), their backups and the brands and models you confirmed stay;
+  installing the app again uses them. Everything else the
   app saved is deleted: settings, logs, the app's browser profiles (your eBay
   sign-in and cookies), installed plugins, temporary files.
 - **Delete everything**: the whole work folder goes.

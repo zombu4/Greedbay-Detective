@@ -24,7 +24,7 @@ namespace app::ui {
 
 Backend::Backend(WorkFolder folder, const QString &connectionName, QObject *parent)
     : QObject(parent), m_folder(std::move(folder)), m_store(connectionName), m_photos(new PhotoProvider),
-      m_results(nullptr), m_recent(new RecentModel(this)), m_history(nullptr), m_settings(nullptr)
+      m_results(nullptr), m_recent(new RecentModel(this)), m_history(nullptr), m_settings(nullptr), m_sellers(nullptr)
 {
     m_connectionName = connectionName;
     QString error;
@@ -57,11 +57,19 @@ Backend::Backend(WorkFolder folder, const QString &connectionName, QObject *pare
         if (!check(input, false))
             emit sessionFailed(m_session ? m_session->errorText() : m_fatalError);
     });
-    m_settings = new SettingsController(m_folder, [this]() { return m_session && m_session->isRunning(); }, this);
+    m_settings = new SettingsController(
+        m_folder, [this]() { return (m_session && m_session->isRunning()) || (m_sellers && m_sellers->session()->busy()); }, this);
     // Sellers (owner decisions 2026-10-20): the seller panel and the user's
     // marks; a changed mark shows at once on Results.
     m_sellers = new SellerController(m_folder, connectionName, [this]() { return m_session && m_session->isRunning(); }, this);
     connect(m_sellers, &SellerController::marksChanged, m_results, &ResultsController::refreshSellerMarks);
+    // Changed seller settings: the flags and badges again.
+    connect(m_settings, &SettingsController::sellerRulesChanged, m_results, &ResultsController::refreshSellerMarks);
+    // One browser at a time: no lookup while reviews are read, and the page
+    // count shown follows the review reads too.
+    if (m_session)
+        m_session->setBrowserBusyCheck([this]() { return m_sellers->session()->busy(); });
+    connect(m_sellers->session(), &SellerSession::changed, this, &Backend::pagesChanged);
 
     // Plugins: only the enabled ones run; matchers on each lookup before it
     // is saved, flaggers, valuators and exporters on the Results screen.
@@ -258,18 +266,25 @@ QVariantMap Backend::exportData()
     const std::optional<QList<lookup::SellerMark>> marks = sellers.marks(&error);
     if (!marks)
         return reply(false, QStringLiteral("Saved the lookups, but the marked sellers cannot be read: %1").arg(error), *csv);
+    QString sellersPath;
     if (!marks->isEmpty()) {
         const QString stemSellers = QStringLiteral("%1-marked-sellers-%2")
                                         .arg(QString::fromLatin1(version::kPackageName),
                                              QDateTime::currentDateTimeUtc().toString(QStringLiteral("yyyyMMdd-HHmmss")));
-        if (!saveExport(folder, stemSellers + QStringLiteral(".csv"), lookup::markedSellersCsv(*marks), &error))
+        const std::optional<QString> sellersCsv =
+            saveExport(folder, stemSellers + QStringLiteral(".csv"), lookup::markedSellersCsv(*marks), &error);
+        if (!sellersCsv)
             return reply(false, QStringLiteral("Saved the lookups, but not the marked sellers: %1").arg(error), *csv);
+        sellersPath = *sellersCsv;
     }
-    return reply(true,
-                 QStringLiteral("Saved %1 as %2 and %3")
-                     .arg(summaries->size() == 1 ? QStringLiteral("1 lookup") : QStringLiteral("%1 lookups").arg(summaries->size()),
-                          QDir::toNativeSeparators(*csv), QDir::toNativeSeparators(*json)),
-                 *csv);
+    QString message = QStringLiteral("Saved %1 as %2 and %3")
+                          .arg(summaries->size() == 1 ? QStringLiteral("1 lookup") : QStringLiteral("%1 lookups").arg(summaries->size()),
+                               QDir::toNativeSeparators(*csv), QDir::toNativeSeparators(*json));
+    if (!sellersPath.isEmpty())
+        message += QStringLiteral(", and your %1 as %2")
+                       .arg(marks->size() == 1 ? QStringLiteral("1 marked seller") : QStringLiteral("%1 marked sellers").arg(marks->size()),
+                            QDir::toNativeSeparators(sellersPath));
+    return reply(true, message, *csv);
 }
 
 void Backend::showFolderOf(const QString &path) const

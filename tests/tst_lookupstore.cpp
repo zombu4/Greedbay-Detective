@@ -640,7 +640,8 @@ void TestLookupStore::sellerMarksAndReviews()
                          QDate(2026, 10, 1)},
                         &error),
              qPrintable(error));
-    // Ids are compared without regard to case; a new mark keeps its first date.
+    // Ids are compared without regard to case; a replaced mark keeps its first
+    // date.
     std::optional<SellerMark> mark = store.markOf(QStringLiteral("SELLER-A"), &error);
     QVERIFY(mark);
     QCOMPARE(mark->reason, QStringLiteral("fake_best_offer"));
@@ -721,7 +722,7 @@ void TestLookupStore::sellerRules()
     // Below the threshold with enough ratings: flagged; the count is shown.
     RatingNote note = ratingNote(94.8, 1200, 96.0, 20);
     QVERIFY(note.flagged);
-    QCOMPARE(note.text, QStringLiteral("Seller rating 94.8% (below 96%) - more problems than usual (1200 ratings)"));
+    QCOMPARE(note.text, QStringLiteral("Seller rating 94.8% (below 96%) - more problems than usual (1,200 ratings)"));
     QCOMPARE(note.badge, QStringLiteral("rating 94.8%"));
     // At or above: nothing to say.
     note = ratingNote(96.0, 50, 96.0, 20);

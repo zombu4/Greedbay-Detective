@@ -1,6 +1,7 @@
 #include "lookup/Sellers.h"
 
 #include <QJsonArray>
+#include <QLocale>
 #include <QRegularExpression>
 #include <QUrl>
 
@@ -48,7 +49,7 @@ QString markReasonLabel(const QString &id)
 
 bool isSellerId(const QString &id)
 {
-    static const QRegularExpression pattern(QStringLiteral("^[A-Za-z0-9._*-]{1,64}$"));
+    static const QRegularExpression pattern(QStringLiteral("^[^\\s/?#&%]{1,64}$"));
     return pattern.match(id).hasMatch();
 }
 
@@ -68,7 +69,8 @@ RatingNote ratingNote(std::optional<double> percent, std::optional<int> count, d
     if (*percent < threshold) {
         note.flagged = true;
         note.text = QStringLiteral("Seller rating %1% (below %2%) - more problems than usual").arg(pct, limit)
-                    + (count ? QStringLiteral(" (%1 ratings)").arg(*count) : QString());
+                    + (count ? QStringLiteral(" (%1 ratings)").arg(QLocale(QLocale::English, QLocale::UnitedStates).toString(*count))
+                             : QString());
         note.badge = QStringLiteral("rating %1%").arg(pct);
     }
     return note;

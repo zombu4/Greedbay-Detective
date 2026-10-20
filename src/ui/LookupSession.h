@@ -7,6 +7,8 @@
 
 #include <QJsonObject>
 #include <QObject>
+
+#include <functional>
 #include <QStringList>
 #include <QtQmlIntegration/qqmlintegration.h>
 
@@ -105,6 +107,9 @@ class LookupSession : public QObject {
     Q_PROPERTY(int reviewActiveDepth READ reviewActiveDepth NOTIFY stateChanged)
     Q_PROPERTY(int reviewResearchDepth READ reviewResearchDepth NOTIFY stateChanged)
 public:
+    // Another part of the app holds the browser (the seller panel reading
+    // reviews): no lookup starts while it returns true.
+    void setBrowserBusyCheck(std::function<bool()> busy) { m_browserBusy = std::move(busy); }
     // Idle: no lookup. Starting: the browser starts. Reading: the listing
     // page. AskIdentity: the user enters the identity. ReviewSearches: the
     // user checks the queries and depths. Searching: the comparison pages. WaitingForUser: the user acts in the browser window.
@@ -179,6 +184,7 @@ signals:
     void ended();
 
 private:
+    std::function<bool()> m_browserBusy;
     bool startSession(const QString &input, const std::optional<lookup::ItemRecord> &item, bool reviewFirst);
     void setState(State state);
     void setError(const QString &error);

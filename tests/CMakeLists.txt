@@ -93,6 +93,8 @@ set(app_test_fixtures
     fixtures/check_page.html
     fixtures/error_page.html
     fixtures/feedback.html
+    fixtures/feedback_partial.html
+    fixtures/feedback_ready.html
     fixtures/feedback_stuck.html
     fixtures/fewer_words.html
     fixtures/item_auction.html
