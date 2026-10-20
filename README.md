@@ -22,25 +22,138 @@ Greedbay Detective does that work for you. Paste a listing link and it shows:
 Every lookup is saved, so you can come back later and see how prices move over time.
 
 ## Status
-Under active development. No release yet.
+Under active development. Version 0.1.0 is not released yet; the installers
+below are built and tested on every push.
 
 [![ci](https://github.com/zombu4/Greedbay-Detective/actions/workflows/ci.yml/badge.svg)](https://github.com/zombu4/Greedbay-Detective/actions/workflows/ci.yml)
 
+## Your eBay account
+
+Greedbay Detective reads eBay in your own browser, in a profile of its own
+that you sign in to with your own eBay account. It loads eBay pages only when
+you check a listing, one page at a time, with a pause between pages and a
+daily limit (both in Settings). It runs in your account, at your own risk:
+eBay's rules apply to your account, and using this app with it is your
+choice and your responsibility.
+
+Nothing leaves your computer except those eBay page loads: no accounts, no
+servers, no tracking.
+
+## Install
+
+Download the installer for your system from the
+[Releases](https://github.com/zombu4/Greedbay-Detective/releases) page. The
+app needs one of these browsers installed: Brave, Google Chrome or Microsoft
+Edge (on Linux also Chromium).
+
+The installers are not signed by Apple or Microsoft, so both systems warn
+before the first start. The steps below get past that warning.
+
+### macOS (Apple Silicon)
+
+1. Open `greedbay-detective-<version>-macos-arm64.dmg` and drag
+   `GreedbayDetective` to `Applications`.
+2. Open the app from `Applications`. macOS stops it with an alert that Apple
+   cannot check it for malicious software. Click **Done**.
+
+   [screenshot: macOS alert "Apple cannot check ... for malicious software" - taken at release]
+
+3. Open **System Settings > Privacy & Security** (you may need to scroll
+   down to **Security**). Next to the message about `GreedbayDetective`,
+   click **Open Anyway**. Apple: "This button is available for about an hour
+   after you try to open the app." Confirm with your login password.
+
+   [screenshot: macOS Privacy & Security with Open Anyway - taken at release]
+
+On macOS 15 and later, Control-click > Open no longer opens such an app;
+Apple's way is Open Anyway as above.
+
+### Windows
+
+1. Run `greedbay-detective-<version>-windows-x64.exe`.
+2. If Windows shows **Windows protected your PC**, click **More info**, then
+   **Run anyway**.
+
+   [screenshot: Windows SmartScreen "Windows protected your PC" with More info and Run anyway - taken at release]
+
+3. The setup installs for your user only, without administrator rights, into
+   `%LOCALAPPDATA%\Programs\GreedbayDetective`, with a Start menu entry and an
+   entry in **Settings > Apps > Installed apps**.
+
+If Smart App Control is on (Windows 11), Windows blocks unsigned apps;
+Microsoft: "There is currently no way to bypass Smart App Control protection
+for individual apps."
+
+### Ubuntu 24.04
+
+```sh
+sudo apt install ./greedbay-detective-<version>-linux-x64.deb
+```
+
+apt also installs the system libraries the app needs from Ubuntu. The app is
+installed in `/opt/greedbay-detective` and appears in your applications as
+**Greedbay Detective**.
+
+   [screenshot: Ubuntu applications with Greedbay Detective - taken at release]
+
+## Where your data is
+
+Everything the app saves is in one work folder: `$HOME/Library/Application
+Support/GreedbayDetective` on macOS, `%LOCALAPPDATA%\GreedbayDetective` on
+Windows, `$HOME/.local/share/GreedbayDetective` on Linux. That includes the
+browser profile the app uses for eBay (your eBay sign-in and cookies). On
+macOS the browser also makes `$HOME/Library/Caches/GreedbayDetective`, which
+the uninstall removes too. Exports go to your Downloads folder and are yours
+to keep.
+
+## Uninstall
+
+Use **Settings > Your data > Uninstall...** in the app. It asks whether to
+keep your saved lookups and history:
+
+- **Keep**: the saved lookups, their backups and the brands and models you
+  confirmed stay; installing the app again uses them. Everything else the
+  app saved is deleted: settings, logs, the app's browser profiles (your eBay
+  sign-in and cookies), installed plugins, temporary files.
+- **Delete everything**: the whole work folder goes.
+
+Then, depending on the system:
+
+- **macOS**: the app removes your data as chosen, moves itself to the Trash
+  and shows what was removed. Dragging the app to the Trash yourself leaves
+  the work folder behind, browser profile included; use Uninstall... instead.
+- **Windows**: the app starts its uninstaller, which asks the same question.
+  You can also uninstall from **Settings > Apps > Installed apps**. A silent
+  uninstall (`Uninstall.exe /S`) keeps your saved lookups and history.
+- **Linux**: the app removes your data as chosen, then its package (it asks
+  for your password; where that is not possible it shows the command).
+  `sudo apt remove greedbay-detective` or `apt purge` removes the program
+  only; your work folder stays.
+
+## Plugins
+
+Plugins add rules, figures, warnings or file formats. Each is a folder (or
+.zip) with `manifest.json` and `main.js`, run in a sandbox: it gets only the
+data its permissions name, cannot read files, go online or start programs,
+and is stopped after a time limit. A plugin is off until you turn it on in
+**Settings > Plugins**, which shows its permissions first. Four examples come
+with the app; the plugin API is described in
+[src/plugins/PluginHost.h](src/plugins/PluginHost.h) and
+[src/plugins/PluginManifest.h](src/plugins/PluginManifest.h).
+
 ## Building from source
 
-What builds today: the app itself (paste a listing link; it reads the
-listing, what the same item sold for, what is for sale now and eBay's Product
-Research through your installed browser, sorts out what is not the same item,
-shows the numbers and the flags, and saves every lookup), its settings, a
-developer window for checking the browser session and a lookup by hand (a
-tool, not part of the app), and the tests. The price history screen comes in
-the next phase.
+What builds: the app (lookups, price history, plugins, export, uninstall),
+its installer for your system, a developer window for checking the browser
+session and a lookup by hand (a tool, not part of the app and not packaged),
+and the tests.
 
 You need:
 - CMake 4.4.4 (the project requires 4.4 or newer)
-- Qt 6.12.0 with Qt WebSockets and Qt Task Tree. The code uses Qt Core, Qt Gui,
-  Qt Network, Qt SQL, Qt WebSockets, Qt Qml, Qt Quick, Qt Quick Controls,
-  Qt Widgets (developer window only) and Qt Test; the exact pinned install is in
+- Qt 6.12.0 with Qt WebSockets and Qt Task Tree. The code uses Qt Core (also
+  its private ZIP reader, for plugin .zip files), Qt Gui, Qt Network, Qt SQL,
+  Qt WebSockets, Qt Qml, Qt Quick, Qt Quick Controls, Qt Widgets (developer
+  window only) and Qt Test; the exact pinned install is in
   [.github/workflows/ci.yml](.github/workflows/ci.yml).
 - A Chromium-based browser for reading eBay pages: Brave, Google Chrome or
   Microsoft Edge (on Linux also Chromium). The app starts it as a separate
@@ -49,6 +162,7 @@ You need:
 - Windows: Visual Studio 2026 with the C++ workload and the MSVC v143 (VS 2022)
   build tools; Qt 6.12.0 for Windows is built with MSVC 2022, and the `windows`
   preset compiles with that toolset
+- For the installers: Windows NSIS 3.13; Ubuntu `dpkg-dev` and `file`
 
 Point `QT_ROOT_DIR` at the Qt folder for your system (it contains `bin` and `lib`),
 then configure, build and test with the presets. On macOS (the first line assumes
@@ -67,10 +181,11 @@ last two commands.
 
 The app is then `build/macos/src/Release/GreedbayDetective.app` (macOS),
 `build/linux/src/Release/GreedbayDetective` (Linux) or
-`build\windows\src\Release\GreedbayDetective.exe` (Windows). It keeps
-everything it stores in its work folder: `$HOME/Library/Application
-Support/GreedbayDetective` on macOS, `%LOCALAPPDATA%\GreedbayDetective` on
-Windows, `$HOME/.local/share/GreedbayDetective` on Linux.
+`build\windows\src\Release\GreedbayDetective.exe` (Windows).
+
+To make the installer of your system, run `cpack -C Release` in the build
+folder (`build/macos`, `build/linux` or `build\windows`): a `.dmg`, a `.deb`
+or a setup `.exe`.
 
 On Linux use the presets `linux` and `linux-release`, on Windows `windows` and
 `windows-release` (each also has a `-debug` variant). On Windows the tests load
@@ -78,7 +193,10 @@ the Qt DLLs from Qt's `bin` folder, so add `%QT_ROOT_DIR%\bin` to `PATH` before
 running `ctest`; CI does the same.
 
 CI builds and tests the release presets on macOS 26 (Apple Silicon), Windows
-Server 2025 and Ubuntu 24.04 on every push and pull request.
+Server 2025 and Ubuntu 24.04 on every push and pull request, then builds each
+installer and tests it: install, start, uninstall, and checks that the listed
+paths are gone. A `v*` tag publishes a release from those installers, with
+SHA-256 checksums and the release notes from [CHANGELOG.md](CHANGELOG.md).
 
 Compiler warnings are errors in every build.
 

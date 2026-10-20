@@ -1,0 +1,38 @@
+# Changelog
+
+Every release has a section here; the release workflow publishes the
+section of its version as the release notes. Versions follow
+MAJOR.MINOR.PATCH.
+
+## 0.1.0
+
+Not released yet.
+
+### What it does
+
+- Paste an eBay listing link (or drop it on the window): the app reads the
+  listing in your own installed browser (Brave, Google Chrome, Microsoft
+  Edge; on Linux also Chromium), in a profile of its own, and finds out what
+  the item is.
+- What the same item really sold for: the sold search and eBay's Product
+  Research (real accepted Best Offer prices where eBay has them), totals
+  including shipping, median and middle half, how sure the numbers are.
+- What is for sale now, cheapest first; Buy It Now and auctions told apart,
+  with the time left.
+- Flags: shipping far above normal, cheaper listings of the same item for
+  sale right now, "likely broken" when eBay or the title says so.
+- Rows that are not the same item are kept apart, each with its reason:
+  manuals, parts, kits, accessories, lots, other models, software and
+  controllers for game systems, re-issues, merchandise. You can tick or
+  untick any row; the numbers follow at once.
+- If the app is not sure which model a listing is, it asks you; your answer
+  is saved and used again.
+- Every lookup is saved. Price history shows each sale of an item over 90
+  days, 1 year or 3 years, the listings you checked, and "Re-check now".
+- Plugins: small JavaScript add-ons in a sandbox (no files, no network),
+  off until you turn them on. Four examples come with the app.
+- Export all lookups as CSV and JSON, or one lookup as JSON, into your
+  Downloads folder.
+- Installers for macOS (Apple Silicon), Windows and Ubuntu 24.04, each with a
+  full uninstall that asks whether to keep your saved lookups.
+- A daily cap on eBay pages and a pause between pages, both in Settings.
