@@ -12,6 +12,8 @@
 #include <QtQmlIntegration/qqmlintegration.h>
 
 #include <functional>
+#include <optional>
+#include <utility>
 
 namespace app::plugins {
 class PluginHost;
@@ -141,24 +143,46 @@ class ResultsController : public QObject {
     Q_PROPERTY(QString auctionLabel READ auctionLabel NOTIFY changed)
     Q_PROPERTY(QStringList auctionLines READ auctionLines NOTIFY changed)
     Q_PROPERTY(QString thisLabel READ thisLabel NOTIFY changed)
-    Q_PROPERTY(QString auctionsLine READ auctionsLine NOTIFY changed)
-    // "What the same item really sold for".
-    Q_PROPERTY(QString soldLine READ soldLine NOTIFY changed)
+    // The numbers, each box of its own (owner, 2026-10-20 "make the card
+    // readable"; ui-spec 2): one value per tile, footnotes per box.
+    // Sold on eBay (the sold search).
+    Q_PROPERTY(QString soldHeading READ soldHeading NOTIFY changed)
     Q_PROPERTY(bool hasSoldNumbers READ hasSoldNumbers NOTIFY changed)
     Q_PROPERTY(QString medianText READ medianText NOTIFY changed)
     Q_PROPERTY(QString middleText READ middleText NOTIFY changed)
     Q_PROPERTY(QString lowHighText READ lowHighText NOTIFY changed)
-    Q_PROPERTY(QString forSaleText READ forSaleText NOTIFY changed)
+    Q_PROPERTY(QString soldCountText READ soldCountText NOTIFY changed)
+    Q_PROPERTY(QString soldConfidenceText READ soldConfidenceText NOTIFY changed)
+    // "1 Best Offer sale not counted (real price unknown)", or "".
+    Q_PROPERTY(QString soldBestOfferNote READ soldBestOfferNote NOTIFY changed)
+    // The lookup's own notes (stopped early, ...), under the sold box.
+    Q_PROPERTY(QStringList lookupNotes READ lookupNotes NOTIFY changed)
     // Product Research, with its period (owner decision 2026-10-19: 3 years
-    // by default): a heading line and, when it counted sales, its numbers.
-    Q_PROPERTY(QString researchLine READ researchLine NOTIFY changed)
+    // by default); researchStatus says why there are no numbers, else "".
+    Q_PROPERTY(QString researchHeading READ researchHeading NOTIFY changed)
     Q_PROPERTY(bool hasResearchNumbers READ hasResearchNumbers NOTIFY changed)
     Q_PROPERTY(QString researchMedianText READ researchMedianText NOTIFY changed)
     Q_PROPERTY(QString researchMiddleText READ researchMiddleText NOTIFY changed)
     Q_PROPERTY(QString researchLowHighText READ researchLowHighText NOTIFY changed)
-    // Which numbers the range bar shows: the sold search's, or Product
-    // Research's when the sold search counted none.
-    Q_PROPERTY(QString barSource READ barSource NOTIFY changed)
+    Q_PROPERTY(QString researchCountText READ researchCountText NOTIFY changed)
+    Q_PROPERTY(QString researchConfidenceText READ researchConfidenceText NOTIFY changed)
+    Q_PROPERTY(QString researchStatus READ researchStatus NOTIFY changed)
+    // eBay's own Product Research average, or "".
+    Q_PROPERTY(QString researchFootnote READ researchFootnote NOTIFY changed)
+    // For sale now: Buy It Now count and cheapest (cheapestItemId), the
+    // running auctions and their lowest current bid, the ship-to note.
+    Q_PROPERTY(QString binCountText READ binCountText NOTIFY changed)
+    Q_PROPERTY(QString cheapestBinText READ cheapestBinText NOTIFY changed)
+    Q_PROPERTY(QString auctionsCountText READ auctionsCountText NOTIFY changed)
+    Q_PROPERTY(QString lowestBidText READ lowestBidText NOTIFY changed)
+    Q_PROPERTY(QString forSaleFootnote READ forSaleFootnote NOTIFY changed)
+    // The bar's legend: what the band is (the sold search's middle half, or
+    // Product Research's when the sold search counted none), the median, and
+    // the scale's ends.
+    Q_PROPERTY(QString bandLegend READ bandLegend NOTIFY changed)
+    Q_PROPERTY(QString medianLegend READ medianLegend NOTIFY changed)
+    Q_PROPERTY(QString scaleLowText READ scaleLowText NOTIFY changed)
+    Q_PROPERTY(QString scaleHighText READ scaleHighText NOTIFY changed)
     // The range bar, in cents; -1 = not shown. barMin/barMax span every value
     // shown on it.
     Q_PROPERTY(double barMin READ barMin NOTIFY changed)
@@ -172,8 +196,6 @@ class ResultsController : public QObject {
     // Owner case 10: every search found nothing (no sold, no for sale, no
     // research row) -> this sentence instead of empty tables; else empty.
     Q_PROPERTY(QString emptyMessage READ emptyMessage NOTIFY changed)
-    // Side lines.
-    Q_PROPERTY(QStringList sideLines READ sideLines NOTIFY changed)
     // Plugins (DESIGN 5): flags from flaggers [{plugin, text, kind}],
     // figures from valuators [{plugin, label, value, note}], the enabled
     // exporters [{id, name}], and what went wrong with a plugin (it was
@@ -248,21 +270,35 @@ public:
     QString auctionLabel() const;
     QStringList auctionLines() const;
     QString thisLabel() const;
-    QString auctionsLine() const;
     // The countdown text for an end in ms since the epoch, at this moment.
     Q_INVOKABLE QString timeLeft(double endMs, bool seconds) const;
-    QString soldLine() const;
+    QString soldHeading() const { return QStringLiteral("Sold on eBay - last 90 days"); }
     bool hasSoldNumbers() const { return m_valuation.sold.medianCents.has_value(); }
     QString medianText() const;
     QString middleText() const;
     QString lowHighText() const;
-    QString forSaleText() const;
-    QString researchLine() const;
+    QString soldCountText() const;
+    QString soldConfidenceText() const;
+    QString soldBestOfferNote() const;
+    QStringList lookupNotes() const;
+    QString researchHeading() const;
     bool hasResearchNumbers() const { return m_valuation.research.medianCents.has_value(); }
     QString researchMedianText() const;
     QString researchMiddleText() const;
     QString researchLowHighText() const;
-    QString barSource() const;
+    QString researchCountText() const;
+    QString researchConfidenceText() const;
+    QString researchStatus() const;
+    QString researchFootnote() const;
+    QString binCountText() const;
+    QString cheapestBinText() const;
+    QString auctionsCountText() const;
+    QString lowestBidText() const;
+    QString forSaleFootnote() const;
+    QString bandLegend() const;
+    QString medianLegend() const;
+    QString scaleLowText() const;
+    QString scaleHighText() const;
     double barMin() const { return m_bar.min; }
     double barMax() const { return m_bar.max; }
     double bandLow() const { return m_bar.bandLow; }
@@ -271,7 +307,6 @@ public:
     double thisValue() const { return m_bar.thisTotal; }
     double cheapestValue() const { return m_bar.cheapest; }
     QString cheapestLabel() const;
-    QStringList sideLines() const;
     QString emptyMessage() const;
     QVariantList pluginFlags() const { return m_pluginFlags; }
     QVariantList pluginValues() const { return m_pluginValues; }
@@ -292,6 +327,9 @@ private:
     QList<RowsModel::Entry> entries(bool sameItem) const;
     // "last 3 years", "last 2 years", "last 90 days".
     QString periodText() const;
+    // The counted auctions still running (other than this listing) and the
+    // lowest current bid among them.
+    std::pair<int, std::optional<qint64>> runningAuctions() const;
 
     // Why this listing is likely broken, or "".
     QString brokenReason() const;

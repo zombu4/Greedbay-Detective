@@ -106,6 +106,9 @@ void HistoryController::rebuild()
 {
     m_heading.clear();
     m_summary.clear();
+    m_medianText.clear();
+    m_middleText.clear();
+    m_salesText.clear();
     m_sales.clear();
     m_checks.clear();
     m_bandLow = m_bandHigh = m_median = -1;
@@ -195,9 +198,10 @@ void HistoryController::rebuild()
     if (points.sales.isEmpty()) {
         m_summary = QStringLiteral("No counted sales of this item in the last %1. Re-check it, or pick a longer window.").arg(window);
     } else {
-        m_summary = QStringLiteral("%1 in the last %2, totals incl. shipping: median %3, middle half %4 - %5")
-                        .arg(countText(points.sales.size(), QStringLiteral("sale"), QStringLiteral("sales")), window,
-                             moneyText(points.medianCents), moneyText(points.p25Cents), moneyText(points.p75Cents));
+        m_summary = QStringLiteral("Sold on eBay in the last %1, totals incl. shipping").arg(window);
+        m_medianText = moneyText(points.medianCents);
+        m_middleText = QStringLiteral("%1 - %2").arg(moneyText(points.p25Cents), moneyText(points.p75Cents));
+        m_salesText = countText(points.sales.size(), QStringLiteral("sale"), QStringLiteral("sales"));
     }
     emit changed();
 }

@@ -155,9 +155,23 @@ Item {
                 color: Theme.warnLabel
             }
 
+            // The window's numbers as tiles, as on the Results screen
+            // (ui-spec 2); without a sale, the summary says why.
+            StatBox {
+                objectName: "historyNumbers"
+                visible: screen.history.medianText.length > 0
+                heading: screen.history.summary
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: Theme.unit
+                    NumberTile { label: "Median sold"; value: screen.history.medianText }
+                    NumberTile { label: "Middle half"; value: screen.history.middleText }
+                    NumberTile { label: "Sales counted"; value: screen.history.salesText }
+                }
+            }
             Text {
                 Layout.fillWidth: true
-                visible: text.length > 0
+                visible: text.length > 0 && screen.history.medianText.length === 0
                 text: screen.history.summary
                 wrapMode: Text.WordWrap
                 font.family: Theme.sans

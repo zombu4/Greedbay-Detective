@@ -303,97 +303,117 @@ Item {
                 lines: [screen.results.emptyMessage]
             }
 
-            // What the same item sold for.
-            Card {
+            // What the same item sold for: one bordered box per source, each
+            // number in a tile of its own, the bar in its own box (owner
+            // 2026-10-20 "make it readable"; ui-spec 2).
+            ColumnLayout {
+                objectName: "soldFor"
                 Layout.fillWidth: true
                 visible: screen.results.emptyMessage.length === 0
-                ColumnLayout {
-                    anchors.fill: parent
-                    spacing: 12
-                    Text {
-                        text: "What the same item really sold for"
-                        font.family: Theme.sans
-                        font.pixelSize: Theme.sectionSize
-                        font.weight: Font.DemiBold
-                        color: Theme.text
-                    }
-                    Muted {
-                        Layout.fillWidth: true
-                        font.family: Theme.mono
-                        text: screen.results.soldLine
-                    }
-                    RangeBar {
-                        Layout.fillWidth: true
-                        visible: screen.results.hasSoldNumbers || screen.results.hasResearchNumbers
-                        minimum: screen.results.barMin
-                        maximum: screen.results.barMax
-                        bandLow: screen.results.bandLow
-                        bandHigh: screen.results.bandHigh
-                        median: screen.results.medianValue
-                        thisValue: screen.results.thisValue
-                        thisLabel: screen.results.thisLabel
-                        cheapest: screen.results.cheapestValue
-                        cheapestLabel: screen.results.cheapestLabel
-                    }
+                spacing: Theme.unit
+                Text {
+                    text: "What the same item really sold for"
+                    font.family: Theme.sans
+                    font.pixelSize: Theme.sectionSize
+                    font.weight: Font.DemiBold
+                    color: Theme.text
+                }
+                StatBox {
+                    objectName: "soldBox"
+                    heading: screen.results.soldHeading
+                    footnotes: screen.results.lookupNotes
                     RowLayout {
                         Layout.fillWidth: true
-                        spacing: 40
-                        KeyNumber { label: "Median sold"; value: screen.results.medianText }
-                        KeyNumber { label: "Middle half of sales"; value: screen.results.middleText }
-                        KeyNumber { label: "Lowest / highest sale"; value: screen.results.lowHighText }
-                        KeyNumber { label: "For sale now, Buy It Now (from lowest)"; value: screen.results.forSaleText }
-                        Item { Layout.fillWidth: true }
-                    }
-                    Muted {
-                        Layout.fillWidth: true
-                        visible: text.length > 0
-                        font.family: Theme.mono
-                        text: screen.results.auctionsLine
-                    }
-                    Muted {
-                        Layout.fillWidth: true
-                        visible: text.length > 0
-                        font.family: Theme.mono
-                        text: screen.results.barSource
-                    }
-                    Muted {
-                        Layout.fillWidth: true
-                        Layout.topMargin: 8
-                        font.family: Theme.mono
-                        color: Theme.secondaryText
-                        text: screen.results.researchLine
-                    }
-                    RowLayout {
-                        Layout.fillWidth: true
-                        visible: screen.results.hasResearchNumbers
-                        spacing: 40
-                        KeyNumber { label: "Median, Product Research"; value: screen.results.researchMedianText }
-                        KeyNumber { label: "Middle half"; value: screen.results.researchMiddleText }
-                        KeyNumber { label: "Lowest / highest"; value: screen.results.researchLowHighText }
-                        Item { Layout.fillWidth: true }
-                    }
-                    Repeater {
-                        model: screen.results.sideLines
-                        Muted {
-                            required property string modelData
-                            Layout.fillWidth: true
-                            font.family: Theme.mono
-                            text: modelData
+                        spacing: Theme.unit
+                        NumberTile { label: "Median sold"; value: screen.results.medianText }
+                        NumberTile { label: "Middle half"; value: screen.results.middleText }
+                        NumberTile { label: "Lowest / highest"; value: screen.results.lowHighText }
+                        NumberTile {
+                            label: "Sales counted"
+                            value: screen.results.soldCountText
+                            detail: screen.results.soldConfidenceText
                         }
                     }
-                    // Valuator plugins: figures next to the app's own, never
-                    // in their place.
+                    Text {
+                        Layout.fillWidth: true
+                        visible: text.length > 0
+                        text: screen.results.soldBestOfferNote
+                        wrapMode: Text.WordWrap
+                        font.family: Theme.sans
+                        font.pixelSize: Theme.bodySize
+                        color: Theme.secondaryText
+                    }
+                }
+                StatBox {
+                    objectName: "researchBox"
+                    heading: screen.results.researchHeading
+                    footnotes: [screen.results.researchFootnote]
+                    RowLayout {
+                        Layout.fillWidth: true
+                        visible: screen.results.researchStatus.length === 0
+                        spacing: Theme.unit
+                        NumberTile { label: "Median"; value: screen.results.researchMedianText }
+                        NumberTile { label: "Middle half"; value: screen.results.researchMiddleText }
+                        NumberTile { label: "Lowest / highest"; value: screen.results.researchLowHighText }
+                        NumberTile {
+                            label: "Listings counted"
+                            value: screen.results.researchCountText
+                            detail: screen.results.researchConfidenceText
+                        }
+                    }
+                    Text {
+                        Layout.fillWidth: true
+                        visible: text.length > 0
+                        text: screen.results.researchStatus
+                        wrapMode: Text.WordWrap
+                        font.family: Theme.sans
+                        font.pixelSize: Theme.bodySize
+                        color: Theme.secondaryText
+                    }
+                }
+                StatBox {
+                    objectName: "forSaleBox"
+                    heading: "For sale now"
+                    footnotes: [screen.results.forSaleFootnote]
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: Theme.unit
+                        NumberTile { label: "Buy It Now listings"; value: screen.results.binCountText }
+                        NumberTile {
+                            label: "Cheapest Buy It Now"
+                            value: screen.results.cheapestBinText
+                            linkText: screen.results.cheapestItemId.length > 0 ? "View" : ""
+                            onLinkActivated: screen.backend.openOnEbay(screen.results.cheapestItemId)
+                        }
+                        NumberTile { label: "Auctions running"; value: screen.results.auctionsCountText }
+                        NumberTile {
+                            label: "Lowest current bid"
+                            value: screen.results.lowestBidText
+                            detail: screen.results.auctionsCountText !== "0" ? "not a final price" : ""
+                        }
+                    }
+                }
+                PriceBarBox {
+                    objectName: "barBox"
+                    visible: screen.results.hasSoldNumbers || screen.results.hasResearchNumbers
+                    results: screen.results
+                }
+                // Valuator plugins: figures next to the app's own, never in
+                // their place.
+                StatBox {
+                    visible: screen.results.pluginValues.length > 0
+                    heading: "Plugin figures"
                     Flow {
                         Layout.fillWidth: true
-                        visible: screen.results.pluginValues.length > 0
-                        spacing: 40
+                        spacing: Theme.unit
                         Repeater {
                             model: screen.results.pluginValues
-                            KeyNumber {
+                            NumberTile {
                                 required property var modelData
+                                width: 260
                                 label: modelData.label + " (plugin: " + modelData.plugin + ")"
-                                    + (modelData.note.length > 0 ? " - " + modelData.note : "")
                                 value: modelData.value
+                                detail: modelData.note
                             }
                         }
                     }

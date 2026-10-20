@@ -42,16 +42,15 @@ QString sourceText(const QString &source)
     return source;
 }
 
-QString numbersLine(const lookup::ValueNumbers &numbers)
+// "high confidence", "not enough data" (+ ", 1 outlier left out").
+QString confidenceText(const lookup::ValueNumbers &numbers)
 {
-    QString line = QStringLiteral("%1 - %2 confidence").arg(countText(numbers.included, QStringLiteral("sale"), QStringLiteral("sales")),
-                                                           numbers.confidence.toLower());
-    if (numbers.medianCents)
-        line += QStringLiteral(", median %1, middle half %2 - %3")
-                    .arg(moneyText(numbers.medianCents), moneyText(numbers.p25Cents), moneyText(numbers.p75Cents));
+    QString text = numbers.confidence.toLower();
+    if (text != QLatin1String("not enough data"))
+        text += QStringLiteral(" confidence");
     if (!numbers.outliers.isEmpty())
-        line += QStringLiteral(", %1 left out").arg(countText(numbers.outliers.size(), QStringLiteral("outlier"), QStringLiteral("outliers")));
-    return line;
+        text += QStringLiteral(", %1 left out").arg(countText(numbers.outliers.size(), QStringLiteral("outlier"), QStringLiteral("outliers")));
+    return text;
 }
 
 } // namespace
@@ -551,7 +550,7 @@ QString ResultsController::thisLabel() const
     return QStringLiteral("THIS ") + totalText();
 }
 
-QString ResultsController::auctionsLine() const
+std::pair<int, std::optional<qint64>> ResultsController::runningAuctions() const
 {
     // The counted auctions (m_valuation.auctions' rows) whose stored end has
     // not passed; one without a known end is taken as running.
@@ -570,9 +569,17 @@ QString ResultsController::auctionsLine() const
         if (!lowest || *record.priceCents < *lowest)
             lowest = record.priceCents;
     }
-    if (running == 0)
-        return {};
-    return QStringLiteral("Auctions running: %1, lowest current bid %2 (not a final price)").arg(running).arg(moneyText(lowest));
+    return {running, lowest};
+}
+
+QString ResultsController::auctionsCountText() const
+{
+    return QString::number(runningAuctions().first);
+}
+
+QString ResultsController::lowestBidText() const
+{
+    return moneyText(runningAuctions().second);
 }
 
 bool ResultsController::cheaperFlag() const
@@ -590,17 +597,23 @@ QString ResultsController::cheaperLine() const
              count == 1 ? QStringLiteral("costs") : QStringLiteral("cost"), moneyText(m_cheapestTotal));
 }
 
-QString ResultsController::soldLine() const
+QString ResultsController::soldCountText() const
 {
-    const lookup::ValueNumbers &sold = m_valuation.sold;
-    QString line = QStringLiteral("Sold search, totals incl. shipping: %1 - %2 confidence")
-                       .arg(countText(sold.included, QStringLiteral("sale"), QStringLiteral("sales")), sold.confidence.toLower());
-    if (!sold.outliers.isEmpty())
-        line += QStringLiteral(", %1 left out").arg(countText(sold.outliers.size(), QStringLiteral("outlier"), QStringLiteral("outliers")));
-    if (sold.unconfirmed > 0)
-        line += QStringLiteral(", %1 with an unconfirmed Best Offer price not counted (their median %2)")
-                    .arg(countText(sold.unconfirmed, QStringLiteral("sale"), QStringLiteral("sales")), moneyText(sold.unconfirmedMedianCents));
-    return line;
+    return countText(m_valuation.sold.included, QStringLiteral("sale"), QStringLiteral("sales"));
+}
+
+QString ResultsController::soldConfidenceText() const
+{
+    return confidenceText(m_valuation.sold);
+}
+
+QString ResultsController::soldBestOfferNote() const
+{
+    const int count = m_valuation.sold.unconfirmed;
+    if (count == 0)
+        return {};
+    return QStringLiteral("%1 not counted (real price unknown)")
+        .arg(countText(count, QStringLiteral("Best Offer sale"), QStringLiteral("Best Offer sales")));
 }
 
 QString ResultsController::medianText() const { return moneyText(m_valuation.sold.medianCents); }
@@ -617,12 +630,19 @@ QString ResultsController::lowHighText() const
     return sold.lowCents ? QStringLiteral("%1 / %2").arg(moneyText(sold.lowCents), moneyText(sold.highCents)) : QStringLiteral("-");
 }
 
-QString ResultsController::forSaleText() const
+QString ResultsController::binCountText() const
 {
-    const QList<qint64> &forSale = m_valuation.forSale;
-    if (forSale.isEmpty())
-        return QStringLiteral("none found");
-    return QStringLiteral("%1, from %2").arg(forSale.size()).arg(lookup::money(forSale.first()));
+    return QString::number(m_valuation.forSale.size());
+}
+
+QString ResultsController::cheapestBinText() const
+{
+    return m_valuation.forSale.isEmpty() ? QStringLiteral("-") : lookup::money(m_valuation.forSale.first());
+}
+
+QString ResultsController::forSaleFootnote() const
+{
+    return QStringLiteral("Shipping costs eBay shows can depend on the ship-to location eBay has for the app's browser.");
 }
 
 QString ResultsController::cheapestLabel() const
@@ -638,24 +658,49 @@ QString ResultsController::periodText() const
     return QStringLiteral("last %1").arg(countText(days, QStringLiteral("day"), QStringLiteral("days")));
 }
 
-QString ResultsController::researchLine() const
+QString ResultsController::researchHeading() const
+{
+    return QStringLiteral("Sold on eBay - %1 (Product Research)").arg(periodText());
+}
+
+QString ResultsController::researchStatus() const
 {
     const lookup::LookupResult &result = m_saved.result;
     if (result.researchUnavailable)
         return QStringLiteral("Product Research is not available on this eBay account, so every sold price is shown as "
                               "unconfirmed.");
+    const lookup::ValueNumbers &research = m_valuation.research;
+    if (research.included > 0 || !research.outliers.isEmpty())
+        return {};
     bool anyResearch = false;
     for (const Row &row : m_saved.rows)
         anyResearch = anyResearch || row.source == Row::Source::Research;
-    const lookup::ValueNumbers &research = m_valuation.research;
-    if (research.included > 0 || !research.outliers.isEmpty())
-        return QStringLiteral("Product Research, %1 (one value per listing: average sold + average shipping): %2")
-            .arg(periodText(), numbersLine(research));
     if (anyResearch)
-        return QStringLiteral("Product Research, %1: no listing of the same item counted.").arg(periodText());
+        return QStringLiteral("No listing of the same item counted.");
     if (m_saved.depths.research > 0 && result.status == QLatin1String("complete"))
-        return QStringLiteral("Product Research, %1: no listings found for these searches.").arg(periodText());
-    return QStringLiteral("Product Research, %1: not read.").arg(periodText());
+        return QStringLiteral("No listings found for these searches.");
+    return QStringLiteral("Not read.");
+}
+
+QString ResultsController::researchCountText() const
+{
+    return countText(m_valuation.research.included, QStringLiteral("listing"), QStringLiteral("listings"));
+}
+
+QString ResultsController::researchConfidenceText() const
+{
+    return confidenceText(m_valuation.research);
+}
+
+QString ResultsController::researchFootnote() const
+{
+    if (!m_valuation.ebayAverageSoldCents)
+        return {};
+    const QJsonValue shipping = m_saved.result.researchSummary.value(QStringLiteral("avgShippingCents"));
+    return QStringLiteral("eBay's own Product Research average: %1 sold%2 (may mix in other models)")
+        .arg(moneyText(m_valuation.ebayAverageSoldCents),
+             shipping.isDouble() ? QStringLiteral(", %1 shipping").arg(moneyText(static_cast<qint64>(shipping.toDouble())))
+                                 : QString());
 }
 
 QString ResultsController::researchMedianText() const { return moneyText(m_valuation.research.medianCents); }
@@ -674,13 +719,29 @@ QString ResultsController::researchLowHighText() const
                              : QStringLiteral("-");
 }
 
-QString ResultsController::barSource() const
+QString ResultsController::bandLegend() const
 {
     if (m_valuation.sold.medianCents)
-        return QStringLiteral("bar: sold search");
+        return QStringLiteral("middle half of sold (last 90 days)");
     if (m_valuation.research.medianCents)
-        return QStringLiteral("bar: Product Research, %1 (the sold search counted no sale)").arg(periodText());
+        return QStringLiteral("middle half of sold (Product Research, %1 - the 90-day search counted no sale)").arg(periodText());
     return {};
+}
+
+QString ResultsController::medianLegend() const
+{
+    const std::optional<qint64> median = m_valuation.sold.medianCents ? m_valuation.sold.medianCents : m_valuation.research.medianCents;
+    return median ? QStringLiteral("median %1").arg(moneyText(median)) : QString();
+}
+
+QString ResultsController::scaleLowText() const
+{
+    return m_bar.min < 0 ? QString() : moneyText(static_cast<qint64>(m_bar.min));
+}
+
+QString ResultsController::scaleHighText() const
+{
+    return m_bar.max < 0 ? QString() : moneyText(static_cast<qint64>(m_bar.max));
 }
 
 QString ResultsController::emptyMessage() const
@@ -695,19 +756,10 @@ QString ResultsController::emptyMessage() const
         .arg(quoted.join(QStringLiteral(", ")));
 }
 
-QStringList ResultsController::sideLines() const
+QStringList ResultsController::lookupNotes() const
 {
-    const lookup::LookupResult &result = m_saved.result;
     QStringList lines;
-    if (m_valuation.ebayAverageSoldCents) {
-        const QJsonValue shipping = result.researchSummary.value(QStringLiteral("avgShippingCents"));
-        lines.append(QStringLiteral("eBay's own Product Research average (it may mix in other models): %1 sold%2")
-                         .arg(moneyText(m_valuation.ebayAverageSoldCents),
-                              shipping.isDouble() ? QStringLiteral(", %1 shipping").arg(moneyText(static_cast<qint64>(shipping.toDouble())))
-                                                  : QString()));
-    }
-    lines.append(QStringLiteral("Shipping costs eBay shows can depend on the ship-to location eBay has for the app's browser."));
-    for (const QString &note : result.notes) {
+    for (const QString &note : m_saved.result.notes) {
         // Shown in the identity bar instead.
         if (note != QLatin1String(lookup::kIdentityMismatch))
             lines.append(note);

@@ -235,6 +235,13 @@ void TestUi::everyScreenLoads()
     QVERIFY(backend.openSaved(m_lookupId));
     QCOMPARE(window->property("screen").toInt(), 1);
     QVERIFY(render(window));
+    // The sold-for numbers in their own bordered boxes, the bar with its
+    // legend (ui-spec 2).
+    for (const char *name : {"soldBox", "researchBox", "forSaleBox", "barBox", "barLegend"}) {
+        auto *item = window->findChild<QQuickItem *>(QLatin1String(name));
+        QVERIFY2(item && item->isVisible(), name);
+        QVERIFY2(item->height() > 0, name);
+    }
     QVERIFY2(g_warnings.isEmpty(), qPrintable(g_warnings.join(QLatin1Char('\n'))));
 }
 
@@ -261,7 +268,10 @@ void TestUi::savedLookupReopens()
     QCOMPARE(results->middleText(), QStringLiteral("$97.50 - $114.00"));
     QCOMPARE(results->lowHighText(), QStringLiteral("$90.00 / $120.00"));
     // For sale: the listing itself is not counted; $103.00 and $110.00.
-    QCOMPARE(results->forSaleText(), QStringLiteral("2, from $103.00"));
+    QCOMPARE(results->binCountText(), QStringLiteral("2"));
+    QCOMPARE(results->cheapestBinText(), QStringLiteral("$103.00"));
+    QCOMPARE(results->soldCountText(), QStringLiteral("4 sales"));
+    QCOMPARE(results->soldBestOfferNote(), QString());
     QVERIFY(results->cheaperFlag());
     QCOMPARE(results->cheaperLine(), QStringLiteral("2 listings of the same item cost less: $103.00 total"));
     QCOMPARE(results->cheapestItemId(), QStringLiteral("200000000011"));
@@ -313,12 +323,15 @@ void TestUi::savedLookupReopens()
 
     // Product Research with its period (3 years by default): one listing,
     // $85.00 + $9.00.
-    QCOMPARE(results->researchLine(),
-             QStringLiteral("Product Research, last 3 years (one value per listing: average sold + average shipping): "
-                            "1 sale - not enough data confidence, median $94.00, middle half $94.00 - $94.00"));
+    QCOMPARE(results->researchHeading(), QStringLiteral("Sold on eBay - last 3 years (Product Research)"));
+    QCOMPARE(results->researchStatus(), QString());
+    QCOMPARE(results->researchCountText(), QStringLiteral("1 listing"));
+    QCOMPARE(results->researchConfidenceText(), QStringLiteral("not enough data"));
     QVERIFY(results->hasResearchNumbers());
     QCOMPARE(results->researchMedianText(), QStringLiteral("$94.00"));
-    QCOMPARE(results->barSource(), QStringLiteral("bar: sold search"));
+    QCOMPARE(results->researchMiddleText(), QStringLiteral("$94.00 - $94.00"));
+    QCOMPARE(results->bandLegend(), QStringLiteral("middle half of sold (last 90 days)"));
+    QCOMPARE(results->medianLegend(), QStringLiteral("median $106.00"));
     // With no sold sale counted, the bar shows Product Research.
     QList<int> soldRows;
     for (int i = 0; i < results->sameItem()->count(); ++i) {
@@ -330,8 +343,9 @@ void TestUi::savedLookupReopens()
     for (const int r : soldRows)
         results->setIncluded(r, false);
     QVERIFY(!results->hasSoldNumbers());
-    QCOMPARE(results->barSource(),
-             QStringLiteral("bar: Product Research, last 3 years (the sold search counted no sale)"));
+    QCOMPARE(results->bandLegend(),
+             QStringLiteral("middle half of sold (Product Research, last 3 years - the 90-day search counted no sale)"));
+    QCOMPARE(results->medianLegend(), QStringLiteral("median $94.00"));
     QCOMPARE(results->medianValue(), 9400.0);
     for (const int r : soldRows)
         results->setIncluded(r, true);
@@ -564,8 +578,10 @@ void TestUi::auctionsAndFormats()
     QCOMPARE(results->auctionEndMs(), -1.0);
     // Cheapest = Buy It Now only: $103.00; the auctions are apart, the ended
     // one no longer running.
-    QCOMPARE(results->forSaleText(), QStringLiteral("1, from $103.00"));
-    QCOMPARE(results->auctionsLine(), QStringLiteral("Auctions running: 1, lowest current bid $70.00 (not a final price)"));
+    QCOMPARE(results->binCountText(), QStringLiteral("1"));
+    QCOMPARE(results->cheapestBinText(), QStringLiteral("$103.00"));
+    QCOMPARE(results->auctionsCountText(), QStringLiteral("1"));
+    QCOMPARE(results->lowestBidText(), QStringLiteral("$70.00"));
     QCOMPARE(results->cheapestItemId(), QStringLiteral("200000000021"));
     QMap<QString, QModelIndex> byId;
     for (int i = 0; i < results->sameItem()->count(); ++i) {

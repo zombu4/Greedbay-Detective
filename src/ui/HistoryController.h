@@ -29,6 +29,11 @@ class HistoryController : public QObject {
     Q_PROPERTY(int windowDays READ windowDays NOTIFY changed)
     Q_PROPERTY(QString heading READ heading NOTIFY changed)
     Q_PROPERTY(QString summary READ summary NOTIFY changed)
+    // The header's tiles (the same look as the Results numbers, ui-spec 2);
+    // empty when the window has no sale.
+    Q_PROPERTY(QString medianText READ medianText NOTIFY changed)
+    Q_PROPERTY(QString middleText READ middleText NOTIFY changed)
+    Q_PROPERTY(QString salesText READ salesText NOTIFY changed)
     // [{time, cents, label}]: each sale in the window, oldest first.
     Q_PROPERTY(QVariantList sales READ sales NOTIFY changed)
     // [{lookupId, time, cents, checked, itemId, total, medianThen, flags}]:
@@ -64,6 +69,9 @@ public:
     int windowDays() const { return m_windowDays; }
     QString heading() const { return m_heading; }
     QString summary() const { return m_summary; }
+    QString medianText() const { return m_medianText; }
+    QString middleText() const { return m_middleText; }
+    QString salesText() const { return m_salesText; }
     QVariantList sales() const { return m_sales; }
     QVariantList checks() const { return m_checks; }
     double minTime() const { return m_minTime; }
@@ -109,6 +117,9 @@ private:
     int m_windowDays = kWindows[0];
     QString m_heading;
     QString m_summary;
+    QString m_medianText;
+    QString m_middleText;
+    QString m_salesText;
     QVariantList m_sales;
     QVariantList m_checks;
     double m_minTime = 0;

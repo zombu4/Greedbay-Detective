@@ -227,7 +227,9 @@ set(app_qml_files
     ui/qml/KeyNumber.qml
     ui/qml/LinkText.qml
     ui/qml/Main.qml
+    ui/qml/NumberTile.qml
     ui/qml/Pill.qml
+    ui/qml/PriceBarBox.qml
     ui/qml/PriceChart.qml
     ui/qml/PriceHistoryScreen.qml
     ui/qml/ProgressPanel.qml
@@ -238,6 +240,7 @@ set(app_qml_files
     ui/qml/SessionOverlay.qml
     ui/qml/SettingsScreen.qml
     ui/qml/StartupError.qml
+    ui/qml/StatBox.qml
     ui/qml/Theme.qml
 )
 # Each view sits at the module's top level (qrc:/qt/qml/GreedbayDetective/Ui/<name>.qml).
