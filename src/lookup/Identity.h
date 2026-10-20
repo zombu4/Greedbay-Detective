@@ -18,8 +18,10 @@ namespace app::lookup {
 // specific, the known brand whose name appears first in the title.
 //
 // Model: first a known model (or family member) of that brand appearing as a
-// whole word, or 2-3 neighbouring words written together, in the "Model" or
-// "MPN" specific or the title. Otherwise the model-like words
+// whole word, or 2-4 neighbouring words written together (the longest first),
+// in the "Model" or "MPN" specific or the title; in the title, a known model
+// of digits only counts only right after a brand name or its product name
+// (owner decision 2026-10-19: "1992" is a model, a year elsewhere). Otherwise the model-like words
 // (isModelLike: a letter and a digit, numbers-only never, no specification,
 // not a count or version) that are no brand name, in upper
 // case with its hyphens kept as written (AA-100, IM-13, LC53, 8904A). These
@@ -38,6 +40,9 @@ struct Identity {
     QList<BrandName> allNames; // every name of the brand, with its scope
     QString model;             // manufacturer's spelling; empty when unknown
     QStringList family;        // codes that count as the same item
+    // Normalized codes of the brand's other known models that begin with this
+    // model's code ("Game Boy" -> GAMEBOYCOLOR; PR57 -> PR570): never this item.
+    QStringList longerModels;
     bool searchFamily = false; // the family members are searched too
     QString productName;
     QString category;          // of a known model; empty otherwise

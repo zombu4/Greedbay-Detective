@@ -67,9 +67,24 @@ void setNewBrand(Identity *identity, const QString &name)
     applyNames(identity);
 }
 
-void setKnownModel(Identity *identity, const KnownModel &model)
+// The normalized codes of the brand's other known models that begin with
+// `model`'s code.
+QStringList longerModelsOf(const KnownModels &known, const KnownModel &model)
+{
+    const QString code = normalizeCode(model.model);
+    QStringList longer;
+    for (const KnownModel *other : known.modelsOf(model.brandId)) {
+        const QString otherCode = normalizeCode(other->model);
+        if (otherCode.size() > code.size() && otherCode.startsWith(code))
+            longer.append(otherCode);
+    }
+    return longer;
+}
+
+void setKnownModel(Identity *identity, const KnownModel &model, const KnownModels &known)
 {
     identity->model = model.model;
+    identity->longerModels = longerModelsOf(known, model);
     identity->family = model.family;
     identity->searchFamily = model.searchFamily;
     identity->productName = model.productName;
@@ -166,7 +181,7 @@ Identity identityFromUser(const ConfirmedIdentity &entered, const KnownModels &k
         setNewBrand(&identity, brandText);
     const QString modelText = entered.model.simplified();
     if (const KnownModel *model = identity.brandId.isEmpty() ? nullptr : known.findModel(identity.brandId, modelText))
-        setKnownModel(&identity, *model);
+        setKnownModel(&identity, *model, known);
     else
         identity.model = modelText;
     if (!entered.productName.simplified().isEmpty())
@@ -213,20 +228,27 @@ Identity identify(const ItemRecord &item, const KnownModels &known, const MatchW
         {item.title, "title", "title"},
     };
 
-    // A known model of the brand, anywhere: one word or 2-3 neighbouring
-    // words written together ("IM 13").
+    // A known model of the brand, anywhere: one word or 2-4 neighbouring
+    // words written together ("IM 13"), the longest first.
     if (brand) {
         for (const auto &source : sources) {
             const QStringList list = titleWords(source.text);
+            const bool inTitle = &source == &sources[std::size(sources) - 1];
+            QStringList brandNames;
+            for (const BrandName &name : brand->names)
+                brandNames.append(name.name);
             for (qsizetype i = 0; i < list.size() && identity.model.isEmpty(); ++i) {
-                QString joined;
-                for (qsizetype n = 0; n < 3 && i + n < list.size(); ++n) {
-                    joined += list.at(i + n);
-                    if (const KnownModel *model = known.findModel(brand->id, joined)) {
-                        setKnownModel(&identity, *model);
-                        identity.source = QStringLiteral("known model");
-                        break;
-                    }
+                for (qsizetype n = std::min<qsizetype>(4, list.size() - i); n >= 1; --n) {
+                    const QString joined = list.mid(i, n).join(QString());
+                    const KnownModel *model = known.findModel(brand->id, joined);
+                    if (!model)
+                        continue;
+                    if (inTitle && isDigitsOnly(joined)
+                        && !positionsAfterNames(list, brandNames + QStringList{model->productName}).contains(i))
+                        continue;
+                    setKnownModel(&identity, *model, known);
+                    identity.source = QStringLiteral("known model");
+                    break;
                 }
             }
             if (!identity.model.isEmpty())

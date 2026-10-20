@@ -26,7 +26,7 @@ qsizetype firstPhrase(const QStringList &words, const QStringList &list, QString
 }
 
 // Positions in `words` (title words) where the model or a family member
-// stands, alone or as 2-3 neighbouring words written together.
+// stands, alone or as 2-4 neighbouring words written together.
 QList<qsizetype> modelPositions(const QStringList &words, const Identity &identity)
 {
     QStringList codes{normalizeCode(identity.model)};
@@ -34,8 +34,18 @@ QList<qsizetype> modelPositions(const QStringList &words, const Identity &identi
         codes.append(normalizeCode(member));
     QList<qsizetype> positions;
     for (qsizetype i = 0; i < words.size(); ++i) {
+        // A longer known model of the brand standing here ("Game Boy Color"
+        // for "Game Boy") is another model.
+        QString longer;
+        bool another = false;
+        for (qsizetype n = 0; n < 5 && i + n < words.size() && !another; ++n) {
+            longer += normalizeCode(words.at(i + n));
+            another = identity.longerModels.contains(longer);
+        }
+        if (another)
+            continue;
         QString joined;
-        for (qsizetype n = 0; n < 3 && i + n < words.size(); ++n) {
+        for (qsizetype n = 0; n < 4 && i + n < words.size(); ++n) {
             joined += normalizeCode(words.at(i + n));
             if (codes.contains(joined)) {
                 positions.append(i);
@@ -46,7 +56,7 @@ QList<qsizetype> modelPositions(const QStringList &words, const Identity &identi
     return positions;
 }
 
-// The whole code that modelPositions found at `at` (one word, or 2-3 words
+// The whole code that modelPositions found at `at` (one word, or 2-4 words
 // written together), normalized.
 QString codeAt(const QStringList &words, qsizetype at, const Identity &identity)
 {
@@ -54,7 +64,7 @@ QString codeAt(const QStringList &words, qsizetype at, const Identity &identity)
     for (const QString &member : identity.family)
         codes.append(normalizeCode(member));
     QString joined;
-    for (qsizetype n = 0; n < 3 && at + n < words.size(); ++n) {
+    for (qsizetype n = 0; n < 4 && at + n < words.size(); ++n) {
         joined += normalizeCode(words.at(at + n));
         if (codes.contains(joined))
             return joined;
@@ -146,6 +156,14 @@ Match matchRow(const QString &title, const Identity &identity, const MatchWords 
             }
         }
     }
+    const bool digitsOnly = isDigitsOnly(codeAt(codeList, models.first(), identity));
+    if (brandWord.isEmpty() && digitsOnly) {
+        // Owner decision 2026-10-19: a digits-only model counts only right
+        // after a brand name; without the brand it is a year or a number.
+        reasons.append(QStringLiteral("%1 without the brand %2: a year or a number, not this item")
+                           .arg(codeList.at(models.first()), identity.brandName));
+        return done(Bucket::NoMatch);
+    }
     if (brandWord.isEmpty()) {
         // The model without the brand: often another product with the same
         // code (cards, car parts), sometimes the item with a short title.
@@ -155,18 +173,26 @@ Match matchRow(const QString &title, const Identity &identity, const MatchWords 
         return done(Bucket::ToCheck);
     }
     // A model of digits only ("2022") also stands for years and quantities:
-    // it counts only right after a brand name.
-    const QString firstCode = codeAt(codeList, models.first(), identity);
-    const bool digitsOnly = !firstCode.isEmpty()
-                            && std::all_of(firstCode.cbegin(), firstCode.cend(), [](QChar c) { return c.isDigit(); });
-    if (digitsOnly
-        && std::none_of(models.cbegin(), models.cend(), [&brands](qsizetype at) { return brands.contains(at - 1); })) {
+    // it counts only right after a brand name or the product name. Elsewhere
+    // the row is never counted: documentation stays documentation, anything
+    // else is for the user to check.
+    QString word;
+    QStringList namesBefore = identity.matchNames;
+    if (!identity.productName.isEmpty())
+        namesBefore.append(identity.productName);
+    const QList<qsizetype> afterNames = positionsAfterNames(codeList, namesBefore);
+    if (digitsOnly && std::none_of(models.cbegin(), models.cend(), [&](qsizetype at) {
+            return brands.contains(at - 1) || afterNames.contains(at);
+        })) {
+        if (firstNotWithItem(list, words.documentation, words, &word) >= 0) {
+            reasons.append(QStringLiteral("documentation (\"%1\"); %2 does not follow the brand name").arg(word, identity.model));
+            return done(Bucket::Documentation);
+        }
         reasons.append(QStringLiteral("model %1 is digits only and does not follow the brand name: check").arg(identity.model));
         return done(Bucket::ToCheck);
     }
     reasons.append(QStringLiteral("model %1 and brand %2 found").arg(codeList.at(models.first()), brandWord));
 
-    QString word;
     if (firstPhrase(list, words.lot, &word) >= 0) {
         reasons.append(QStringLiteral("lot (\"%1\")").arg(word));
         return done(Bucket::Lot);

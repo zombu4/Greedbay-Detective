@@ -13,20 +13,25 @@ namespace app::lookup {
 // (owner rules 3, 4, 10, 13, 14, 17, 19, 28; DESIGN 3.3). All words come from
 // MatchWords.
 //
-// Model found: one title word, or 2-3 neighbouring words written together,
+// Model found: one title word, or 2-4 neighbouring words written together,
 // whose normalized code equals the model's or a family member's (AA-100 =
 // AA100 = AA 100). A code inside a longer word ("15208-AA100",
 // "SP-PR570-BML", "VG91-5040") or a longer model with the same start
-// (PR570 for PR57) is not the model. Brand found: one of the brand's names
+// (PR570 for PR57; a longer known model of the brand, "Game Boy Color" for
+// "Game Boy") is not the model. Brand found: one of the brand's names
 // as whole words, also inside a slash-joined word ("HP/Agilent").
 //
 // Bucket, first that applies:
 //   UnknownItem    no title (rule 19)
-//   NoMatch        the model is not in the title
+//   NoMatch        the model is not in the title, or a digits-only model
+//                  without any brand name (a year or a number; owner decision
+//                  2026-10-19)
 //   ToCheck        the model is there but no brand name (owner case 7 had a
-//                  real sale titled without its brand), or a digits-only model
-//                  that does not directly follow the brand name (a year?);
-//                  never counted unless the user ticks it
+//                  real sale titled without its brand); never counted unless
+//                  the user ticks it
+//   Documentation  a digits-only model that does not directly follow a brand
+//                  name or the product name, in a documentation title
+//   ToCheck        such a model in any other title (a year?)
 //   Lot            a lot word
 //   Documentation  a documentation word not following a with-item word
 //                  ("with manual" belongs to the item)

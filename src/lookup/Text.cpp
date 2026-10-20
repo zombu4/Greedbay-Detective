@@ -74,4 +74,26 @@ QList<qsizetype> phrasePositions(const QStringList &words, const QString &phrase
     return positions;
 }
 
+bool isDigitsOnly(const QString &code)
+{
+    const QString normalized = normalizeCode(code);
+    return !normalized.isEmpty()
+           && std::all_of(normalized.cbegin(), normalized.cend(), [](QChar c) { return c.isDigit(); });
+}
+
+QList<qsizetype> positionsAfterNames(const QStringList &words, const QStringList &names)
+{
+    QList<qsizetype> positions;
+    for (const QString &name : names) {
+        const QStringList parts = titleWords(name);
+        if (parts.isEmpty())
+            continue;
+        for (const qsizetype at : phrasePositions(words, parts.join(QLatin1Char(' ')))) {
+            if (!positions.contains(at + parts.size()))
+                positions.append(at + parts.size());
+        }
+    }
+    return positions;
+}
+
 } // namespace app::lookup

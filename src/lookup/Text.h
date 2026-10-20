@@ -29,6 +29,14 @@ QStringList listWords(const QString &text);
 // True when `word` has at least one letter and one digit.
 bool hasLetterAndDigit(const QString &word);
 
+// True when `code` is digits only after normalizeCode() ("2022", "20-22").
+bool isDigitsOnly(const QString &code);
+
+// The positions in `words` right after one of `names` (each compared as its
+// title words, without case): where a digits-only model may stand (owner
+// decision 2026-10-19).
+QList<qsizetype> positionsAfterNames(const QStringList &words, const QStringList &names);
+
 // The positions in `words` where the phrase starts (its words compared
 // without case); a phrase is split at spaces.
 QList<qsizetype> phrasePositions(const QStringList &words, const QString &phrase);
