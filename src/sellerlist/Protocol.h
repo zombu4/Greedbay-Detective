@@ -62,14 +62,16 @@ struct Revocation {
     static std::optional<Revocation> fromBody(const QJsonObject &body);
 };
 
-// One published report (no reporter identity: no eBay name, no install key).
+// One published report. No reporter identity: no eBay name, no install key,
+// and no item number (the seller could find the buyer in their own orders);
+// the item number stays on the server, for its item check.
 struct PublishedReport {
     QString id;     // hex, from the report's own fingerprint
     QString reason; // a lookup::kMarkReasons id
     QString text;   // the reporter's own words, at most kMaxReportText
     QString month;  // "2026-10": when the reporter bought
-    bool verifiedPurchase = false;
-    QString itemId;
+    // The server found the item on eBay's item page, sold by this seller.
+    bool itemChecked = false;
     QJsonObject toJson() const;
     static std::optional<PublishedReport> fromJson(const QJsonObject &object);
 };
@@ -81,7 +83,7 @@ struct ListedSeller {
 
 struct SellerList {
     qint64 sequence = 0;
-    QDateTime generatedAt;
+    QDateTime signedAt;
     qint64 authorizationSequence = 0; // the authorization of the key that signed it
     QList<ListedSeller> sellers;
     QJsonObject toBody() const;

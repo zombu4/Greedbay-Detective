@@ -371,13 +371,21 @@ qt_add_resources(appmodel "model_licenses"
 )
 
 # The shared seller list's owner keys and onion address (DESIGN 3.7), made
-# by the list owner with tools/seller-list-server "app-master" and put here.
-# Without the file the app says the list is not set up in this build.
-if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/sellerlist/data/master.json")
+# by the list owner with tools/seller-list-server "app-master": by default
+# src/sellerlist/data/master.json; APP_SELLERLIST_MASTER names another file
+# (a test list). Without the file the app says the list is not set up.
+set(APP_SELLERLIST_MASTER "${CMAKE_CURRENT_SOURCE_DIR}/sellerlist/data/master.json"
+    CACHE FILEPATH "The shared seller list's master.json")
+if(EXISTS "${APP_SELLERLIST_MASTER}")
+    get_filename_component(app_master_dir "${APP_SELLERLIST_MASTER}" DIRECTORY)
+    get_filename_component(app_master_name "${APP_SELLERLIST_MASTER}" NAME)
+    if(NOT app_master_name STREQUAL "master.json")
+        message(FATAL_ERROR "APP_SELLERLIST_MASTER must name a file called master.json")
+    endif()
     qt_add_resources(appui "sellerlist_master"
         PREFIX "/sellerlist"
-        BASE "${CMAKE_CURRENT_SOURCE_DIR}/sellerlist/data"
-        FILES "${CMAKE_CURRENT_SOURCE_DIR}/sellerlist/data/master.json"
+        BASE "${app_master_dir}"
+        FILES "${APP_SELLERLIST_MASTER}"
     )
 endif()
 

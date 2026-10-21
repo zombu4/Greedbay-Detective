@@ -305,6 +305,7 @@ void LookupSession::onModelIdentity(const model::ModelAssist::IdentityOutcome &o
     if (!m_identityPending || !m_runner || m_state == State::Closing)
         return;
     m_identityPending = false;
+    m_assist->end();
     if (!outcome.note.isEmpty())
         m_modelNotes.append(outcome.note);
     using Kind = model::ModelAssist::IdentityOutcome::Kind;

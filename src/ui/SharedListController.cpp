@@ -4,6 +4,7 @@
 #include "lookup/Sellers.h"
 #include "sellerlist/Crypto.h"
 
+#include <QDebug>
 #include <QFile>
 #include <QJsonDocument>
 #include <QLocale>
@@ -50,7 +51,11 @@ SharedListController::SharedListController(WorkFolder folder, std::function<bool
 {
     // Nothing goes out without tor: the proxy is set only while tor is ready.
     m_network.setProxy(QNetworkProxy::NoProxy);
-    if (const std::optional<sl::MasterInfo> master = masterInfo()) {
+    // libsodium and liboqs must be set up before any of their functions
+    // runs (sellerlist/Crypto.h); without them the feature stays off.
+    if (!sl::initialize())
+        qWarning().noquote() << "shared list: the cryptography libraries did not start; the list is off";
+    else if (const std::optional<sl::MasterInfo> master = masterInfo()) {
         m_client = new sl::ListClient(&m_network, *master, m_folder.sharedListDir(), this);
         connect(m_client, &sl::ListClient::listFetched, this, [this](bool ok, const QString &why) {
             m_lastError = ok ? QString() : why;
@@ -151,7 +156,7 @@ QVariantList SharedListController::reportsFor(const QString &sellerId) const
                                {QStringLiteral("reasonLabel"), lookup::markReasonLabel(report.reason)},
                                {QStringLiteral("text"), report.text},
                                {QStringLiteral("month"), report.month},
-                               {QStringLiteral("verified"), report.verifiedPurchase}});
+                               {QStringLiteral("itemChecked"), report.itemChecked}});
     }
     return out;
 }
@@ -171,7 +176,8 @@ QHash<QString, QStringList> SharedListController::linesBySeller() const
 
 void SharedListController::refresh()
 {
-    if (!m_client || !readEnabled() || m_job != Job::None)
+    // Not while a report is under way (its purchase check, then its sending).
+    if (!m_client || !readEnabled() || m_job != Job::None || m_reportBusy)
         return;
     runWithTor(Job::Fetch);
 }
@@ -241,7 +247,7 @@ void SharedListController::dispute(const QString &sellerId, const QString &repor
         emit changed();
         return;
     }
-    if (m_job != Job::None) {
+    if (m_job != Job::None || m_reportBusy) {
         m_disputeStatus = tr("Another shared-list request is still running.");
         emit changed();
         return;

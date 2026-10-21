@@ -70,7 +70,7 @@ std::optional<TrustedList> checkBundle(const QJsonObject &bundle, const MasterIn
                    .arg(lastSequence);
         return std::nullopt;
     }
-    if (list->generatedAt > now.addSecs(kFutureLeewaySeconds) || list->generatedAt < authorization->validFrom) {
+    if (list->signedAt > now.addSecs(kFutureLeewaySeconds) || list->signedAt < authorization->validFrom) {
         *why = QStringLiteral("the list's time is not plausible");
         return std::nullopt;
     }

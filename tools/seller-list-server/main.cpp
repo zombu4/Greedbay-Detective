@@ -27,6 +27,7 @@
 #include <QJsonDocument>
 #include <QMap>
 #include <QStringList>
+#include <QUrl>
 
 #include <cstdio>
 
@@ -51,8 +52,10 @@ On the owner's computer (master key; never on the server):
 On the server:
   server-keys --data <dir>
       new server keys in <dir> (asks for a passphrase)
-  serve --data <dir> --port <n> [--passphrase-file <file>]
-      run the service on 127.0.0.1:<n> (tor forwards the onion port to it)
+  serve --data <dir> --port <n> [--passphrase-file <file>] [--test-item-pages <url>]
+      run the service on 127.0.0.1:<n> (tor forwards the onion port to it);
+      --test-item-pages http://127.0.0.1:<port> loads item pages from a local
+      test server instead of eBay (a dry run only)
   queue --data <dir>            reports pending or held, open disputes
   publish --data <dir> --id <report>   publish a held report
   hold --data <dir> --id <report>      take a report off the list (held)
@@ -64,16 +67,19 @@ names a file only its owner can read. Passphrases are never taken from the
 command line.
 )";
 
+// Each line at once, also when the output goes to a file or a service log.
 void say(const QString &text)
 {
     std::fputs(text.toLocal8Bit().constData(), stdout);
     std::fputs("\n", stdout);
+    std::fflush(stdout);
 }
 
 int fail(const QString &text)
 {
     std::fputs(text.toLocal8Bit().constData(), stderr);
     std::fputs("\n", stderr);
+    std::fflush(stderr);
     return 1;
 }
 
@@ -297,7 +303,7 @@ int appMasterCommand(const QMap<QString, QString> &map)
                       pretty(QJsonObject{{QStringLiteral("master"), master->toJson()}, {QStringLiteral("onion"), onion}}), false,
                       &error))
         return fail(error);
-    say(QStringLiteral("written; put it in the app's source as data/master.json"));
+    say(QStringLiteral("written; put it in the app's source as src/sellerlist/data/master.json"));
     return 0;
 }
 
@@ -349,7 +355,16 @@ int serveCommand(const QMap<QString, QString> &map)
     ServerStore store;
     if (!openStore(dir.path(), &store, &error))
         return fail(error);
-    Service service(&store, keys, ItemPageFetcher::Settings{}, Service::Limits{}, dir.filePath(QStringLiteral("list.json")));
+    ItemPageFetcher::Settings fetcher;
+    if (!map.value(QStringLiteral("test-item-pages")).isEmpty()) {
+        const QUrl base(map.value(QStringLiteral("test-item-pages")), QUrl::StrictMode);
+        if (!base.isValid() || base.scheme() != QLatin1String("http") || base.host() != QLatin1String("127.0.0.1")
+            || base.port() <= 0 || !base.path().isEmpty())
+            return fail(QStringLiteral("--test-item-pages must be http://127.0.0.1:<port>"));
+        fetcher.base = base;
+        say(QStringLiteral("dry run: item pages come from %1, not from eBay").arg(base.toString()));
+    }
+    Service service(&store, keys, fetcher, Service::Limits{}, dir.filePath(QStringLiteral("list.json")));
     wipe(&keys.sign);
     wipe(&keys.box);
     QObject::connect(&service, &Service::problem, [](const QString &message) { fail(QStringLiteral("problem: %1").arg(message)); });
@@ -379,7 +394,7 @@ int queueCommand(const QMap<QString, QString> &map)
             return fail(error);
         for (const ServerStore::StoredReport &stored : *reports) {
             say(QStringLiteral("%1 %2 seller %3 item %4 month %5 reason %6 received %7%8")
-                    .arg(ServerStore::statusId(status), stored.report.id, stored.sellerId, stored.report.itemId, stored.report.month,
+                    .arg(ServerStore::statusId(status), stored.report.id, stored.sellerId, stored.itemId, stored.report.month,
                          stored.report.reason, stored.receivedAt.toString(Qt::ISODate),
                          stored.holdReason.isEmpty() ? QString() : QStringLiteral(" - ") + stored.holdReason));
             say(QStringLiteral("    ") + stored.report.text);
@@ -453,7 +468,8 @@ int main(int argc, char *argv[])
          {QStringLiteral("master"), QStringLiteral("server-public"), QStringLiteral("sequence"), QStringLiteral("revocations")}},
         {QStringLiteral("app-master"), {QStringLiteral("master"), QStringLiteral("onion"), QStringLiteral("out")}},
         {QStringLiteral("server-keys"), {QStringLiteral("data"), QStringLiteral("passphrase-file")}},
-        {QStringLiteral("serve"), {QStringLiteral("data"), QStringLiteral("port"), QStringLiteral("passphrase-file")}},
+        {QStringLiteral("serve"),
+         {QStringLiteral("data"), QStringLiteral("port"), QStringLiteral("passphrase-file"), QStringLiteral("test-item-pages")}},
         {QStringLiteral("queue"), {QStringLiteral("data")}},
         {QStringLiteral("publish"), {QStringLiteral("data"), QStringLiteral("id")}},
         {QStringLiteral("hold"), {QStringLiteral("data"), QStringLiteral("id")}},

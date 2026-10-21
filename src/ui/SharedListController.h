@@ -75,7 +75,7 @@ public:
     Q_INVOKABLE void setReadEnabled(bool enabled);
     Q_INVOKABLE void setReportEnabled(bool enabled);
     Q_INVOKABLE void refresh();
-    // [{id, reason, reasonLabel, text, month, verified}] of the saved list.
+    // [{id, reason, reasonLabel, text, month, itemChecked}] of the saved list.
     Q_INVOKABLE QVariantList reportsFor(const QString &sellerId) const;
     // Report lines by lower-case seller id (Results).
     QHash<QString, QStringList> linesBySeller() const;

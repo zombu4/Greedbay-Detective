@@ -90,6 +90,8 @@ std::optional<QString> SellerSession::onReply(const QJsonObject &reply)
     } else {
         failure = reply.value(QStringLiteral("error")).toString();
     }
+    if (failure.isEmpty())
+        failure = QStringLiteral("eBay's page gave no reviews (%1)").arg(status.isEmpty() ? QStringLiteral("no answer") : status);
     // A failure after some pages keeps what was read, marked as a part.
     if (m_read && !m_read->reviews.isEmpty())
         store(failure);

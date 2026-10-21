@@ -158,7 +158,7 @@ bool decode(Engine &engine, const std::vector<llama_token> &tokens, size_t from)
             batch.pos[i] = static_cast<llama_pos>(start + i);
             batch.n_seq_id[i] = 1;
             batch.seq_id[i][0] = 0;
-            batch.logits[i] = start + i + 1 == tokens.size() ? 1 : 0;
+            batch.logits[i] = static_cast<int8_t>(start + i + 1 == tokens.size() ? 1 : 0);
         }
         batch.n_tokens = static_cast<int32_t>(count);
         const int32_t result = llama_decode(engine.context, batch);

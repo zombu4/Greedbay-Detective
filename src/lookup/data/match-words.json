@@ -33,7 +33,8 @@
     },
     "specPrefixes": {
         "words": [
-            "DC"
+            "DC",
+            "AC"
         ]
     },
     "specUnitsGlued": {

@@ -88,7 +88,16 @@ void HttpServer::onNewConnection()
         Connection connection;
         connection.timer = new QTimer(socket);
         connection.timer->setSingleShot(true);
-        connect(connection.timer, &QTimer::timeout, this, [this, socket] { reply(socket, {408, "text/plain", "timeout\n"}); });
+        connect(connection.timer, &QTimer::timeout, this, [this, socket] {
+            auto it = m_connections.find(socket);
+            if (it == m_connections.end())
+                return;
+            // A client that does not read the reply is cut off as well.
+            if (it->replied)
+                socket->abort();
+            else
+                reply(socket, {408, "text/plain", "timeout\n"});
+        });
         connection.timer->start(m_limits.connectionMs);
         m_connections.insert(socket, connection);
         connect(socket, &QTcpSocket::readyRead, this, [this, socket] { onReadyRead(socket); });
@@ -162,7 +171,10 @@ void HttpServer::reply(QTcpSocket *socket, const Response &response)
     auto it = m_connections.find(socket);
     if (it == m_connections.end())
         return;
-    it->timer->stop();
+    if (it->replied)
+        return;
+    it->replied = true;
+    it->timer->start(m_limits.connectionMs);
     disconnect(socket, &QTcpSocket::readyRead, this, nullptr);
     QByteArray head = "HTTP/1.1 " + QByteArray::number(response.status) + ' ' + reasonPhrase(response.status) + "\r\n";
     head += "Content-Type: " + response.contentType + "\r\n";

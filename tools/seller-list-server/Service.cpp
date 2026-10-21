@@ -87,7 +87,7 @@ bool Service::start(QString *error)
     if (!pending)
         return false;
     for (const ServerStore::StoredReport &stored : *pending)
-        m_fetcher->check(stored.report.id, stored.report.itemId, stored.sellerId);
+        m_fetcher->check(stored.report.id, stored.itemId, stored.sellerId);
     if (!publish(true, error))
         return false;
     m_listTimer->start(m_limits.listCheckMs);
@@ -143,8 +143,8 @@ HttpServer::Response Service::receiveReport(const QByteArray &envelope)
         return answer(429, QStringLiteral("refused"), QStringLiteral("too many reports from this installation today"));
 
     ServerStore::StoredReport stored;
-    stored.report = {sl::fingerprint(report->signedBytes()), report->reason, report->text.trimmed(), report->month, false,
-                     report->itemId};
+    stored.report = {sl::fingerprint(report->signedBytes()), report->reason, report->text.trimmed(), report->month, false};
+    stored.itemId = report->itemId;
     stored.sellerId = report->sellerId;
     stored.installKey = report->installKey;
     stored.receivedAt = time;
@@ -160,7 +160,7 @@ HttpServer::Response Service::receiveReport(const QByteArray &envelope)
         emit reportSettled(stored.report.id, ServerStore::Status::Held);
         return answer(202, QStringLiteral("held"), QStringLiteral("held for the list owner to look at"));
     }
-    m_fetcher->check(stored.report.id, stored.report.itemId, stored.sellerId);
+    m_fetcher->check(stored.report.id, stored.itemId, stored.sellerId);
     return answer(202, QStringLiteral("received"));
 }
 
@@ -237,7 +237,7 @@ bool Service::publish(bool force, QString *error)
     // At least the time in seconds: a server whose database was lost (the
     // last sequence with it) still signs lists newer than any the apps have.
     list.sequence = std::max(*last + 1, now().toSecsSinceEpoch());
-    list.generatedAt = now();
+    list.signedAt = now();
     list.authorizationSequence = m_authorization.sequence;
     const std::optional<QJsonObject> signedList = sl::signDocument(list.toBody(), m_keys.sign);
     if (!signedList) {

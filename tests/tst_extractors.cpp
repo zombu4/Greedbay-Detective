@@ -10,6 +10,7 @@
 // every process the browser started has ended.
 #include "browser/BrowserCatalog.h"
 #include "browser/BrowserController.h"
+#include "core/PageBudget.h"
 #include "core/WorkFolder.h"
 #include "support/ProcessList.h"
 
@@ -799,6 +800,8 @@ void TestExtractors::feedbackPage()
     QCOMPARE(pageOne.value("page").toInt(), 1);
     QVERIFY(pageOne.value("hasNext").toBool());
     for (int round = 0; round < 2; ++round) {
+        // Each read on the page counts as one page of the day's cap.
+        const int pagesBefore = app::PageBudget(m_folder->pageCountPath(), 1000).usedToday();
         QSignalSpy again(m_controller, &BrowserController::done);
         m_controller->readOnPage(QStringLiteral("negative@2"));
         QVERIFY(again.wait(60000) || !again.isEmpty());
@@ -810,6 +813,7 @@ void TestExtractors::feedbackPage()
         const QJsonArray rest = second.value("reviews").toArray();
         QCOMPARE(rest.size(), 5);
         QCOMPARE(rest.at(0).toObject().value("comment").toString(), QStringLiteral("Bad order 26"));
+        QCOMPARE(app::PageBudget(m_folder->pageCountPath(), 1000).usedToday(), pagesBefore + 1);
     }
     // Page 3 of a 2-page list: said, not guessed.
     {

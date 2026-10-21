@@ -181,6 +181,8 @@ void ModelAssist::identityAnswer(const std::optional<QString> &text, const QStri
     }
     const Verdict verdict = model::checkIdentity(*answer, m_item, *m_known, *m_words);
     outcome.answer = *answer;
+    if (verdict.accepted)
+        outcome.answer.model = verdict.model;
     if (!verdict.accepted) {
         outcome.kind = IdentityOutcome::Kind::Refused;
         outcome.note = QStringLiteral("Local model: \"%1 %2\" not used (%3: %4); the rules' answer is used.")
@@ -243,13 +245,22 @@ void ModelAssist::sortRows(const lookup::LookupResult &result, const QList<looku
                 m_queue.append(i);
         }
     }
+    // G8 needs the listing's own row: without its item number no row is
+    // asked about.
+    if (m_result.item.itemId.isEmpty())
+        m_queue.clear();
     m_total = m_queue.size();
     const qsizetype skipped = std::max<qsizetype>(0, m_total - m_options.maxRows);
     if (skipped > 0)
         m_queue.resize(m_options.maxRows);
     m_sortTimer.start();
     if (m_queue.isEmpty()) {
-        QTimer::singleShot(0, this, [this] { finishSort(QString()); });
+        const QString why = m_result.item.itemId.isEmpty() ? QStringLiteral("not used: the listing's item number was not read")
+                                                           : QString();
+        QTimer::singleShot(0, this, [this, why] {
+            if (m_step == Step::Sort)
+                finishSort(why);
+        });
         return;
     }
     sortNext();

@@ -345,8 +345,8 @@ Popup {
                                 color: Theme.text
                             }
                             Pill {
-                                visible: sharedReport.modelData.verified
-                                text: "Purchase and item checked"
+                                visible: sharedReport.modelData.itemChecked
+                                text: "Item checked"
                                 kind: "neutral"
                             }
                             Item { Layout.fillWidth: true }
@@ -409,6 +409,7 @@ Popup {
                         Layout.fillWidth: true
                         visible: text.length > 0
                         text: panel.shared.disputeStatus
+                        textFormat: Text.PlainText
                         wrapMode: Text.WordWrap
                         font.family: Theme.sans
                         font.pixelSize: Theme.bodySize
@@ -518,6 +519,7 @@ Popup {
                 Text {
                     Layout.fillWidth: true
                     text: panel.shared.reportStatus
+                    textFormat: Text.PlainText
                     wrapMode: Text.WordWrap
                     font.family: Theme.sans
                     font.pixelSize: Theme.bodySize
@@ -658,6 +660,7 @@ Popup {
                             spacing: 8
                             Text {
                                 text: review.modelData.when
+                                textFormat: Text.PlainText
                                 font.family: Theme.mono
                                 font.pixelSize: Theme.labelSize
                                 color: Theme.mutedText
@@ -690,6 +693,7 @@ Popup {
                             Text {
                                 visible: review.modelData.price.length > 0
                                 text: review.modelData.price
+                                textFormat: Text.PlainText
                                 font.family: Theme.mono
                                 font.pixelSize: Theme.labelSize
                                 color: Theme.mutedText

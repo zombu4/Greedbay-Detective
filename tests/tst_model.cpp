@@ -1,8 +1,8 @@
 // The local model (DESIGN 3.6) without a model: the guards on recorded
-// answers (the benchmark's real failures and the owner cases), the prompts
+// answers (the kinds of failure the benchmark showed), the prompts
 // and grammars, the identity merge and the sorting step through a fake
 // runner, the real runner's refusals, and the download against a local
-// server. Titles are synthetic or the owner-case titles of the benchmark.
+// server. All titles are made up.
 
 #include "core/WorkFolder.h"
 #include "db/Database.h"
@@ -122,6 +122,7 @@ private slots:
     void cacheKeys();
     void assistIdentity_data();
     void assistIdentity();
+    void assistIdentityTitleSpelling();
     void assistIdentityFromCache();
     void assistSorting();
     void assistSortingLimits();
@@ -178,48 +179,56 @@ void TestModel::identityGuards_data()
     QTest::addColumn<QString>("model");
     QTest::addColumn<QString>("guard"); // "" = accepted
 
-    // Accepted: the owner cases and the benchmark's right answers.
-    QTest::newRow("Hantek DSO2C10") << "Hantek DSO2C10 Digital Storage Oscilloscope 100MHz Bandwidth 2CH Dual" << QStringList()
-                                    << "Hantek" << "DSO2C10" << "";
-    QTest::newRow("FNIRSI 1014D") << "FNIRSI 1014D 7\" LCD 2 Channel Signal Generator Digital Storage Oscilloscope"
-                                  << QStringList() << "FNIRSI" << "1014D" << "";
-    QTest::newRow("Sencore CB41") << "Sencore CB41 50 Channel Automatic CB Performance Tester SWR RF" << QStringList() << "Sencore"
-                                  << "CB41" << "";
-    QTest::newRow("digits after brand") << "TEKTRONIX 2445 150MHz OSCILLOSCOPE - Free Shipping" << QStringList() << "TEKTRONIX"
-                                        << "2445" << "";
-    QTest::newRow("brand alias") << "HEWLETT PACKARD HP 8904A MULTIFUNCTION SYNTHESIZER DC-600 KHZ" << QStringList()
-                                 << "Hewlett Packard" << "8904A" << "";
+    // Accepted.
+    QTest::newRow("known brand, model code") << "Hantek DSO2C10 scope two channel in box 100MHz" << QStringList() << "Hantek"
+                                             << "DSO2C10" << "";
+    QTest::newRow("known model") << "FNIRSI 1014D handheld scope, charger included" << QStringList() << "FNIRSI" << "1014D"
+                                 << "";
+    QTest::newRow("unknown model code") << "Sencore CB41 tester, clean, manual included" << QStringList() << "Sencore" << "CB41"
+                                        << "";
+    QTest::newRow("digits after brand") << "Tektronix 2445 four channel scope, works" << QStringList() << "Tektronix" << "2445"
+                                        << "";
+    QTest::newRow("brand alias") << "Hewlett Packard 8904A synthesizer with rack ears" << QStringList() << "Hewlett Packard"
+                                 << "8904A" << "";
     QTest::newRow("unknown leading maker") << "Zorblax ZX-500 signal tracer" << QStringList() << "Zorblax" << "ZX-500" << "";
     QTest::newRow("brand from specifics") << "ZX-500 signal tracer works" << QStringList{"Brand", "Zorblax"} << "Zorblax"
                                           << "ZX-500" << "";
 
-    // Refused: the benchmark's failures (C10, specifications, junk brands)
-    // and the rules' own limits.
-    // C10 of the benchmark: "IP-2717A" is not in the title, but the known
-    // model IP-2717A has SP-2717A in its family (owner data, rule 28), so it
-    // names the same item; G3 looks for the family too.
-    QTest::newRow("C10 family member") << "Heathkit Zenith SP-2717A High Voltage Power Supply Military Radio & Tube-Tested"
-                                       << QStringList() << "Heath Zenith" << "IP-2717A" << "";
-    QTest::newRow("invented model") << "Heathkit Zenith SP-2717A High Voltage Power Supply" << QStringList() << "Heathkit"
-                                    << "SP-2719B" << "G3";
+    // A known model's family member in the title: "IP-2717A" is not in it,
+    // but the known model IP-2717A has SP-2717A in its family, so it names
+    // the same item; G3 looks for the family too.
+    QTest::newRow("family member") << "Heath Zenith SP-2717A bench supply, powers up" << QStringList() << "Heath Zenith"
+                                   << "IP-2717A" << "";
+
+    // Refused: specifications, junk brands, invented models and the rules'
+    // own limits.
+    QTest::newRow("invented model") << "Heathkit SP-2717A bench supply" << QStringList() << "Heathkit" << "SP-2719B" << "G3";
     QTest::newRow("resistor spec") << "Ohmite 25W 200 OHM Wirewound Resistor" << QStringList() << "Ohmite" << "25W 200 OHM"
                                    << "G4";
     QTest::newRow("capacitor spec") << "Sprague 0.015uF 1600V Capacitor Orange Drop" << QStringList() << "Sprague"
                                     << "0.015uF 1600V" << "G4";
-    QTest::newRow("bandwidth") << "Hantek DSO2C10 Digital Storage Oscilloscope 100MHz" << QStringList() << "Hantek" << "100MHz"
-                               << "G4";
+    QTest::newRow("bandwidth") << "Hantek DSO2C10 scope two channel 100MHz" << QStringList() << "Hantek" << "100MHz" << "G4";
+    QTest::newRow("glued voltage") << "Zorblax ZX-500 bench supply DC12V 5A" << QStringList() << "Zorblax" << "DC12V" << "G4";
     QTest::newRow("Bayonet") << "Bayonet Light Bulb Socket BA15S 12V" << QStringList() << "Bayonet" << "BA15S" << "G5";
     QTest::newRow("Made in USA") << "Made in USA Toggle Switch T-100" << QStringList() << "Made in USA" << "T-100" << "G5";
     QTest::newRow("Axial") << "Axial Lead Capacitor CL-22 lot" << QStringList() << "Axial" << "CL-22" << "G5";
     QTest::newRow("Unbranded") << "Unbranded Signal Generator Kit XR-2206" << QStringList() << "Unbranded" << "XR-2206" << "G5";
+    QTest::newRow("Unbranded with a dot") << "Unbranded Signal Generator Kit XR-2206" << QStringList() << "Unbranded." << "XR-2206"
+                                          << "G5";
+    QTest::newRow("Generic with a comma") << "Generic DSO138 oscilloscope kit" << QStringList() << "Generic," << "DSO138" << "G5";
+    QTest::newRow("a state as the brand") << "Tested 2 Zorblax radios" << QStringList() << "Tested" << "2" << "G5";
+    QTest::newRow("another brand than the specific") << "Baldor 1/2 HP 1725 RPM Motor" << QStringList{"Brand", "Baldor"} << "HP"
+                                                     << "1725" << "G5";
     QTest::newRow("not the leading word") << "Signal tracer Zorblax with ZX-500" << QStringList() << "Zorblax" << "ZX-500" << "G5";
     QTest::newRow("brand not in listing") << "Hantek DSO2C10 Digital Storage Oscilloscope" << QStringList() << "Rigol" << "DSO2C10"
                                           << "G2";
-    QTest::newRow("ASIN") << "Hantek PP-150 Oscilloscope Probe B0C3MB8PK8" << QStringList{"ASIN", "B0C3MB8PK8"} << "Hantek"
-                          << "B0C3MB8PK8" << "G3";
-    QTest::newRow("only in specifics") << "Hantek Digital Storage Oscilloscope 2 Channel" << QStringList{"Model", "DSO2C10"}
-                                       << "Hantek" << "DSO2C10" << "G3";
+    QTest::newRow("ASIN") << "Hantek PP-150 probe set B0C3ZZ9QQ1" << QStringList{"ASIN", "B0C3ZZ9QQ1"} << "Hantek"
+                          << "B0C3ZZ9QQ1" << "G3";
+    QTest::newRow("only in specifics") << "Hantek scope two channel, used" << QStringList{"Model", "DSO2C10"} << "Hantek"
+                                       << "DSO2C10" << "G3";
     QTest::newRow("year") << "Tektronix oscilloscope from 1985 works" << QStringList() << "Tektronix" << "1985" << "G6";
+    QTest::newRow("year after the brand") << "Zorblax 1968 audio generator" << QStringList() << "Zorblax" << "1968" << "G6";
+    QTest::newRow("count after the brand") << "Zorblax 2 audio generators" << QStringList() << "Zorblax" << "2" << "G6";
     QTest::newRow("plain word") << "Zorblax Wonderbox radio" << QStringList() << "Zorblax" << "Wonderbox" << "G4";
     QTest::newRow("no model") << "Hantek oscilloscope" << QStringList() << "Hantek" << "" << "G2";
 }
@@ -241,7 +250,7 @@ void TestModel::identityGuards()
 
 void TestModel::sameIdentityAndWhenToAsk()
 {
-    const lookup::Identity rules = lookup::identify(item(QStringLiteral("HP 8904A Multifunction Synthesizer DC-600 kHz")), *m_known, *m_words);
+    const lookup::Identity rules = lookup::identify(item(QStringLiteral("HP 8904A synthesizer, front handles")), *m_known, *m_words);
     QVERIFY(rules.canSearch());
     QVERIFY(sameIdentity({QStringLiteral("Hewlett Packard"), QStringLiteral("8904A"), {}}, rules, *m_known));
     QVERIFY(sameIdentity({QStringLiteral("HP"), QStringLiteral("8904-A"), {}}, rules, *m_known));
@@ -257,11 +266,14 @@ void TestModel::sameIdentityAndWhenToAsk()
     QVERIFY(!mayAskIdentity(fromTitle));
     fromTitle.source = QStringLiteral("saved");
     QVERIFY(!mayAskIdentity(fromTitle));
-    // C10's title names a known model's family member: the model is not asked.
-    const lookup::Identity c10 = lookup::identify(
-        item(QStringLiteral("Heathkit Zenith SP-2717A High Voltage Power Supply Military Radio & Tube-Tested")), *m_known, *m_words);
-    QCOMPARE(c10.source, QStringLiteral("known model"));
-    QVERIFY(!mayAskIdentity(c10));
+    // A title naming a known model's family member: the model is not asked.
+    const lookup::Identity family = lookup::identify(item(QStringLiteral("Heath Zenith SP-2717A bench supply, powers up")),
+                                                     *m_known, *m_words);
+    QCOMPARE(family.source, QStringLiteral("known model"));
+    QVERIFY(!mayAskIdentity(family));
+    lookup::Identity other = rules;
+    other.source = QStringLiteral("anything else");
+    QVERIFY(!mayAskIdentity(other));
 }
 
 void TestModel::sortGuards()
@@ -289,6 +301,11 @@ void TestModel::sortGuards()
     QCOMPARE(game.guard, QStringLiteral("G9"));
     QCOMPARE(sortEffect(lookup::Bucket::ToCheck, false, QStringLiteral("same item"), QStringLiteral("console only"), console, *m_words).kind,
              Kind::Suggest);
+    // A media word joined by "-" counts too.
+    const SortEffect joined = sortEffect(lookup::Bucket::ToCheck, false, QStringLiteral("same item"),
+                                         QStringLiteral("Space War Game-%1 tested").arg(media), console, *m_words);
+    QCOMPARE(joined.kind, Kind::Refused);
+    QCOMPARE(joined.guard, QStringLiteral("G9"));
     QCOMPARE(sortEffect(lookup::Bucket::ToCheck, false, QStringLiteral("same item"), QStringLiteral("Space War %1").arg(media), meter,
                         *m_words)
                  .kind,
@@ -389,8 +406,8 @@ void TestModel::assistIdentity_data()
     QTest::addColumn<int>("kind");
     QTest::addColumn<QString>("noteHas");
     using Kind = ModelAssist::IdentityOutcome::Kind;
-    const QString hantek = QStringLiteral("Hantek DSO2C10 DSO2D15 Digital Storage Oscilloscope");
-    const QString unsure = QStringLiteral("Hantek digital oscilloscope DSO2C10 DSO2D15");
+    const QString hantek = QStringLiteral("Hantek DSO2C10 DSO2D15 scope pair, both work");
+    const QString unsure = QStringLiteral("Hantek digital scope DSO2C10 DSO2D15");
     QTest::newRow("agrees") << hantek << identityJson(QStringLiteral("Hantek"), QStringLiteral("DSO2C10")) << int(Kind::Agrees)
                             << "agrees";
     QTest::newRow("disagrees: ask") << hantek << identityJson(QStringLiteral("Hantek"), QStringLiteral("DSO2D15"))
@@ -402,6 +419,8 @@ void TestModel::assistIdentity_data()
     QTest::newRow("G1 unreadable") << hantek << QStringLiteral("Hantek DSO2C10") << int(Kind::Refused) << "G1";
     QTest::newRow("runner ends") << hantek << QStringLiteral("@exit") << int(Kind::NoAnswer) << "no identity answer";
     QTest::newRow("runner error") << hantek << QStringLiteral("@error") << int(Kind::NoAnswer) << "no identity answer";
+    QTest::newRow("unreadable reply") << hantek << QStringLiteral("@raw:not json at all") << int(Kind::NoAnswer)
+                                      << "not readable";
 }
 
 void TestModel::assistIdentity()
@@ -423,9 +442,26 @@ void TestModel::assistIdentity()
     helper->end();
 }
 
+void TestModel::assistIdentityTitleSpelling()
+{
+    // A look-alike letter ("ı" for "I") in the answer: the user's field gets
+    // the title's own spelling.
+    const lookup::ItemRecord listing = item(QStringLiteral("Signal tracer IM-77 IM-78"), {{QStringLiteral("Brand"), QStringLiteral("Zorblax")}});
+    const lookup::Identity rules = lookup::identify(listing, *m_known, *m_words);
+    std::unique_ptr<ModelAssist> helper
+        = assist({{QStringLiteral("Signal tracer"), identityJson(QStringLiteral("Zorblax"), QStringLiteral("ıM-77"))}});
+    QSignalSpy done(helper.get(), &ModelAssist::identityDone);
+    helper->checkIdentity(listing, rules);
+    QVERIFY(done.wait(20000));
+    const auto outcome = done.first().first().value<ModelAssist::IdentityOutcome>();
+    QVERIFY2(outcome.kind == ModelAssist::IdentityOutcome::Kind::Suggests || outcome.kind == ModelAssist::IdentityOutcome::Kind::Disagrees,
+             qPrintable(outcome.note));
+    QCOMPARE(outcome.answer.model, QStringLiteral("IM-77"));
+}
+
 void TestModel::assistIdentityFromCache()
 {
-    const lookup::ItemRecord listing = item(QStringLiteral("Hantek DSO2C10 Digital Storage Oscilloscope"));
+    const lookup::ItemRecord listing = item(QStringLiteral("Hantek DSO2C10 scope, two channel"));
     const lookup::Identity rules = lookup::identify(listing, *m_known, *m_words);
     {
         std::unique_ptr<ModelAssist> first
@@ -466,7 +502,7 @@ lookup::LookupResult TestModel::resultFor(const lookup::ItemRecord &listing, con
 
 void TestModel::assistSorting()
 {
-    const lookup::ItemRecord listing = item(QStringLiteral("Hantek DSO2C10 Digital Storage Oscilloscope 100MHz"));
+    const lookup::ItemRecord listing = item(QStringLiteral("Hantek DSO2C10 scope two channel 100MHz"));
     const lookup::LookupResult result = resultFor(listing, {QStringLiteral("Hantek DSO2C10 oscilloscope used"),
                                                             QStringLiteral("Hantek DSO2C10 oscilloscope with probes boxed"),
                                                             QStringLiteral("Hantek DSO2C10 service manual"),
@@ -506,6 +542,20 @@ void TestModel::assistSorting()
                  && note.contains(QStringLiteral("1 suggestions")) && note.contains(QStringLiteral("1 answers not used")),
              qPrintable(note));
 
+    // Without the listing's item number its own row cannot be told apart
+    // (G8): no row is asked about.
+    lookup::LookupResult unread = result;
+    unread.item.itemId.clear();
+    std::unique_ptr<ModelAssist> second = assist({{QStringLiteral("Hantek"), sortJson(QStringLiteral("accessory"))}});
+    QSignalSpy secondDone(second.get(), &ModelAssist::sortDone);
+    second->sortRows(unread, rules);
+    QVERIFY(secondDone.wait(20000));
+    const QList<lookup::Row> untouched = secondDone.first().at(0).value<QList<lookup::Row>>();
+    for (qsizetype i = 0; i < untouched.size(); ++i)
+        QCOMPARE(untouched.at(i).match.bucket, rules.at(i).match.bucket);
+    QVERIFY2(secondDone.first().at(1).toString().contains(QStringLiteral("item number was not read")),
+             qPrintable(secondDone.first().at(1).toString()));
+
     // Never more counted rows than the rules gave.
     int before = 0;
     int after = 0;
@@ -521,7 +571,7 @@ void TestModel::assistSortingLimits()
 {
     // Each block asks other titles: answers are cached across blocks.
     auto rowsFor = [this](const QString &tag, lookup::LookupResult *result) {
-        const lookup::ItemRecord listing = item(QStringLiteral("Hantek DSO2C10 Digital Storage Oscilloscope 100MHz ") + tag);
+        const lookup::ItemRecord listing = item(QStringLiteral("Hantek DSO2C10 scope two channel 100MHz ") + tag);
         *result = resultFor(listing, {QStringLiteral("Hantek DSO2C10 oscilloscope one ") + tag,
                                       QStringLiteral("Hantek DSO2C10 oscilloscope two ") + tag});
         return lookup::classifyRows(*result, *m_words);

@@ -18,7 +18,8 @@ namespace sellerserver {
 // the onion's port to this loopback port, so nothing but tor reaches it.
 // One request per connection (the reply closes it), a body only with
 // Content-Length (no chunked transfer), hard limits on header and body size,
-// on open connections and on the time a connection may take. Nothing about
+// on open connections and on the time a connection may take (reading the
+// request, and again for the reply). Nothing about
 // a client is logged (tor hides who it is anyway).
 class HttpServer : public QObject {
     Q_OBJECT
@@ -57,6 +58,7 @@ private:
     struct Connection {
         QByteArray buffer;
         QTimer *timer = nullptr;
+        bool replied = false;
     };
 
     void onNewConnection();

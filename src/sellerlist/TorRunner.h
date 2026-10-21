@@ -24,7 +24,8 @@ namespace app::sellerlist {
 //   CookieAuthFile <torDir>/data/control_auth_cookie,
 //   __OwningControllerProcess <this process id>, AvoidDiskWrites 1,
 //   ClientOnly 1, Log "notice stdout".
-// Then the control port (tor control-spec): PROTOCOLINFO, AUTHCHALLENGE
+// Then the control port (tor control-spec): PROTOCOLINFO (SAFECOOKIE
+// offered), AUTHCHALLENGE
 // SAFECOOKIE with a random client nonce, the server hash checked before
 // AUTHENTICATE with the controller hash (HMAC-SHA256, the spec's two key
 // strings), TAKEOWNERSHIP (tor exits when this connection closes), GETINFO

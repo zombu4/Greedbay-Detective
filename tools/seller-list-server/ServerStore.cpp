@@ -21,7 +21,7 @@ const char *const kSchema[] = {
     " text TEXT NOT NULL,"
     " item_id TEXT NOT NULL,"
     " month TEXT NOT NULL,"
-    " verified INTEGER NOT NULL CHECK (verified IN (0, 1)),"
+    " item_checked INTEGER NOT NULL CHECK (item_checked IN (0, 1)),"
     " install_key BLOB NOT NULL,"
     " received_at TEXT NOT NULL,"
     " status TEXT NOT NULL CHECK (status IN ('pending', 'published', 'held', 'removed')),"
@@ -66,9 +66,9 @@ ServerStore::StoredReport reportFrom(const QSqlQuery &query)
     stored.sellerId = query.value(1).toString();
     stored.report.reason = query.value(2).toString();
     stored.report.text = query.value(3).toString();
-    stored.report.itemId = query.value(4).toString();
+    stored.itemId = query.value(4).toString();
     stored.report.month = query.value(5).toString();
-    stored.report.verifiedPurchase = query.value(6).toInt() == 1;
+    stored.report.itemChecked = query.value(6).toInt() == 1;
     stored.installKey = query.value(7).toByteArray();
     stored.receivedAt = QDateTime::fromString(query.value(8).toString(), Qt::ISODateWithMs);
     stored.status = statusOf(query.value(9).toString());
@@ -76,7 +76,7 @@ ServerStore::StoredReport reportFrom(const QSqlQuery &query)
     return stored;
 }
 
-const char kReportColumns[] = "id, seller_id, reason, text, item_id, month, verified, install_key, received_at, status, hold_reason";
+const char kReportColumns[] = "id, seller_id, reason, text, item_id, month, item_checked, install_key, received_at, status, hold_reason";
 
 } // namespace
 
@@ -138,15 +138,15 @@ void ServerStore::close()
 bool ServerStore::addReport(const StoredReport &stored, QString *error)
 {
     QSqlQuery query(QSqlDatabase::database(m_connection));
-    query.prepare(QStringLiteral("INSERT INTO reports (id, seller_id, reason, text, item_id, month, verified, install_key, "
+    query.prepare(QStringLiteral("INSERT INTO reports (id, seller_id, reason, text, item_id, month, item_checked, install_key, "
                                  "received_at, status, hold_reason) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"));
     query.addBindValue(stored.report.id);
     query.addBindValue(stored.sellerId);
     query.addBindValue(stored.report.reason);
     query.addBindValue(stored.report.text);
-    query.addBindValue(stored.report.itemId);
+    query.addBindValue(stored.itemId);
     query.addBindValue(stored.report.month);
-    query.addBindValue(stored.report.verifiedPurchase ? 1 : 0);
+    query.addBindValue(stored.report.itemChecked ? 1 : 0);
     query.addBindValue(stored.installKey);
     query.addBindValue(timeText(stored.receivedAt));
     query.addBindValue(statusId(stored.status));
@@ -155,15 +155,15 @@ bool ServerStore::addReport(const StoredReport &stored, QString *error)
 }
 
 bool ServerStore::setStatus(const QString &reportId, Status status, const QString &holdReason, QString *error,
-                            std::optional<bool> verified)
+                            std::optional<bool> itemChecked)
 {
     QSqlQuery query(QSqlDatabase::database(m_connection));
-    query.prepare(verified ? QStringLiteral("UPDATE reports SET status = ?, hold_reason = ?, verified = ? WHERE id = ?")
+    query.prepare(itemChecked ? QStringLiteral("UPDATE reports SET status = ?, hold_reason = ?, item_checked = ? WHERE id = ?")
                            : QStringLiteral("UPDATE reports SET status = ?, hold_reason = ? WHERE id = ?"));
     query.addBindValue(statusId(status));
     query.addBindValue(holdReason.isNull() ? QStringLiteral("") : holdReason);
-    if (verified)
-        query.addBindValue(*verified ? 1 : 0);
+    if (itemChecked)
+        query.addBindValue(*itemChecked ? 1 : 0);
     query.addBindValue(reportId);
     if (!run(query, error))
         return false;

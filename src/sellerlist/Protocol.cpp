@@ -136,18 +136,18 @@ std::optional<Revocation> Revocation::fromBody(const QJsonObject &body)
 
 QJsonObject PublishedReport::toJson() const
 {
-    return QJsonObject{{QStringLiteral("id"), id},          {QStringLiteral("reason"), reason},
-                       {QStringLiteral("text"), text},      {QStringLiteral("month"), month},
-                       {QStringLiteral("verified"), verifiedPurchase}, {QStringLiteral("itemId"), itemId}};
+    return QJsonObject{{QStringLiteral("id"), id},     {QStringLiteral("reason"), reason},
+                       {QStringLiteral("text"), text}, {QStringLiteral("month"), month},
+                       {QStringLiteral("itemChecked"), itemChecked}};
 }
 
 std::optional<PublishedReport> PublishedReport::fromJson(const QJsonObject &object)
 {
-    PublishedReport report{object.value(QStringLiteral("id")).toString(),    object.value(QStringLiteral("reason")).toString(),
-                           object.value(QStringLiteral("text")).toString(),  object.value(QStringLiteral("month")).toString(),
-                           object.value(QStringLiteral("verified")).toBool(), object.value(QStringLiteral("itemId")).toString()};
+    PublishedReport report{object.value(QStringLiteral("id")).toString(), object.value(QStringLiteral("reason")).toString(),
+                           object.value(QStringLiteral("text")).toString(), object.value(QStringLiteral("month")).toString(),
+                           object.value(QStringLiteral("itemChecked")).toBool()};
     if (!isHexId(report.id) || !lookup::isMarkReason(report.reason) || !isCleanText(report.text, kMaxReportText)
-        || !isMonth(report.month) || !isItemId(report.itemId))
+        || !isMonth(report.month))
         return std::nullopt;
     return report;
 }
@@ -163,7 +163,7 @@ QJsonObject SellerList::toBody() const
     }
     return QJsonObject{{QStringLiteral("type"), QStringLiteral("sellerlist")},
                        {QStringLiteral("sequence"), static_cast<double>(sequence)},
-                       {QStringLiteral("generatedAt"), timeText(generatedAt)},
+                       {QStringLiteral("signedAt"), timeText(signedAt)},
                        {QStringLiteral("authorizationSequence"), static_cast<double>(authorizationSequence)},
                        {QStringLiteral("sellers"), sellerArray}};
 }
@@ -174,13 +174,13 @@ std::optional<SellerList> SellerList::fromBody(const QJsonObject &body)
         return std::nullopt;
     const std::optional<qint64> sequence = wholeOf(body.value(QStringLiteral("sequence")));
     const std::optional<qint64> authorization = wholeOf(body.value(QStringLiteral("authorizationSequence")));
-    const std::optional<QDateTime> generated = timeOf(body.value(QStringLiteral("generatedAt")));
+    const std::optional<QDateTime> generated = timeOf(body.value(QStringLiteral("signedAt")));
     if (!sequence || !authorization || !generated || !body.value(QStringLiteral("sellers")).isArray())
         return std::nullopt;
     SellerList list;
     list.sequence = *sequence;
     list.authorizationSequence = *authorization;
-    list.generatedAt = *generated;
+    list.signedAt = *generated;
     for (const QJsonValue &value : body.value(QStringLiteral("sellers")).toArray()) {
         const QJsonObject object = value.toObject();
         ListedSeller seller;

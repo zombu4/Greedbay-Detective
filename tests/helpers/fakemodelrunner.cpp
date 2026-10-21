@@ -5,7 +5,8 @@
 //    "delayMs": <n>, "loadError": <text>}
 // The first entry whose text the prompt's plain pieces contain gives the
 // answer; "@hang" never answers, "@exit" ends the process, "@error" answers
-// {"ok":false}. A prompt no entry matches gets {"ok":false}.
+// {"ok":false}, "@raw:<text>" writes <text> as the whole reply line. A prompt
+// no entry matches gets {"ok":false}.
 
 #include <QFile>
 #include <QJsonArray>
@@ -67,6 +68,12 @@ int main(int argc, char *argv[])
         }
         if (answer == QLatin1String("@exit"))
             return 0;
+        if (answer.startsWith(QLatin1String("@raw:"))) {
+            const QByteArray raw = answer.mid(5).toUtf8() + '\n';
+            std::fwrite(raw.constData(), 1, static_cast<size_t>(raw.size()), stdout);
+            std::fflush(stdout);
+            continue;
+        }
         if (answer.isEmpty() || answer == QLatin1String("@error")) {
             reply({{"ok", false}, {"error", "no recorded answer"}});
             continue;

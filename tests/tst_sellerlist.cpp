@@ -229,10 +229,10 @@ void TestSellerList::trustChain()
     const Chain chain = makeChain(now);
     SellerList list;
     list.sequence = 7;
-    list.generatedAt = now;
+    list.signedAt = now;
     list.authorizationSequence = chain.authorization.sequence;
     PublishedReport report{QStringLiteral("0123456789abcdef"), QStringLiteral("scam"), QStringLiteral("Never shipped."),
-                           QStringLiteral("2026-08"), true, QStringLiteral("123456789012")};
+                           QStringLiteral("2026-08"), true};
     list.sellers = {ListedSeller{QStringLiteral("made_up_seller"), {report}}};
 
     QString why;
@@ -261,7 +261,7 @@ void TestSellerList::trustChain()
     QVERIFY(!checkBundle(bundle(chain, wrongAuthorization, chain.serverSign), chain.info, 0, now, &why));
     // A list from the future.
     SellerList future = list;
-    future.generatedAt = now.addSecs(3600);
+    future.signedAt = now.addSecs(3600);
     QVERIFY(!checkBundle(bundle(chain, future, chain.serverSign), chain.info, 0, now, &why));
     // A changed body breaks the signature.
     QJsonObject tampered = bundle(chain, list, chain.serverSign);
@@ -362,6 +362,8 @@ void TestSellerList::httpLimits()
     const quint16 port = server.port();
     QByteArray answer;
     // The server runs in this thread's event loop: talk to it from another thread.
+    // Each exchange ends within the client's own 5 s waits; the server's
+    // event loop runs meanwhile.
     auto ask = [&](const QByteArray &request) {
         answer.clear();
         std::atomic<bool> done = false;
@@ -369,7 +371,8 @@ void TestSellerList::httpLimits()
             answer = rawExchange(port, request);
             done = true;
         });
-        QTRY_VERIFY_WITH_TIMEOUT(done, 10000);
+        while (!done)
+            QTest::qWait(20);
         worker.join();
     };
     ask("GET /v1/list?x=1 HTTP/1.1\r\nHost: x\r\n\r\n");
@@ -509,10 +512,13 @@ void TestSellerList::serviceEndToEnd()
     QVERIFY(seller);
     QCOMPARE(seller->reports.size(), 1);
     QCOMPARE(seller->reports.first().text, QStringLiteral("Arrived broken."));
-    QVERIFY(seller->reports.first().verifiedPurchase);
+    QVERIFY(seller->reports.first().itemChecked);
     QCOMPARE(seller->reports.first().month, QStringLiteral("2026-09"));
-    // Nothing that identifies the reporter is published.
+    // Nothing that identifies the reporter is published: no installation key,
+    // no item number.
     QVERIFY(!server.service->bundle().contains("installKey"));
+    QVERIFY(!server.service->bundle().contains(item.toLatin1()));
+    QVERIFY(!server.service->bundle().contains("itemId"));
 
     // The saved copy loads again and holds.
     ListClient reloaded(&network, server.chain.info, appDir.path());

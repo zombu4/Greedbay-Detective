@@ -425,6 +425,10 @@ bool isSpecification(const QStringList &words, qsizetype index, const MatchWords
     for (const QString &prefix : matchWords.specPrefixes) {
         if (cachedRegex(QStringLiteral("^%1-%2(?:%3)?$").arg(QRegularExpression::escape(prefix), kNumber, units)).match(word).hasMatch())
             return true;
+        // Glued to the number, only with a unit ("DC12V", "AC220V"; "DC1000"
+        // stays a possible model).
+        if (cachedRegex(QStringLiteral("^%1%2(?:%3)$").arg(QRegularExpression::escape(prefix), kNumber, units)).match(word).hasMatch())
+            return true;
     }
     return !word.isEmpty() && word.back().isDigit() && index + 1 < words.size()
            && isUnitWord(words.at(index + 1), matchWords.specUnits);

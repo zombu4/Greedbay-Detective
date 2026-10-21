@@ -20,12 +20,14 @@ struct Verdict {
     bool accepted = false;
     QString guard; // "G4" when refused
     QString why;   // shown in the lookup's note
+    QString model; // accepted: the model as the title writes it
 };
 
 // The identity answer for a listing (G2-G6; G1 is parseIdentity()):
-//   G5 the brand is no notBrands value, title opener or junk brand word,
-//      and is a known brand, the listing's own "Brand" specific or the
-//      title's first maker word;
+//   G5 the brand is no notBrands value, title opener or junk brand word
+//      (compared by its title words, so "Unbranded." is "Unbranded"); when
+//      the listing's own "Brand" specific names a maker, the answer names
+//      that maker; else it is a known brand or the title's first maker word;
 //   G2 the brand (or a name of the known brand) stands as whole words in the
 //      title or the item specifics;
 //   G3 the model stands in the TITLE (one word or 2-4 neighbouring words
@@ -33,13 +35,15 @@ struct Verdict {
 //      productCodeLabels specific;
 //   G4 there it is no specification, and either model-like or a known model
 //      of the brand;
-//   G6 a digits-only model stands right after a brand name.
+//   G6 a digits-only model stands right after a brand name and is no year
+//      (1900-2099) or count (1-2 digits), unless it is a known model.
+// An accepted answer's model is replaced by the title's own spelling.
 Verdict checkIdentity(const IdentityAnswer &answer, const lookup::ItemRecord &item, const lookup::KnownModels &known,
                       const lookup::MatchWords &words);
 
 // G7: the model is asked about the identity only when the rules' identity
-// came from the title or the specifics (not from the user, a saved
-// confirmation or a known model).
+// came from the title or the specifics, or there is none (never on the
+// user's, a saved confirmation or a known model).
 bool mayAskIdentity(const lookup::Identity &rules);
 
 // True when the answer names the rules' brand (a name of the same known

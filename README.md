@@ -145,14 +145,16 @@ list the list owner runs. Reading and reporting are separate switches.
 - Everything goes through Tor, which the app starts only while it updates the
   list or sends a report; no one sees your internet address, not even the
   list's server. Without Tor the app keeps the last copy and says the list was
-  not updated - it never connects any other way.
+  not updated - it never connects any other way. Tor is not included in the
+  builds yet, so for now these builds say "Tor is not part of this build".
 - The list is signed (Ed25519 and ML-DSA-65, both must hold) by a server key
   that the list owner's master key authorized; the app refuses anything else,
   and any list older than the one it has.
 - A report sends only the seller's eBay user id, your reason and your words,
   and the item number and month of your purchase from that seller - found
   first on your own eBay Purchases page, in the app's browser. Your eBay name
-  is never sent. The report is encrypted to the server's key (X25519 and
+  is never sent; the item number stays on the server (the list shows only the
+  month), so the seller cannot look you up in their orders. The report is encrypted to the server's key (X25519 and
   ML-KEM-768). One report per seller; reports go live after the server has
   checked the item on eBay's public item page; anyone can dispute a report,
   and the list owner removes reports on request.

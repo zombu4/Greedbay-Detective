@@ -4,6 +4,8 @@
 #include "sellerlist/Trust.h"
 
 #include <QDateTime>
+#include <QJsonObject>
+#include <QNetworkRequest>
 #include <QObject>
 #include <QString>
 #include <QUrl>
@@ -49,7 +51,8 @@ public:
     bool busy() const { return m_reply != nullptr; }
 
     // GET /v1/list, checkBundle() against the cached list's sequence, then
-    // list.json. listFetched(true, "") or listFetched(false, why).
+    // list.json; the same list again counts as fetched (it is re-signed
+    // only when it changes). listFetched(true, "") or listFetched(false, why).
     void fetchList();
     // Fills in createdAt, the installation key and its signature, then GET
     // /v1/keys, checkKeys(), seal and POST /v1/report.
@@ -67,6 +70,7 @@ private:
     enum class Job { None, List, KeysForReport, Report, KeysForDispute, Dispute };
 
     QUrl url(const QString &path) const;
+    QNetworkRequest baseRequest(const QString &path) const;
     // Empty when a request may go out, else why not.
     QString transportProblem() const;
     void get(Job job, const QString &path, qint64 maxBytes);
@@ -81,6 +85,7 @@ private:
     QString m_folder;
     quint16 m_testPort = 0;
     std::optional<TrustedList> m_list;
+    QJsonObject m_bundle; // the bundle m_list came from
     QDateTime m_fetchedAt;
     QNetworkReply *m_reply = nullptr;
     Job m_job = Job::None;

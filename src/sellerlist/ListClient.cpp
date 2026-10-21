@@ -73,6 +73,7 @@ bool ListClient::loadCache(const QDateTime &now, QString *why)
         return false;
     }
     m_list = list;
+    m_bundle = saved.value(QStringLiteral("bundle")).toObject();
     m_fetchedAt = fetched;
     return true;
 }
@@ -120,6 +121,20 @@ void ListClient::sendDispute(const Dispute &dispute)
     get(Job::KeysForDispute, QStringLiteral("/v1/keys"), kMaxReplyBytes);
 }
 
+QNetworkRequest ListClient::baseRequest(const QString &path) const
+{
+    QNetworkRequest request(url(path));
+    request.setTransferTimeout(kTimeoutMs);
+    request.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::ManualRedirectPolicy);
+    request.setAttribute(QNetworkRequest::CookieSaveControlAttribute, QNetworkRequest::Manual);
+    request.setAttribute(QNetworkRequest::CookieLoadControlAttribute, QNetworkRequest::Manual);
+    // The same headers from every installation: Qt would otherwise send the
+    // system's languages (Accept-Language) and its own client name.
+    request.setRawHeader("Accept-Language", "en");
+    request.setHeader(QNetworkRequest::UserAgentHeader, QByteArrayLiteral("Mozilla/5.0"));
+    return request;
+}
+
 void ListClient::get(Job job, const QString &path, qint64 maxBytes)
 {
     if (busy()) {
@@ -131,12 +146,8 @@ void ListClient::get(Job job, const QString &path, qint64 maxBytes)
         finish(job, false, QStringLiteral("refused"), problem);
         return;
     }
-    QNetworkRequest request(url(path));
-    request.setTransferTimeout(kTimeoutMs);
-    request.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::ManualRedirectPolicy);
+    QNetworkRequest request = baseRequest(path);
     request.setAttribute(QNetworkRequest::CacheLoadControlAttribute, QNetworkRequest::AlwaysNetwork);
-    request.setAttribute(QNetworkRequest::CookieSaveControlAttribute, QNetworkRequest::Manual);
-    request.setAttribute(QNetworkRequest::CookieLoadControlAttribute, QNetworkRequest::Manual);
     m_job = job;
     m_maxBytes = maxBytes;
     m_reply = m_network->get(request);
@@ -154,12 +165,8 @@ void ListClient::post(Job job, const QString &path, const QByteArray &body)
         finish(job, false, QStringLiteral("refused"), problem);
         return;
     }
-    QNetworkRequest request(url(path));
-    request.setTransferTimeout(kTimeoutMs);
+    QNetworkRequest request = baseRequest(path);
     request.setHeader(QNetworkRequest::ContentTypeHeader, QByteArrayLiteral("application/octet-stream"));
-    request.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::ManualRedirectPolicy);
-    request.setAttribute(QNetworkRequest::CookieSaveControlAttribute, QNetworkRequest::Manual);
-    request.setAttribute(QNetworkRequest::CookieLoadControlAttribute, QNetworkRequest::Manual);
     m_job = job;
     m_maxBytes = kMaxReplyBytes;
     m_reply = m_network->post(request, body);
@@ -209,7 +216,12 @@ void ListClient::onFinished()
     const QDateTime now = QDateTime::currentDateTimeUtc();
     QString why;
     const qint64 last = m_list ? m_list->list.sequence : 0;
-    const std::optional<TrustedList> list = checkBundle(document.object(), m_master, last, now, &why);
+    std::optional<TrustedList> list = checkBundle(document.object(), m_master, last, now, &why);
+    // The same list again (the server signs a new one only when it changes):
+    // it holds as it did, so it counts as fetched now.
+    if (!list && m_list && last > 0
+        && document.object().value(QStringLiteral("list")).toObject() == m_bundle.value(QStringLiteral("list")).toObject())
+        list = checkBundle(document.object(), m_master, last - 1, now, &why);
     if (!list) {
         finish(job, false, QStringLiteral("refused"), why);
         return;
@@ -223,6 +235,7 @@ void ListClient::onFinished()
         return;
     }
     m_list = list;
+    m_bundle = document.object();
     m_fetchedAt = now;
     finish(job, true, QStringLiteral("received"), QString());
 }

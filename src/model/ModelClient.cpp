@@ -92,7 +92,13 @@ void ModelClient::onReadyRead()
     m_timer->stop();
     m_pending = false;
     const Waiting waiting = std::exchange(m_waiting, Waiting::Nothing);
-    const QJsonObject reply = QJsonDocument::fromJson(line).object();
+    const QJsonDocument document = QJsonDocument::fromJson(line);
+    if (!document.isObject()) {
+        m_waiting = waiting;
+        endWith(QStringLiteral("the model runner's answer was not readable"));
+        return;
+    }
+    const QJsonObject reply = document.object();
     const bool ok = reply.value(QStringLiteral("ok")).toBool();
     const QString error = reply.value(QStringLiteral("error")).toString();
     if (waiting == Waiting::Load) {

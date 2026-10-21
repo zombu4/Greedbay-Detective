@@ -474,9 +474,9 @@ Item {
                 readonly property var shared: screen.backend.sharedList
                 heading: "Shared seller list"
                 note: "Reports by other users of the app about sellers they bought from, on one list the list owner "
-                      + "runs. Everything goes through Tor, which comes with the app and runs only while the list is "
-                      + "updated or a report is sent, so no one sees your internet address - not even the list's "
-                      + "server. Nothing is sent unless you report a seller yourself."
+                      + "runs. Everything goes through Tor, which the app starts only while the list is updated or a "
+                      + "report is sent, so no one sees your internet address - not even the list's server; without "
+                      + "Tor in this build nothing is sent at all. Nothing is sent unless you report a seller yourself."
                 Text {
                     objectName: "sharedListStatus"
                     Layout.fillWidth: true
@@ -538,8 +538,9 @@ Item {
                     checked: modelSection.localModel.enabled
                     enabled: modelSection.localModel.canEnable || modelSection.localModel.enabled
                     onToggled: {
-                        if (!modelSection.localModel.setEnabled(checked))
-                            checked = modelSection.localModel.enabled
+                        modelSection.localModel.setEnabled(checked)
+                        // Back to the setting (the toggle broke the binding).
+                        checked = Qt.binding(() => modelSection.localModel.enabled)
                     }
                 }
                 CheckBox {

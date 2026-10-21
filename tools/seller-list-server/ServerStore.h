@@ -22,6 +22,7 @@ public:
     struct StoredReport {
         app::sellerlist::PublishedReport report;
         QString sellerId;
+        QString itemId; // never published
         QByteArray installKey;
         QDateTime receivedAt;
         Status status = Status::Pending;
@@ -41,10 +42,10 @@ public:
     void close();
 
     bool addReport(const StoredReport &report, QString *error);
-    // Sets the status (and the hold reason, empty when not held); `verified`
-    // is set only when given (the item check's outcome).
+    // Sets the status (and the hold reason, empty when not held);
+    // `itemChecked` is set only when given (the item check's outcome).
     bool setStatus(const QString &reportId, Status status, const QString &holdReason, QString *error,
-                   std::optional<bool> verified = std::nullopt);
+                   std::optional<bool> itemChecked = std::nullopt);
     std::optional<StoredReport> report(const QString &reportId, QString *error) const;
     // Every report of a status, oldest first.
     std::optional<QList<StoredReport>> reports(Status status, QString *error) const;

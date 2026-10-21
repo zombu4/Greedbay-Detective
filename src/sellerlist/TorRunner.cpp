@@ -43,20 +43,6 @@ QByteArray field(const QByteArray &line, const QByteArray &key)
     return {};
 }
 
-// A quoted control-spec string value: "..." with \\ and \" escapes.
-QByteArray unquote(const QByteArray &value)
-{
-    if (value.size() < 2 || !value.startsWith('"') || !value.endsWith('"'))
-        return value;
-    QByteArray out;
-    for (qsizetype i = 1; i + 1 < value.size(); ++i) {
-        if (value.at(i) == '\\' && i + 2 < value.size())
-            ++i;
-        out.append(value.at(i));
-    }
-    return out;
-}
-
 } // namespace
 
 TorRunner::TorRunner(QString program, QString torDir, QObject *parent)
@@ -155,7 +141,9 @@ void TorRunner::start()
     setState(State::Starting);
     m_timeout->start(kStartTimeoutMs);
     m_process->start();
-    m_poll->start();
+    // A start that failed at once has already ended in fail().
+    if (m_process && m_state == State::Starting)
+        m_poll->start();
 }
 
 void TorRunner::stop()
@@ -272,23 +260,19 @@ void TorRunner::handleReply(const QList<QByteArray> &lines)
     }
     switch (m_step) {
     case Step::ProtocolInfo: {
-        QByteArray cookieFile;
         bool safeCookie = false;
         for (const QByteArray &line : lines) {
-            if (line.startsWith("250-AUTH ")) {
+            if (line.startsWith("250-AUTH "))
                 safeCookie = field(line, "METHODS").split(',').contains("SAFECOOKIE");
-                const qsizetype at = line.indexOf("COOKIEFILE=");
-                if (at >= 0)
-                    cookieFile = unquote(line.mid(at + 11));
-            }
         }
-        // The cookie is read only from the file this process told tor to use.
-        const QString expected = QDir(m_dir).filePath(QStringLiteral("data/control_auth_cookie"));
-        if (!safeCookie || QFileInfo(QString::fromUtf8(cookieFile)).canonicalFilePath() != QFileInfo(expected).canonicalFilePath()) {
+        if (!safeCookie) {
             fail(tr("Tor does not offer the expected authentication"));
             return;
         }
-        QFile file(expected);
+        // The cookie is read only from the file this process told tor to use
+        // (CookieAuthFile); the server hash below proves that this tor knows
+        // its content.
+        QFile file(QDir(m_dir).filePath(QStringLiteral("data/control_auth_cookie")));
         if (!file.open(QIODevice::ReadOnly) || (m_cookie = file.read(kCookieBytes + 1)).size() != kCookieBytes) {
             fail(tr("Tor's authentication cookie cannot be read"));
             return;
