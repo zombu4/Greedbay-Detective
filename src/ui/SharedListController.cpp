@@ -128,8 +128,10 @@ QString SharedListController::statusText() const
     if (!readEnabled())
         return tr("Off.");
     QString text;
-    if (m_job != Job::None && m_tor.state() == sl::TorRunner::State::Starting)
+    if (m_job == Job::Fetch && m_tor.state() == sl::TorRunner::State::Starting)
         text = tr("Updating: %1...").arg(m_tor.progress());
+    else if (m_job != Job::None && m_tor.state() == sl::TorRunner::State::Starting)
+        text = tr("Sending: %1...").arg(m_tor.progress());
     else if (m_job == Job::Fetch)
         text = tr("Updating...");
     else if (m_client->list())
