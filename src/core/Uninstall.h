@@ -16,7 +16,7 @@ namespace app {
 // brands and models the user confirmed - and deletes everything else there (logs, settings, the
 // browser profiles with their cookies, the daily page count, temporary
 // files, installed plugins, the shared seller list's copy and this
-// installation's report key, tor's data, the downloaded local models). "Delete everything" deletes the whole work
+// installation's report key, the downloaded local models). "Delete everything" deletes the whole work
 // folder. A later install finds a kept folder and reuses the history.
 //
 // Safety, checked before anything is deleted (check()):

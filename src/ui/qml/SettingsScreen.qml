@@ -474,9 +474,9 @@ Item {
                 readonly property var shared: screen.backend.sharedList
                 heading: "Shared seller list"
                 note: "Reports by other users of the app about sellers they bought from, on one list the list owner "
-                      + "runs. Everything goes through Tor, which the app starts only while the list is updated or a "
-                      + "report is sent, so no one sees your internet address - not even the list's server; without "
-                      + "Tor in this build nothing is sent at all. Nothing is sent unless you report a seller yourself."
+                      + "runs. The list is downloaded from the Greedbay Detective server; that server sees your IP "
+                      + "address like any website does and does not store it. Nothing about you is sent unless you "
+                      + "report a seller yourself."
                 Text {
                     objectName: "sharedListStatus"
                     Layout.fillWidth: true

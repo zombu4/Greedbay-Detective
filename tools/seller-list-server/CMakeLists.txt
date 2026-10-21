@@ -1,5 +1,5 @@
 # The shared seller list's server (DESIGN 3.7): a separate program the list
-# owner runs behind a tor onion service. Not part of the app's packages.
+# owner runs on their own server (HTTPS). Not part of the app's packages.
 
 qt_add_library(sellerserver STATIC
     HttpServer.cpp HttpServer.h

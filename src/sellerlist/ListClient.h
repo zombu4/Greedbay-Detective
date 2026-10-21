@@ -7,6 +7,7 @@
 #include <QJsonObject>
 #include <QNetworkRequest>
 #include <QObject>
+#include <QSslCertificate>
 #include <QString>
 #include <QUrl>
 
@@ -21,10 +22,13 @@ namespace app::sellerlist {
 // list, keeps the last verified one in the work folder's sharedlist/, and
 // sends reports and disputes sealed to the server's key.
 //
-// Never a direct connection: every request goes to http://<the master's
-// onion address>/ and only while the network manager's proxy is a SOCKS5
-// proxy on 127.0.0.1 (the app's own tor, TorRunner). The only other target
-// is a test server on 127.0.0.1 (setLocalTestServer, used by tests).
+// Every request goes to https://<the master's host name>/ (port 443), with
+// Qt's normal certificate check against the system's root certificates
+// (Let's Encrypt on the server); no TLS error is ever ignored and no
+// redirect is followed. The signatures inside (Trust.h) are what the app
+// trusts; HTTPS keeps the traffic private on the way. The server sees the
+// app's IP address like any website does and does not store it. The only
+// other target is a test server on 127.0.0.1 (setLocalTestServer, tests).
 //
 // Files in `folder`:
 //   list.json     {"bundle": <the server's bundle>, "fetchedAt": time}
@@ -39,8 +43,10 @@ public:
 
     ListClient(QNetworkAccessManager *network, MasterInfo master, QString folder, QObject *parent = nullptr);
 
-    // Tests only: talk to http://127.0.0.1:<port> without a proxy.
-    void setLocalTestServer(quint16 port);
+    // Tests only: talk to http://127.0.0.1:<port>; with `testRoot`, to
+    // https://127.0.0.1:<port>, trusting that certificate as well as the
+    // system's roots (a test certificate made for 127.0.0.1).
+    void setLocalTestServer(quint16 port, const QSslCertificate &testRoot = QSslCertificate());
 
     // Reads list.json and checks it again (as at fetch time, against `now`);
     // false and *why when there is none or it no longer holds.
@@ -84,6 +90,7 @@ private:
     MasterInfo m_master;
     QString m_folder;
     quint16 m_testPort = 0;
+    QSslCertificate m_testRoot;
     std::optional<TrustedList> m_list;
     QJsonObject m_bundle; // the bundle m_list came from
     QDateTime m_fetchedAt;

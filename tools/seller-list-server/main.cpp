@@ -27,6 +27,7 @@
 #include <QJsonDocument>
 #include <QMap>
 #include <QStringList>
+#include <QTimer>
 #include <QUrl>
 
 #include <cstdio>
@@ -41,19 +42,26 @@ const char kUsage[] = R"(usage: seller-list-server <command> [options]
 On the owner's computer (master key; never on the server):
   master-keys --master <dir>
       new master keys in <dir> (asks for a passphrase)
-  authorize --master <dir> --server-public <file> --onion <address>
+  authorize --master <dir> --server-public <file> --host <name>
             --sequence <n> --days <n> --out <file>
       sign an authorization of the server keys for <n> days
   revoke --master <dir> --server-public <file> --sequence <n> --revocations <file>
       add a revocation of those server keys to the revocations file
-  app-master --master <dir> --onion <address> --out <file>
-      the app's master.json (master public keys + onion address)
+  app-master --master <dir> --host <name> --out <file>
+      the app's master.json (master public keys + the server's host name)
 
 On the server:
   server-keys --data <dir>
       new server keys in <dir> (asks for a passphrase)
-  serve --data <dir> --port <n> [--passphrase-file <file>] [--test-item-pages <url>]
-      run the service on 127.0.0.1:<n> (tor forwards the onion port to it);
+  serve --data <dir> --port <n> [--tls-cert <file> --tls-key <file>]
+        [--listen <address>] [--passphrase-file <file>] [--test-item-pages <url>]
+      run the service. With --tls-cert (fullchain.pem) and --tls-key
+      (privkey.pem) it serves HTTPS on <address>:<n>, by default every
+      address (port 443 for the apps); renewed files are used without a
+      restart. Without them it serves plain HTTP on 127.0.0.1:<n> or
+      [::1]:<n> only, for a reverse proxy on this machine that does the HTTPS.
+      No client address, header or path is ever logged: once an hour one
+      line with counts only.
       --test-item-pages http://127.0.0.1:<port> loads item pages from a local
       test server instead of eBay (a dry run only)
   queue --data <dir>            reports pending or held, open disputes
@@ -66,6 +74,9 @@ A passphrase is typed at the terminal (no echo) unless --passphrase-file
 names a file only its owner can read. Passphrases are never taken from the
 command line.
 )";
+
+const QString kHostRule = QStringLiteral("--host must be the server's DNS name in lower case, e.g. list.example.org "
+                                         "(no IP address, no port, no trailing dot)");
 
 // Each line at once, also when the output goes to a file or a service log.
 void say(const QString &text)
@@ -223,13 +234,13 @@ int serverKeysCommand(const QMap<QString, QString> &map)
 int authorizeCommand(const QMap<QString, QString> &map)
 {
     QString error;
-    if (!need(map, {QStringLiteral("master"), QStringLiteral("server-public"), QStringLiteral("onion"), QStringLiteral("sequence"),
+    if (!need(map, {QStringLiteral("master"), QStringLiteral("server-public"), QStringLiteral("host"), QStringLiteral("sequence"),
                     QStringLiteral("days"), QStringLiteral("out")},
               &error))
         return fail(error);
-    const QString onion = map.value(QStringLiteral("onion"));
-    if (!sl::isOnionAddress(onion))
-        return fail(QStringLiteral("--onion must be a v3 onion address (56 characters + .onion)"));
+    const QString host = map.value(QStringLiteral("host"));
+    if (!sl::isServerHost(host))
+        return fail(kHostRule);
     const std::optional<qint64> sequence = number(map.value(QStringLiteral("sequence")), 1, 1'000'000'000, QStringLiteral("sequence"), &error);
     const std::optional<qint64> days = sequence ? number(map.value(QStringLiteral("days")), 1, 3650, QStringLiteral("days"), &error)
                                                 : std::nullopt;
@@ -242,7 +253,7 @@ int authorizeCommand(const QMap<QString, QString> &map)
     if (!master)
         return fail(error);
     const QDateTime from = QDateTime::currentDateTimeUtc();
-    const sl::Authorization authorization{server->sign, server->box, onion, *sequence, from, from.addDays(*days)};
+    const sl::Authorization authorization{server->sign, server->box, host, *sequence, from, from.addDays(*days)};
     const std::optional<QJsonObject> document = sl::signDocument(authorization.toBody(), *master);
     wipe(&*master);
     if (!document)
@@ -291,20 +302,31 @@ int revokeCommand(const QMap<QString, QString> &map)
 int appMasterCommand(const QMap<QString, QString> &map)
 {
     QString error;
-    if (!need(map, {QStringLiteral("master"), QStringLiteral("onion"), QStringLiteral("out")}, &error))
+    if (!need(map, {QStringLiteral("master"), QStringLiteral("host"), QStringLiteral("out")}, &error))
         return fail(error);
-    const QString onion = map.value(QStringLiteral("onion"));
-    if (!sl::isOnionAddress(onion))
-        return fail(QStringLiteral("--onion must be a v3 onion address (56 characters + .onion)"));
+    const QString host = map.value(QStringLiteral("host"));
+    if (!sl::isServerHost(host))
+        return fail(kHostRule);
     const std::optional<sl::SignPublic> master = masterPublic(map.value(QStringLiteral("master")), &error);
     if (!master)
         return fail(error);
     if (!writeNewFile(map.value(QStringLiteral("out")),
-                      pretty(QJsonObject{{QStringLiteral("master"), master->toJson()}, {QStringLiteral("onion"), onion}}), false,
+                      pretty(QJsonObject{{QStringLiteral("master"), master->toJson()}, {QStringLiteral("host"), host}}), false,
                       &error))
         return fail(error);
     say(QStringLiteral("written; put it in the app's source as src/sellerlist/data/master.json"));
     return 0;
+}
+
+QString countsLine(const HttpServer::Counts &counts)
+{
+    QStringList replies;
+    for (auto it = counts.replies.cbegin(); it != counts.replies.cend(); ++it)
+        replies.append(QStringLiteral("%1 x%2").arg(it.key()).arg(it.value()));
+    return QStringLiteral("last hour: %1 connections, %2 turned away (all slots in use), replies: %3")
+        .arg(counts.connections)
+        .arg(counts.turnedAway)
+        .arg(replies.isEmpty() ? QStringLiteral("none") : replies.join(QStringLiteral(", ")));
 }
 
 bool openStore(const QString &dataDir, ServerStore *store, QString *error)
@@ -319,6 +341,18 @@ int serveCommand(const QMap<QString, QString> &map)
         return fail(error);
     const std::optional<qint64> port = number(map.value(QStringLiteral("port")), 1, 65535, QStringLiteral("port"), &error);
     if (!port)
+        return fail(error);
+    const bool tls = !map.value(QStringLiteral("tls-cert")).isEmpty() || !map.value(QStringLiteral("tls-key")).isEmpty();
+    if (tls && !need(map, {QStringLiteral("tls-cert"), QStringLiteral("tls-key")}, &error))
+        return fail(error);
+    QHostAddress address = tls ? QHostAddress(QHostAddress::Any) : QHostAddress(QHostAddress::LocalHost);
+    if (!map.value(QStringLiteral("listen")).isEmpty() && !address.setAddress(map.value(QStringLiteral("listen"))))
+        return fail(QStringLiteral("--listen must be an IP address"));
+    if (!tls && !address.isLoopback())
+        return fail(QStringLiteral("plain HTTP only on 127.0.0.1 or ::1 (for a reverse proxy on this machine); "
+                                   "give --tls-cert and --tls-key to serve HTTPS"));
+    HttpServer http([](const HttpServer::Request &) { return HttpServer::Response{503, "text/plain", "starting\n"}; });
+    if (tls && !http.setTls({map.value(QStringLiteral("tls-cert")), map.value(QStringLiteral("tls-key"))}, &error))
         return fail(error);
     const QDir dir(map.value(QStringLiteral("data")));
 
@@ -371,10 +405,18 @@ int serveCommand(const QMap<QString, QString> &map)
     QObject::connect(&service, &Service::published, [](qint64 sequence) { say(QStringLiteral("list %1 published").arg(sequence)); });
     if (!service.start(&error))
         return fail(error);
-    HttpServer http([&service](const HttpServer::Request &request) { return service.handle(request); });
-    if (!http.listen(QHostAddress::LocalHost, static_cast<quint16>(*port), &error))
+    http.setHandler([&service](const HttpServer::Request &request) { return service.handle(request); });
+    QObject::connect(&http, &HttpServer::tlsReloaded, [] { say(QStringLiteral("renewed TLS certificate in use")); });
+    QObject::connect(&http, &HttpServer::tlsReloadFailed, [](const QString &why) {
+        fail(QStringLiteral("problem: the renewed TLS files do not load (the previous ones stay in use): %1").arg(why));
+    });
+    if (!http.listen(address, static_cast<quint16>(*port), &error))
         return fail(error);
-    say(QStringLiteral("serving on 127.0.0.1:%1").arg(*port));
+    say(QStringLiteral("serving %1 on %2 port %3").arg(tls ? QStringLiteral("HTTPS") : QStringLiteral("HTTP"), address.toString()).arg(*port));
+    // The only record of the traffic: counts, once an hour.
+    QTimer counts;
+    QObject::connect(&counts, &QTimer::timeout, [&http] { say(countsLine(http.takeCounts())); });
+    counts.start(60 * 60 * 1000);
     const int code = QCoreApplication::exec();
     store.close();
     return code;
@@ -462,14 +504,15 @@ int main(int argc, char *argv[])
     const QMap<QString, QStringList> allowed{
         {QStringLiteral("master-keys"), {QStringLiteral("master")}},
         {QStringLiteral("authorize"),
-         {QStringLiteral("master"), QStringLiteral("server-public"), QStringLiteral("onion"), QStringLiteral("sequence"),
+         {QStringLiteral("master"), QStringLiteral("server-public"), QStringLiteral("host"), QStringLiteral("sequence"),
           QStringLiteral("days"), QStringLiteral("out")}},
         {QStringLiteral("revoke"),
          {QStringLiteral("master"), QStringLiteral("server-public"), QStringLiteral("sequence"), QStringLiteral("revocations")}},
-        {QStringLiteral("app-master"), {QStringLiteral("master"), QStringLiteral("onion"), QStringLiteral("out")}},
+        {QStringLiteral("app-master"), {QStringLiteral("master"), QStringLiteral("host"), QStringLiteral("out")}},
         {QStringLiteral("server-keys"), {QStringLiteral("data"), QStringLiteral("passphrase-file")}},
         {QStringLiteral("serve"),
-         {QStringLiteral("data"), QStringLiteral("port"), QStringLiteral("passphrase-file"), QStringLiteral("test-item-pages")}},
+         {QStringLiteral("data"), QStringLiteral("port"), QStringLiteral("tls-cert"), QStringLiteral("tls-key"), QStringLiteral("listen"),
+          QStringLiteral("passphrase-file"), QStringLiteral("test-item-pages")}},
         {QStringLiteral("queue"), {QStringLiteral("data")}},
         {QStringLiteral("publish"), {QStringLiteral("data"), QStringLiteral("id")}},
         {QStringLiteral("hold"), {QStringLiteral("data"), QStringLiteral("id")}},

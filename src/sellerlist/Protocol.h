@@ -17,25 +17,29 @@ namespace app::sellerlist {
 // order; bodies hold only strings, booleans and whole numbers).
 //
 // Trust chain: the owner's MASTER key (kept on the owner's computer) signs
-//   - an Authorization: the server's sign and box keys, its onion address, a
+//   - an Authorization: the server's sign and box keys, its host name, a
 //     sequence number and a validity period;
 //   - a Revocation: a server sign key that is no longer valid (any list it
 //     signs is refused).
-// The app ships the master's public keys and the onion address
+// The app ships the master's public keys and the server's host name
 // (MasterInfo); it trusts a server key only through a valid, unrevoked
 // authorization, and a list only when that key signed it and its sequence
 // is newer than the one it has (no rollback).
 
-// Who the app trusts: the master's public sign keys and the server's onion
-// address (data/master.json in the app; empty until the owner sets it up).
+// Who the app trusts: the master's public sign keys and the server's host
+// name (data/master.json in the app; empty until the owner sets it up). The
+// app reaches the server at https://<host>/ only.
 struct MasterInfo {
     SignPublic master;
-    QString onion; // "<56 characters>.onion"
+    QString host; // a DNS name, e.g. "list.example.org"
     static std::optional<MasterInfo> fromJson(const QJsonObject &object);
 };
 
-// A v3 onion address: 56 base32 characters and ".onion".
-bool isOnionAddress(const QString &host);
+// A DNS host name the app may use for the server: lower case, 4 to 253
+// characters, at least two labels of 1 to 63 characters [a-z0-9-] that do
+// not start or end with '-', the last label letters only (so never an IP
+// address), no trailing dot.
+bool isServerHost(const QString &host);
 
 // Sign / check a document.
 std::optional<QJsonObject> signDocument(const QJsonObject &body, const SignKeys &keys);
@@ -45,7 +49,7 @@ std::optional<QJsonObject> verifiedBody(const QJsonObject &document, const SignP
 struct Authorization {
     SignPublic serverSign;
     BoxPublic serverBox;
-    QString onion;
+    QString host;
     qint64 sequence = 0;
     QDateTime validFrom; // UTC
     QDateTime validUntil;

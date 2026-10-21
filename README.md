@@ -104,8 +104,8 @@ Windows, `$HOME/.local/share/GreedbayDetective` on Linux. That includes the
 browser profile the app uses for eBay (your eBay sign-in and cookies), and
 the sellers you marked and the seller reviews the app read (in the saved
 lookups' database; never uploaded or shared), the shared seller list's last
-copy and tor's data (when you use the shared list), and a downloaded local
-model (when you use one). On
+copy (when you use the shared list), and a downloaded local model (when you
+use one). On
 macOS the browser also makes `$HOME/Library/Caches/GreedbayDetective`, which
 the uninstall removes too. Exports go to your Downloads folder and are yours
 to keep.
@@ -120,7 +120,7 @@ keep your saved lookups and history:
   installing the app again uses them. Everything else the
   app saved is deleted: settings, logs, the app's browser profiles (your eBay
   sign-in and cookies), installed plugins, temporary files, the shared seller
-  list's copy, tor's data and downloaded local models.
+  list's copy and downloaded local models.
 - **Delete everything**: the whole work folder goes.
 
 Then, depending on the system:
@@ -142,11 +142,11 @@ Optional, off until you turn it on in **Settings > Shared seller list**:
 reports by other users of the app about sellers they bought from, on one
 list the list owner runs. Reading and reporting are separate switches.
 
-- Everything goes through Tor, which the app starts only while it updates the
-  list or sends a report; no one sees your internet address, not even the
-  list's server. Without Tor the app keeps the last copy and says the list was
-  not updated - it never connects any other way. Tor is not included in the
-  builds yet, so for now these builds say "Tor is not part of this build".
+- The list is downloaded from the Greedbay Detective server over HTTPS; that
+  server sees your IP address like any website does and does not store it
+  (it logs no addresses, browser names or request details, only hourly
+  counts). When the server cannot be reached the app keeps the last copy and
+  says the list was not updated.
 - The list is signed (Ed25519 and ML-DSA-65, both must hold) by a server key
   that the list owner's master key authorized; the app refuses anything else,
   and any list older than the one it has.
@@ -155,9 +155,10 @@ list the list owner runs. Reading and reporting are separate switches.
   first on your own eBay Purchases page, in the app's browser. Your eBay name
   is never sent; the item number stays on the server (the list shows only the
   month), so the seller cannot look you up in their orders. The report is encrypted to the server's key (X25519 and
-  ML-KEM-768). One report per seller; reports go live after the server has
-  checked the item on eBay's public item page; anyone can dispute a report,
-  and the list owner removes reports on request.
+  ML-KEM-768), inside HTTPS. One report per seller; a report goes live once
+  the server has confirmed the item on eBay's public item page, and any
+  report it cannot confirm waits for the list owner; anyone can dispute a
+  report, and the list owner removes reports on request.
 
 The server is a separate program: [tools/seller-list-server](tools/seller-list-server/README.md).
 Builds without the list owner's keys (`src/sellerlist/data/master.json`) say

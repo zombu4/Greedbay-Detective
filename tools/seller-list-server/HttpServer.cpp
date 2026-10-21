@@ -1,12 +1,61 @@
 #include "HttpServer.h"
 
+#include <QFile>
+#include <QFileInfo>
+#include <QSslCertificate>
+#include <QSslConfiguration>
+#include <QSslKey>
+#include <QSslServer>
 #include <QTcpServer>
 #include <QTcpSocket>
+#include <QTimeZone>
 #include <QTimer>
+
+#include <optional>
 
 namespace sellerserver {
 
 namespace {
+
+// The TLS settings from the two PEM files; std::nullopt and *error when
+// they do not hold a certificate and its matching private key.
+std::optional<QSslConfiguration> tlsConfiguration(const HttpServer::Tls &tls, QString *error)
+{
+    const QList<QSslCertificate> chain = QSslCertificate::fromPath(tls.certificateFile, QSsl::Pem, QSslCertificate::PatternSyntax::FixedString);
+    if (chain.isEmpty()) {
+        *error = QStringLiteral("%1 holds no PEM certificate").arg(tls.certificateFile);
+        return std::nullopt;
+    }
+    QFile keyFile(tls.keyFile);
+    if (!keyFile.open(QIODevice::ReadOnly)) {
+        *error = QStringLiteral("%1 cannot be read: %2").arg(tls.keyFile, keyFile.errorString());
+        return std::nullopt;
+    }
+    // The key is read as the kind the certificate's public key is (RSA or
+    // EC; certbot makes EC keys by default since its version 2.0).
+    const QSsl::KeyAlgorithm algorithm = chain.first().publicKey().algorithm();
+    if (algorithm != QSsl::Rsa && algorithm != QSsl::Ec) {
+        *error = QStringLiteral("the certificate in %1 has neither an RSA nor an EC key").arg(tls.certificateFile);
+        return std::nullopt;
+    }
+    const QSslKey key(keyFile.readAll(), algorithm, QSsl::Pem, QSsl::PrivateKey);
+    if (key.isNull()) {
+        *error = QStringLiteral("%1 holds no PEM private key of the certificate's kind").arg(tls.keyFile);
+        return std::nullopt;
+    }
+    if (chain.first().expiryDate() <= QDateTime::currentDateTimeUtc()) {
+        *error = QStringLiteral("the certificate in %1 expired %2").arg(tls.certificateFile, chain.first().expiryDate().toString(Qt::ISODate));
+        return std::nullopt;
+    }
+    QSslConfiguration configuration = QSslConfiguration::defaultConfiguration();
+    configuration.setLocalCertificateChain(chain);
+    configuration.setPrivateKey(key);
+    configuration.setPeerVerifyMode(QSslSocket::VerifyNone);
+    configuration.setProtocol(QSsl::TlsV1_2OrLater);
+    return configuration;
+}
+
+QDateTime modified(const QString &path) { return QFileInfo(path).lastModified(QTimeZone::UTC); }
 
 // The value of header `name` (case-insensitive) in the header block, or a
 // null array.
@@ -23,15 +72,77 @@ QByteArray headerValue(const QList<QByteArray> &lines, const QByteArray &name)
 } // namespace
 
 HttpServer::HttpServer(Handler handler, Limits limits, QObject *parent)
-    : QObject(parent), m_handler(std::move(handler)), m_limits(limits), m_server(new QTcpServer(this))
+    : QObject(parent), m_handler(std::move(handler)), m_limits(limits)
 {
-    m_server->setMaxPendingConnections(m_limits.maxConnections);
-    connect(m_server, &QTcpServer::newConnection, this, &HttpServer::onNewConnection);
+    useServer(new QTcpServer(this));
 }
 
 HttpServer::HttpServer(Handler handler, QObject *parent) : HttpServer(std::move(handler), Limits{}, parent) {}
 
 HttpServer::~HttpServer() = default;
+
+void HttpServer::useServer(QTcpServer *server)
+{
+    delete m_server;
+    m_server = server;
+    m_server->setMaxPendingConnections(m_limits.maxConnections);
+    // pendingConnectionAvailable: a plain connection at once, a TLS one once
+    // its handshake is done (QSslServer).
+    connect(m_server, &QTcpServer::pendingConnectionAvailable, this, &HttpServer::onNewConnection);
+}
+
+bool HttpServer::setTls(const Tls &tls, QString *error)
+{
+    const std::optional<QSslConfiguration> configuration = tlsConfiguration(tls, error);
+    if (!configuration)
+        return false;
+    auto *server = new QSslServer(this);
+    server->setSslConfiguration(*configuration);
+    server->setHandshakeTimeout(m_limits.handshakeMs);
+    useServer(server);
+    m_tls = tls;
+    m_certificateTime = modified(tls.certificateFile);
+    m_keyTime = modified(tls.keyFile);
+    if (!m_tlsCheck) {
+        m_tlsCheck = new QTimer(this);
+        connect(m_tlsCheck, &QTimer::timeout, this, &HttpServer::reloadTlsIfChanged);
+    }
+    m_tlsCheck->start(m_limits.tlsCheckMs);
+    return true;
+}
+
+void HttpServer::reloadTlsIfChanged()
+{
+    // Renewal tools replace both files; a pair is read once neither has
+    // changed for a whole check interval, so a half-copied pair is not used.
+    const QDateTime certificateTime = modified(m_tls.certificateFile);
+    const QDateTime keyTime = modified(m_tls.keyFile);
+    if (certificateTime == m_certificateTime && keyTime == m_keyTime) {
+        m_pendingCertificateTime = {};
+        m_pendingKeyTime = {};
+        return;
+    }
+    if (certificateTime != m_pendingCertificateTime || keyTime != m_pendingKeyTime) {
+        m_pendingCertificateTime = certificateTime;
+        m_pendingKeyTime = keyTime;
+        return;
+    }
+    m_certificateTime = certificateTime;
+    m_keyTime = keyTime;
+    m_pendingCertificateTime = {};
+    m_pendingKeyTime = {};
+    QString why;
+    const std::optional<QSslConfiguration> configuration = tlsConfiguration(m_tls, &why);
+    if (!configuration) {
+        emit tlsReloadFailed(why);
+        return;
+    }
+    // New connections use it; open ones finish with the old one.
+    static_cast<QSslServer *>(m_server)->setSslConfiguration(*configuration);
+    emit tlsReloaded();
+}
+
+HttpServer::Counts HttpServer::takeCounts() { return std::exchange(m_counts, Counts{}); }
 
 bool HttpServer::listen(const QHostAddress &address, quint16 port, QString *error)
 {
@@ -81,10 +192,12 @@ void HttpServer::onNewConnection()
 {
     while (QTcpSocket *socket = m_server->nextPendingConnection()) {
         if (m_connections.size() >= m_limits.maxConnections) {
+            ++m_counts.turnedAway;
             socket->abort();
             socket->deleteLater();
             continue;
         }
+        ++m_counts.connections;
         Connection connection;
         connection.timer = new QTimer(socket);
         connection.timer->setSingleShot(true);
@@ -174,6 +287,7 @@ void HttpServer::reply(QTcpSocket *socket, const Response &response)
     if (it->replied)
         return;
     it->replied = true;
+    ++m_counts.replies[response.status];
     it->timer->start(m_limits.connectionMs);
     disconnect(socket, &QTcpSocket::readyRead, this, nullptr);
     QByteArray head = "HTTP/1.1 " + QByteArray::number(response.status) + ' ' + reasonPhrase(response.status) + "\r\n";

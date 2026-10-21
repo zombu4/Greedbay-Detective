@@ -2,7 +2,6 @@
 
 #include "core/WorkFolder.h"
 #include "sellerlist/ListClient.h"
-#include "sellerlist/TorRunner.h"
 #include "ui/PurchaseCheck.h"
 
 #include <QHash>
@@ -19,12 +18,12 @@ namespace app::ui {
 
 // The shared seller list in the app (DESIGN 3.7; owner decisions 2026-10-20):
 // opt-in reading and reporting (Settings, both off by default), everything
-// over the app's own tor (TorRunner), which runs only while a request needs
-// it. Reading: at most once a day at start-up, plus "Update now". Reporting:
-// the purchase check first (the user's own Purchases page in the app's
-// browser), then only the seller id, the reason, the user's text, the item
-// number and the month are sent. Without tor the list is "not updated (Tor
-// unavailable)" and the saved copy stays; nothing ever goes out directly.
+// over HTTPS to the list owner's server (ListClient). Reading: at most once a
+// day at start-up, plus "Update now". Reporting: the purchase check first
+// (the user's own Purchases page in the app's browser), then only the seller
+// id, the reason, the user's text, the item number and the month are sent,
+// sealed to the server's key. When the server cannot be reached the list is
+// "not updated" and the saved copy stays.
 class SharedListController : public QObject {
     Q_OBJECT
     QML_ELEMENT
@@ -33,9 +32,9 @@ class SharedListController : public QObject {
     Q_PROPERTY(bool setUp READ setUp CONSTANT)
     Q_PROPERTY(bool readEnabled READ readEnabled NOTIFY changed)
     Q_PROPERTY(bool reportEnabled READ reportEnabled NOTIFY changed)
-    // A network request (or tor's start) is running.
+    // A network request is running.
     Q_PROPERTY(bool busy READ busy NOTIFY changed)
-    // "Updated 2026-10-20 14:05 - 12 sellers", "Not updated (Tor unavailable): ..."
+    // "Updated 2026-10-20 14:05 - 12 sellers", "Shared list not updated (...)"
     Q_PROPERTY(QString statusText READ statusText NOTIFY changed)
     // The report in progress: what is happening, and the outcome.
     Q_PROPERTY(bool reportBusy READ reportBusy NOTIFY changed)
@@ -80,7 +79,7 @@ public:
     // Report lines by lower-case seller id (Results).
     QHash<QString, QStringList> linesBySeller() const;
 
-    // Reports a seller: the purchase check, then the report over tor.
+    // Reports a seller: the purchase check, then the report.
     Q_INVOKABLE void report(const QString &sellerId, const QString &reason, const QString &text);
     Q_INVOKABLE void continuePurchaseCheck() { m_purchase.continueAfterUser(); }
     Q_INVOKABLE void cancelReport();
@@ -93,9 +92,7 @@ signals:
 private:
     enum class Job { None, Fetch, Report, Dispute };
 
-    void runWithTor(Job job);
-    void onTorState();
-    void go();
+    void run(Job job);
     void jobDone();
     void onPurchaseFinished();
     void setReport(bool busy, const QString &status, bool ok);
@@ -103,7 +100,6 @@ private:
     WorkFolder m_folder;
     std::function<bool()> m_lookupRunning;
     QNetworkAccessManager m_network;
-    sellerlist::TorRunner m_tor;
     sellerlist::ListClient *m_client = nullptr;
     PurchaseCheck m_purchase;
     Job m_job = Job::None;

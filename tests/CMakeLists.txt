@@ -126,15 +126,18 @@ qt_add_resources(tst_extractors "extractor_fixtures" PREFIX "/fixtures" BASE fix
 set_tests_properties(tst_extractors PROPERTIES TIMEOUT 300)
 
 # The shared seller list (DESIGN 3.7): cryptography, trust chain, the server
-# (tools/seller-list-server) and the app's client against it; TorRunner
-# against faketor, a stand-in speaking tor's control protocol.
-app_add_test_helper(faketor helpers/faketor.cpp)
-target_link_libraries(faketor PRIVATE Qt6::Network)
+# (tools/seller-list-server) and the app's client against it, over plain HTTP
+# and over the server's own HTTPS. fixtures/tls: two synthetic test chains
+# made with openssl for this test only: ca-<n>.pem a test CA (its key was
+# discarded), cert-<n>.pem a server certificate for 127.0.0.1 it signed
+# (serverAuth, valid 2019-06-01 to 2119-06-01) followed by the CA, as
+# Let's Encrypt's fullchain.pem; key-<n>.pem the server certificate's key.
 app_add_unit_test(tst_sellerlist tst_sellerlist.cpp)
 target_link_libraries(tst_sellerlist PRIVATE sellerserver appsellerlist Qt6::Network)
 app_copy_runtime_dlls(tst_sellerlist)
-target_compile_definitions(tst_sellerlist PRIVATE FAKE_TOR_PATH="$<TARGET_FILE:faketor>")
-add_dependencies(tst_sellerlist faketor)
+qt_add_resources(tst_sellerlist "tls_fixtures" PREFIX "/tls" BASE fixtures/tls
+    FILES fixtures/tls/ca-a.pem fixtures/tls/cert-a.pem fixtures/tls/key-a.pem
+          fixtures/tls/ca-b.pem fixtures/tls/cert-b.pem fixtures/tls/key-b.pem)
 
 # Paging of the purchase check and the review read, without a browser.
 app_add_unit_test(tst_sellerpaging tst_sellerpaging.cpp)

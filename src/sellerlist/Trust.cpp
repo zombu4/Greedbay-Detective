@@ -21,7 +21,7 @@ std::optional<Authorization> checkedAuthorization(const QJsonObject &bundle, con
         *why = QStringLiteral("the server's key document is not readable");
         return std::nullopt;
     }
-    if (authorization->onion != master.onion) {
+    if (authorization->host != master.host) {
         *why = QStringLiteral("the server's key document names another address");
         return std::nullopt;
     }

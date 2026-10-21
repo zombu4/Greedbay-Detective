@@ -147,8 +147,6 @@ qt_add_library(appsellerlist STATIC
     sellerlist/Protocol.h
     sellerlist/Trust.cpp
     sellerlist/Trust.h
-    sellerlist/TorRunner.cpp
-    sellerlist/TorRunner.h
     sellerlist/ListClient.cpp
     sellerlist/ListClient.h
 )
@@ -370,7 +368,7 @@ qt_add_resources(appmodel "model_licenses"
         "${PROJECT_SOURCE_DIR}/resources/models/Qwen3-4B-LICENSE.txt"
 )
 
-# The shared seller list's owner keys and onion address (DESIGN 3.7), made
+# The shared seller list's owner keys and server host name (DESIGN 3.7), made
 # by the list owner with tools/seller-list-server "app-master": by default
 # src/sellerlist/data/master.json; APP_SELLERLIST_MASTER names another file
 # (a test list). Without the file the app says the list is not set up.

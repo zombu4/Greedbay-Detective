@@ -380,7 +380,7 @@ Popup {
                 ColumnLayout {
                     anchors.fill: parent
                     spacing: 8
-                    Muted { text: "What is wrong with this report? It goes to the list owner, over Tor, without your name." }
+                    Muted { text: "What is wrong with this report? It goes to the list owner, encrypted, without your name." }
                     TextArea {
                         id: disputeArea
                         Layout.fillWidth: true
@@ -454,7 +454,7 @@ Popup {
                     Muted {
                         text: "The app first looks for your purchase from this seller on your own eBay Purchases page "
                               + "(in the app's browser, counted in the daily pages). Then it sends only the seller's "
-                              + "user id, your reason and words, and that purchase's item number and month - over Tor, "
+                              + "user id, your reason and words, and that purchase's item number and month - encrypted, "
                               + "without your eBay name. One report per seller."
                     }
                     Muted { text: "Reason" }

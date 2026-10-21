@@ -47,7 +47,7 @@ Not released yet.
   by page beyond the first 25 (paced, inside the daily cap, kept for the
   days set in Settings); a read that stops early says how far it got.
 - Shared seller list (off until you turn it on): reports by other users,
-  signed by the list owner's keys and fetched only through Tor; report a
+  signed by the list owner's keys and fetched over HTTPS; report a
   seller you bought from (checked first on your own Purchases page; your eBay
   name is never sent) or dispute a report. The server is a separate program
   in tools/seller-list-server.

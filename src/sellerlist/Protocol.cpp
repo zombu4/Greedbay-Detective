@@ -57,16 +57,26 @@ QByteArray compact(const QJsonObject &object) { return QJsonDocument(object).toJ
 std::optional<MasterInfo> MasterInfo::fromJson(const QJsonObject &object)
 {
     const std::optional<SignPublic> master = SignPublic::fromJson(object.value(QStringLiteral("master")).toObject());
-    const QString onion = object.value(QStringLiteral("onion")).toString();
-    if (!master || !isOnionAddress(onion))
+    const QString host = object.value(QStringLiteral("host")).toString();
+    if (!master || !isServerHost(host))
         return std::nullopt;
-    return MasterInfo{*master, onion};
+    return MasterInfo{*master, host};
 }
 
-bool isOnionAddress(const QString &host)
+bool isServerHost(const QString &host)
 {
-    static const QRegularExpression pattern(QStringLiteral("^[a-z2-7]{56}\\.onion$"));
-    return pattern.match(host).hasMatch();
+    static const QRegularExpression label(QStringLiteral("^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"));
+    static const QRegularExpression topLabel(QStringLiteral("^[a-z]{2,63}$"));
+    if (host.size() < 4 || host.size() > 253)
+        return false;
+    const QStringList labels = host.split(QLatin1Char('.'));
+    if (labels.size() < 2 || !topLabel.match(labels.last()).hasMatch())
+        return false;
+    for (const QString &part : labels) {
+        if (!label.match(part).hasMatch())
+            return false;
+    }
+    return true;
 }
 
 std::optional<QJsonObject> signDocument(const QJsonObject &body, const SignKeys &keys)
@@ -93,7 +103,7 @@ QJsonObject Authorization::toBody() const
     return QJsonObject{{QStringLiteral("type"), QStringLiteral("authorization")},
                        {QStringLiteral("serverSign"), serverSign.toJson()},
                        {QStringLiteral("serverBox"), serverBox.toJson()},
-                       {QStringLiteral("onion"), onion},
+                       {QStringLiteral("host"), host},
                        {QStringLiteral("sequence"), static_cast<double>(sequence)},
                        {QStringLiteral("validFrom"), timeText(validFrom)},
                        {QStringLiteral("validUntil"), timeText(validUntil)}};
@@ -108,10 +118,10 @@ std::optional<Authorization> Authorization::fromBody(const QJsonObject &body)
     const std::optional<qint64> sequence = wholeOf(body.value(QStringLiteral("sequence")));
     const std::optional<QDateTime> from = timeOf(body.value(QStringLiteral("validFrom")));
     const std::optional<QDateTime> until = timeOf(body.value(QStringLiteral("validUntil")));
-    const QString onion = body.value(QStringLiteral("onion")).toString();
-    if (!sign || !box || !sequence || !from || !until || *until <= *from || !isOnionAddress(onion))
+    const QString host = body.value(QStringLiteral("host")).toString();
+    if (!sign || !box || !sequence || !from || !until || *until <= *from || !isServerHost(host))
         return std::nullopt;
-    return Authorization{*sign, *box, onion, *sequence, *from, *until};
+    return Authorization{*sign, *box, host, *sequence, *from, *until};
 }
 
 QJsonObject Revocation::toBody() const
@@ -174,13 +184,13 @@ std::optional<SellerList> SellerList::fromBody(const QJsonObject &body)
         return std::nullopt;
     const std::optional<qint64> sequence = wholeOf(body.value(QStringLiteral("sequence")));
     const std::optional<qint64> authorization = wholeOf(body.value(QStringLiteral("authorizationSequence")));
-    const std::optional<QDateTime> generated = timeOf(body.value(QStringLiteral("signedAt")));
-    if (!sequence || !authorization || !generated || !body.value(QStringLiteral("sellers")).isArray())
+    const std::optional<QDateTime> signedAt = timeOf(body.value(QStringLiteral("signedAt")));
+    if (!sequence || !authorization || !signedAt || !body.value(QStringLiteral("sellers")).isArray())
         return std::nullopt;
     SellerList list;
     list.sequence = *sequence;
     list.authorizationSequence = *authorization;
-    list.signedAt = *generated;
+    list.signedAt = *signedAt;
     for (const QJsonValue &value : body.value(QStringLiteral("sellers")).toArray()) {
         const QJsonObject object = value.toObject();
         ListedSeller seller;

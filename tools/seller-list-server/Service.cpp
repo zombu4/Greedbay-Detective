@@ -69,7 +69,7 @@ bool Service::start(QString *error)
     const std::optional<sl::Authorization> authorization
         = sl::checkKeys(QJsonObject{{QStringLiteral("authorization"), m_keys.authorization},
                                     {QStringLiteral("revocations"), m_keys.revocations}},
-                        sl::MasterInfo{m_keys.master, unchecked->onion}, now(), &why);
+                        sl::MasterInfo{m_keys.master, unchecked->host}, now(), &why);
     if (!authorization) {
         *error = QStringLiteral("the authorization does not hold: %1").arg(why);
         return false;

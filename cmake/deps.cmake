@@ -85,13 +85,14 @@ else()
     add_dependencies(app_sodium sodium_build)
 endif()
 # Windows: libsodium is a DLL; a program that links it gets it copied next to
-# itself after each build (the DLLs of the libraries a target links:
-# $<TARGET_RUNTIME_DLLS>, CMake 3.21). Only for targets that link it.
+# itself after each build (the build's libsodium.dll only: $<TARGET_FILE> of the
+# imported target). Not $<TARGET_RUNTIME_DLLS>: that also copies Qt6Core.dll and
+# the other Qt DLLs, and a Qt6Core.dll next to the program makes Qt look for its
+# plugins relative to that folder, where there are none (no SQLite driver).
 function(app_copy_runtime_dlls target)
     if(WIN32)
         add_custom_command(TARGET ${target} POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_RUNTIME_DLLS:${target}> $<TARGET_FILE_DIR:${target}>
-            COMMAND_EXPAND_LISTS)
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:app_sodium> $<TARGET_FILE_DIR:${target}>)
     endif()
 endfunction()
 

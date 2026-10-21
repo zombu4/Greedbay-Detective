@@ -1,6 +1,9 @@
 // The shared seller list: hybrid cryptography, the trust chain, reports, the
-// server's checks and limits, and the app's client against a local server.
-// Everything is synthetic: made-up seller ids, item numbers and onion names.
+// server's checks and limits, and the app's client against a local server,
+// over plain HTTP and over the server's own HTTPS.
+// Everything is synthetic: made-up seller ids, item numbers and host names
+// (example.org is reserved for examples, RFC 2606), test certificates for
+// 127.0.0.1 only.
 
 #include "HttpServer.h"
 #include "ItemCheck.h"
@@ -10,15 +13,17 @@
 #include "sellerlist/Crypto.h"
 #include "sellerlist/ListClient.h"
 #include "sellerlist/Protocol.h"
-#include "sellerlist/TorRunner.h"
 #include "sellerlist/Trust.h"
 
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QNetworkAccessManager>
-#include <QNetworkProxy>
+#include <QNetworkReply>
 #include <QSignalSpy>
 #include <QTcpSocket>
+#include <QSslCertificate>
+#include <QSslConfiguration>
+#include <QSslSocket>
 #include <QTemporaryDir>
 #include <QTest>
 
@@ -33,7 +38,7 @@ using sellerserver::Service;
 
 namespace {
 
-const QString kOnion = QStringLiteral("abcdefghijklmnopqrstuvwxyz234567abcdefghijklmnopqrstuvwx.onion");
+const QString kHost = QStringLiteral("list.example.org");
 
 // A synthetic item page with what the server reads: the JSON-LD ItemPage and
 // the seller's feedback links of the item.
@@ -66,9 +71,9 @@ Chain makeChain(const QDateTime &now, qint64 sequence = 1)
     chain.master = *newSignKeys();
     chain.serverSign = *newSignKeys();
     chain.serverBox = *newBoxKeys();
-    chain.authorization = {chain.serverSign.pub, chain.serverBox.pub, kOnion, sequence, now.addDays(-1), now.addDays(30)};
+    chain.authorization = {chain.serverSign.pub, chain.serverBox.pub, kHost, sequence, now.addDays(-1), now.addDays(30)};
     chain.authorizationDoc = *signDocument(chain.authorization.toBody(), chain.master);
-    chain.info = {chain.master.pub, kOnion};
+    chain.info = {chain.master.pub, kHost};
     return chain;
 }
 
@@ -114,11 +119,12 @@ private slots:
     void reportChecks();
     void itemPageReader();
     void httpLimits();
-    void clientRefusesDirect();
+    void serverHostNames();
+    void clientNotSetUp();
+    void httpsEndToEnd();
+    void tlsRenewal();
     void serviceEndToEnd();
     void serviceLimits();
-    void torRunnerControlProtocol();
-    void torRunnerMissingProgram();
 };
 
 void TestSellerList::initTestCase() { QVERIFY(initialize()); }
@@ -248,11 +254,11 @@ void TestSellerList::trustChain()
     const SignKeys stranger = *newSignKeys();
     QVERIFY(!checkBundle(bundle(chain, list, stranger), chain.info, 0, now, &why));
     // Another master.
-    MasterInfo otherMaster{newSignKeys()->pub, kOnion};
+    MasterInfo otherMaster{newSignKeys()->pub, kHost};
     QVERIFY(!checkBundle(bundle(chain, list, chain.serverSign), otherMaster, 0, now, &why));
-    // Another onion address than the app knows.
-    MasterInfo otherOnion{chain.master.pub, QStringLiteral("b").repeated(56) + QStringLiteral(".onion")};
-    QVERIFY(!checkBundle(bundle(chain, list, chain.serverSign), otherOnion, 0, now, &why));
+    // Another host name than the app knows.
+    MasterInfo otherHost{chain.master.pub, QStringLiteral("other.example.org")};
+    QVERIFY(!checkBundle(bundle(chain, list, chain.serverSign), otherHost, 0, now, &why));
     // Outside the authorization's validity.
     QVERIFY(!checkBundle(bundle(chain, list, chain.serverSign), chain.info, 0, now.addDays(31), &why));
     // A list naming another authorization.
@@ -390,30 +396,33 @@ void TestSellerList::httpLimits()
     QVERIFY2(answer.startsWith("HTTP/1.1 400"), answer.constData());
 }
 
-void TestSellerList::clientRefusesDirect()
+void TestSellerList::serverHostNames()
 {
+    for (const char *good : {"list.example.org", "a.example.org", "seller-list.example.co.uk", "x1.example.org"})
+        QVERIFY2(isServerHost(QString::fromLatin1(good)), good);
+    for (const char *bad : {"", "localhost", "example", "List.example.org", "list.example.org.", "127.0.0.1",
+                            "list.example.org:443", "https://list.example.org", "-a.example.org", "a-.example.org",
+                            "a..example.org", "list.example.1", "list example.org", "list.example.org/v1", "a.b"})
+        QVERIFY2(!isServerHost(QString::fromLatin1(bad)), bad);
+    QVERIFY(!isServerHost(QStringLiteral("a").repeated(64) + QStringLiteral(".example.org")));
+    // A master.json with a host the app may not use is no master at all.
+    const SignKeys master = *newSignKeys();
+    QVERIFY(MasterInfo::fromJson({{QStringLiteral("master"), master.pub.toJson()}, {QStringLiteral("host"), kHost}}));
+    QVERIFY(!MasterInfo::fromJson({{QStringLiteral("master"), master.pub.toJson()}, {QStringLiteral("host"), QStringLiteral("192.0.2.1")}}));
+    QVERIFY(!MasterInfo::fromJson({{QStringLiteral("master"), master.pub.toJson()}}));
+}
+
+void TestSellerList::clientNotSetUp()
+{
+    // Without the server's host name (not set up), nothing goes out.
     QTemporaryDir dir;
     QNetworkAccessManager network;
-    network.setProxy(QNetworkProxy::NoProxy);
-    ListClient client(&network, MasterInfo{newSignKeys()->pub, kOnion}, dir.path());
-    QSignalSpy fetched(&client, &ListClient::listFetched);
-    client.fetchList();
-    QCOMPARE(fetched.size(), 1);
-    QCOMPARE(fetched.first().at(0).toBool(), false);
-    QVERIFY(fetched.first().at(1).toString().contains(QStringLiteral("never connects directly")));
-
-    // A proxy that is not a local SOCKS5 proxy is refused too.
-    network.setProxy(QNetworkProxy(QNetworkProxy::HttpProxy, QStringLiteral("127.0.0.1"), 8080));
-    client.fetchList();
-    QCOMPARE(fetched.size(), 2);
-    QCOMPARE(fetched.last().at(0).toBool(), false);
-
-    // Without the onion address (not set up), nothing goes out either.
     ListClient unset(&network, MasterInfo{newSignKeys()->pub, QString()}, dir.path());
     QSignalSpy unsetFetched(&unset, &ListClient::listFetched);
     unset.fetchList();
     QCOMPARE(unsetFetched.size(), 1);
     QCOMPARE(unsetFetched.first().at(0).toBool(), false);
+    QVERIFY(unsetFetched.first().at(1).toString().contains(QStringLiteral("not set up")));
 }
 
 namespace {
@@ -429,7 +438,7 @@ struct LocalServer {
     std::unique_ptr<HttpServer> pages;
     QHash<QString, QByteArray> pageByItem;
 
-    bool start(const Service::Limits &limits, QString *error)
+    bool start(const Service::Limits &limits, QString *error, const HttpServer::Tls *tls = nullptr)
     {
         chain = makeChain(QDateTime::currentDateTimeUtc());
         pages = std::make_unique<HttpServer>([this](const HttpServer::Request &request) {
@@ -450,6 +459,8 @@ struct LocalServer {
         if (!service->start(error))
             return false;
         http = std::make_unique<HttpServer>([this](const HttpServer::Request &request) { return service->handle(request); });
+        if (tls && !http->setTls(*tls, error))
+            return false;
         return http->listen(QHostAddress::LocalHost, 0, error);
     }
     ~LocalServer()
@@ -648,41 +659,138 @@ void TestSellerList::serviceLimits()
     QVERIFY(error.contains(QStringLiteral("revoked")));
 }
 
-void TestSellerList::torRunnerControlProtocol()
-{
-    // FAKE_TOR_PATH: a helper that writes the control-port file and the
-    // cookie, and answers the control commands as the control-spec describes.
-    QTemporaryDir dir;
-    TorRunner runner(QStringLiteral(FAKE_TOR_PATH), dir.filePath(QStringLiteral("tor")));
-    QSignalSpy changed(&runner, &TorRunner::stateChanged);
-    runner.start();
-    QTRY_VERIFY_WITH_TIMEOUT(runner.state() == TorRunner::State::Ready || runner.state() == TorRunner::State::Failed, 30000);
-    QVERIFY2(runner.state() == TorRunner::State::Ready, qPrintable(runner.error()));
-    QCOMPARE(runner.proxy().type(), QNetworkProxy::Socks5Proxy);
-    QCOMPARE(runner.proxy().hostName(), QStringLiteral("127.0.0.1"));
-    QCOMPARE(runner.proxy().port(), quint16(19050));
-    runner.stop();
-    QCOMPARE(runner.state(), TorRunner::State::Off);
+namespace {
 
-    // A tor that answers the challenge with a wrong server hash is refused
-    // before the cookie's proof is sent.
-    TorRunner liar(QStringLiteral(FAKE_TOR_PATH), dir.filePath(QStringLiteral("tor-liar")));
-    QFile marker(dir.filePath(QStringLiteral("tor-liar/wrong-hash")));
-    QVERIFY(QDir().mkpath(dir.filePath(QStringLiteral("tor-liar"))));
-    QVERIFY(marker.open(QIODevice::WriteOnly));
-    marker.close();
-    liar.start();
-    QTRY_VERIFY_WITH_TIMEOUT(liar.state() == TorRunner::State::Failed, 30000);
-    QVERIFY2(liar.error().contains(QStringLiteral("does not match")), qPrintable(liar.error()));
+// A test certificate or key from fixtures/tls, copied to `dir` (the server
+// reads files).
+QString fixtureFile(const QTemporaryDir &dir, const QString &name)
+{
+    const QString path = dir.filePath(name);
+    QFile::remove(path);
+    QFile::copy(QStringLiteral(":/tls/") + name, path);
+    QFile::setPermissions(path, QFileDevice::ReadOwner | QFileDevice::WriteOwner);
+    return path;
 }
 
-void TestSellerList::torRunnerMissingProgram()
+QSslCertificate fixtureCertificate(const QString &name)
 {
-    QTemporaryDir dir;
-    TorRunner runner(QString(), dir.path());
-    runner.start();
-    QCOMPARE(runner.state(), TorRunner::State::Failed);
-    QVERIFY(runner.error().contains(QStringLiteral("not part of this build")));
+    const QList<QSslCertificate> certificates = QSslCertificate::fromPath(QStringLiteral(":/tls/") + name);
+    return certificates.isEmpty() ? QSslCertificate() : certificates.first();
+}
+
+} // namespace
+
+void TestSellerList::httpsEndToEnd()
+{
+    QVERIFY2(QSslSocket::supportsSsl(), qPrintable(QSslSocket::activeBackend()));
+    QTemporaryDir files;
+    const HttpServer::Tls tls{fixtureFile(files, QStringLiteral("cert-a.pem")), fixtureFile(files, QStringLiteral("key-a.pem"))};
+    LocalServer server;
+    QString error;
+    QVERIFY2(server.start(Service::Limits{}, &error, &tls), qPrintable(error));
+
+    // The server's certificate is trusted: the list comes over HTTPS and
+    // verifies; a dispute goes out the same way (GET /v1/keys, then POST).
+    QTemporaryDir appDir;
+    QNetworkAccessManager network;
+    ListClient client(&network, server.chain.info, appDir.path());
+    client.setLocalTestServer(server.http->port(), fixtureCertificate(QStringLiteral("ca-a.pem")));
+    QSignalSpy fetched(&client, &ListClient::listFetched);
+    client.fetchList();
+    QVERIFY(fetched.wait(10000));
+    QVERIFY2(fetched.last().at(0).toBool(), qPrintable(fetched.last().at(1).toString()));
+    QSignalSpy disputed(&client, &ListClient::disputeSent);
+    client.sendDispute(Dispute{QStringLiteral("made_up_seller"), QString(), QStringLiteral("Synthetic dispute.")});
+    QVERIFY(disputed.wait(10000));
+    QVERIFY2(disputed.last().at(0).toBool(), qPrintable(disputed.last().at(2).toString()));
+    QCOMPARE(server.store.openDisputes(&error)->size(), 1);
+
+    // A certificate from a CA the client does not trust: nothing is fetched,
+    // and no TLS error is ignored.
+    // (Its own network manager: one manager reuses what it learned about a
+    // host and port; the app has one manager with one trust setting.)
+    QTemporaryDir otherDir;
+    QNetworkAccessManager otherNetwork;
+    ListClient untrusting(&otherNetwork, server.chain.info, otherDir.path());
+    untrusting.setLocalTestServer(server.http->port(), fixtureCertificate(QStringLiteral("ca-b.pem")));
+    QSignalSpy refused(&untrusting, &ListClient::listFetched);
+    untrusting.fetchList();
+    QVERIFY(refused.wait(10000));
+    QCOMPARE(refused.last().at(0).toBool(), false);
+    QVERIFY2(refused.last().at(1).toString().contains(QStringLiteral("could not be reached")),
+             qPrintable(refused.last().at(1).toString()));
+    QVERIFY(!untrusting.list());
+
+    // Only counts are kept: the list fetch, then GET /v1/keys and the POST of
+    // the dispute (one request per connection). The refusing client sent no
+    // request; its connection may still be counted (on macOS it was: the
+    // server had finished its side of the handshake).
+    const HttpServer::Counts counts = server.http->takeCounts();
+    QCOMPARE(counts.replies.value(200), 2);
+    QCOMPARE(counts.replies.value(202), 1);
+    QCOMPARE(counts.replies.size(), 2);
+    QVERIFY(counts.connections == 3 || counts.connections == 4);
+    QCOMPARE(server.http->takeCounts().connections, 0);
+
+    // Files that hold no certificate or key are refused at the start.
+    HttpServer broken([](const HttpServer::Request &) { return HttpServer::Response{}; });
+    QVERIFY(!broken.setTls({tls.keyFile, tls.keyFile}, &error));
+    QVERIFY(!broken.setTls({tls.certificateFile, tls.certificateFile}, &error));
+    QVERIFY(!broken.setTls({files.filePath(QStringLiteral("missing.pem")), tls.keyFile}, &error));
+}
+
+void TestSellerList::tlsRenewal()
+{
+    QTemporaryDir files;
+    const HttpServer::Tls tls{fixtureFile(files, QStringLiteral("cert-a.pem")), fixtureFile(files, QStringLiteral("key-a.pem"))};
+    HttpServer::Limits limits;
+    limits.tlsCheckMs = 50;
+    HttpServer server([](const HttpServer::Request &) { return HttpServer::Response{200, "application/json", "{}"}; }, limits);
+    QString error;
+    QVERIFY2(server.setTls(tls, &error), qPrintable(error));
+    QVERIFY2(server.listen(QHostAddress::LocalHost, 0, &error), qPrintable(error));
+
+    QNetworkAccessManager network;
+    // GET / against the server, trusting only `root`: true when it answers.
+    auto answers = [&](const QSslCertificate &root) {
+        QNetworkRequest request(QUrl(QStringLiteral("https://127.0.0.1:%1/").arg(server.port())));
+        QSslConfiguration configuration = request.sslConfiguration();
+        configuration.setCaCertificates({root});
+        request.setSslConfiguration(configuration);
+        network.clearConnectionCache();
+        QNetworkReply *reply = network.get(request);
+        QSignalSpy finished(reply, &QNetworkReply::finished);
+        const bool done = finished.wait(10000);
+        const bool ok = done && reply->error() == QNetworkReply::NoError;
+        reply->deleteLater();
+        return ok;
+    };
+    const QSslCertificate a = fixtureCertificate(QStringLiteral("ca-a.pem"));
+    const QSslCertificate b = fixtureCertificate(QStringLiteral("ca-b.pem"));
+    QVERIFY(answers(a));
+    QVERIFY(!answers(b));
+
+    // A renewal replaces both files: the new pair is used without a restart.
+    QSignalSpy reloaded(&server, &HttpServer::tlsReloaded);
+    QSignalSpy failed(&server, &HttpServer::tlsReloadFailed);
+    QTest::qWait(1100); // a newer file time than the first pair's on every file system
+    QFile::remove(tls.certificateFile);
+    QFile::remove(tls.keyFile);
+    QVERIFY(QFile::copy(QStringLiteral(":/tls/cert-b.pem"), tls.certificateFile));
+    QVERIFY(QFile::copy(QStringLiteral(":/tls/key-b.pem"), tls.keyFile));
+    QVERIFY(reloaded.wait(5000));
+    QVERIFY(answers(b));
+    QVERIFY(!answers(a));
+
+    // A renewed pair that does not load is reported; the last good one stays.
+    QTest::qWait(1100);
+    QFile::remove(tls.certificateFile);
+    QFile garbage(tls.certificateFile);
+    QVERIFY(garbage.open(QIODevice::WriteOnly));
+    garbage.write("not a certificate\n");
+    garbage.close();
+    QVERIFY(failed.wait(5000));
+    QVERIFY(answers(b));
 }
 
 QTEST_GUILESS_MAIN(TestSellerList)

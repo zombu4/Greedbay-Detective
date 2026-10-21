@@ -8,7 +8,6 @@
 #include <QFile>
 #include <QJsonDocument>
 #include <QLocale>
-#include <QNetworkProxy>
 
 namespace app::ui {
 
@@ -18,7 +17,7 @@ namespace {
 
 constexpr qint64 kDaySeconds = 24 * 60 * 60;
 
-// The list owner's public keys and onion address, compiled into the app
+// The list owner's public keys and server host name, compiled into the app
 // from data/master.json; std::nullopt when this build has none.
 std::optional<sl::MasterInfo> masterInfo()
 {
@@ -46,11 +45,8 @@ SharedListController::SharedListController(WorkFolder folder, std::function<bool
     : QObject(parent),
       m_folder(std::move(folder)),
       m_lookupRunning(std::move(lookupRunning)),
-      m_tor(sl::TorRunner::bundledProgram(), m_folder.torDir()),
       m_purchase(m_folder)
 {
-    // Nothing goes out without tor: the proxy is set only while tor is ready.
-    m_network.setProxy(QNetworkProxy::NoProxy);
     // libsodium and liboqs must be set up before any of their functions
     // runs (sellerlist/Crypto.h); without them the feature stays off.
     if (!sl::initialize())
@@ -75,12 +71,11 @@ SharedListController::SharedListController(WorkFolder folder, std::function<bool
             jobDone();
         });
     }
-    connect(&m_tor, &sl::TorRunner::stateChanged, this, &SharedListController::onTorState);
     connect(&m_purchase, &PurchaseCheck::changed, this, &SharedListController::changed);
     connect(&m_purchase, &PurchaseCheck::finished, this, &SharedListController::onPurchaseFinished);
 }
 
-SharedListController::~SharedListController() { m_tor.stop(); }
+SharedListController::~SharedListController() = default;
 
 bool SharedListController::readEnabled() const { return Settings(m_folder.settingsPath()).sharedListRead(); }
 
@@ -128,11 +123,7 @@ QString SharedListController::statusText() const
     if (!readEnabled())
         return tr("Off.");
     QString text;
-    if (m_job == Job::Fetch && m_tor.state() == sl::TorRunner::State::Starting)
-        text = tr("Updating: %1...").arg(m_tor.progress());
-    else if (m_job != Job::None && m_tor.state() == sl::TorRunner::State::Starting)
-        text = tr("Sending: %1...").arg(m_tor.progress());
-    else if (m_job == Job::Fetch)
+    if (m_job == Job::Fetch)
         text = tr("Updating...");
     else if (m_client->list())
         text = tr("Updated %1 - %n seller(s) on the list.", nullptr, static_cast<int>(m_client->list()->list.sellers.size()))
@@ -181,7 +172,7 @@ void SharedListController::refresh()
     // Not while a report is under way (its purchase check, then its sending).
     if (!m_client || !readEnabled() || m_job != Job::None || m_reportBusy)
         return;
-    runWithTor(Job::Fetch);
+    run(Job::Fetch);
 }
 
 void SharedListController::report(const QString &sellerId, const QString &reason, const QString &text)
@@ -226,19 +217,16 @@ void SharedListController::onPurchaseFinished()
     }
     m_report->itemId = found->itemId;
     m_report->month = found->month;
-    setReport(true, tr("Purchase found (item %1, %2). Sending over Tor...").arg(found->itemId, found->month), false);
-    runWithTor(Job::Report);
+    setReport(true, tr("Purchase found (item %1, %2). Sending...").arg(found->itemId, found->month), false);
+    run(Job::Report);
 }
 
 void SharedListController::cancelReport()
 {
+    // Only the purchase check waits for the user; a report already sent is
+    // one short request and ends by itself (ListClient's time limit).
     if (m_purchase.busy())
         m_purchase.cancel();
-    if (m_job == Job::Report && m_tor.state() == sl::TorRunner::State::Starting) {
-        m_report.reset();
-        setReport(false, tr("Stopped."), false);
-        jobDone();
-    }
 }
 
 void SharedListController::dispute(const QString &sellerId, const QString &reportId, const QString &text)
@@ -262,57 +250,15 @@ void SharedListController::dispute(const QString &sellerId, const QString &repor
         return;
     }
     m_dispute = dispute;
-    m_disputeStatus = tr("Sending over Tor...");
-    runWithTor(Job::Dispute);
+    m_disputeStatus = tr("Sending...");
+    run(Job::Dispute);
 }
 
-void SharedListController::runWithTor(Job job)
+void SharedListController::run(Job job)
 {
     m_job = job;
     emit changed();
-    if (m_tor.state() == sl::TorRunner::State::Ready) {
-        go();
-        return;
-    }
-    m_tor.start(); // onTorState continues
-    onTorState();
-}
-
-void SharedListController::onTorState()
-{
-    if (m_job == Job::None) {
-        emit changed();
-        return;
-    }
-    switch (m_tor.state()) {
-    case sl::TorRunner::State::Ready:
-        go();
-        return;
-    case sl::TorRunner::State::Failed: {
-        const QString why = tr("Tor unavailable: %1").arg(m_tor.error());
-        const Job job = m_job;
-        if (job == Job::Fetch)
-            m_lastError = why;
-        else if (job == Job::Report)
-            setReport(false, tr("Not sent (%1).").arg(why), false);
-        else
-            m_disputeStatus = tr("Not sent (%1).").arg(why);
-        m_report.reset();
-        m_dispute.reset();
-        jobDone();
-        return;
-    }
-    case sl::TorRunner::State::Starting:
-    case sl::TorRunner::State::Off:
-        emit changed();
-        return;
-    }
-}
-
-void SharedListController::go()
-{
-    m_network.setProxy(m_tor.proxy());
-    switch (m_job) {
+    switch (job) {
     case Job::Fetch:
         m_client->fetchList();
         return;
@@ -336,9 +282,6 @@ void SharedListController::go()
 void SharedListController::jobDone()
 {
     m_job = Job::None;
-    // tor runs only while a request needs it.
-    m_network.setProxy(QNetworkProxy::NoProxy);
-    m_tor.stop();
     emit changed();
 }
 

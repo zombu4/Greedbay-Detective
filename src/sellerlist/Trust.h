@@ -9,13 +9,13 @@
 
 namespace app::sellerlist {
 
-// What the server serves at GET /v1/list (one request over Tor):
+// What the server serves at GET /v1/list (one HTTPS request):
 //   {"authorization": <master-signed Authorization>,
 //    "revocations": [<master-signed Revocation>, ...],
 //    "list": <server-signed SellerList>}
 // checkBundle() decides whether the app may use the list:
 //   1 the authorization is signed by the master (MasterInfo), names the
-//     onion address the app knows, and is valid now;
+//     host name the app knows, and is valid now;
 //   2 no master-signed revocation names the authorization's server key;
 //   3 the list is signed by that server key, names that authorization's
 //     sequence, and its sequence is greater than `lastSequence` (the last

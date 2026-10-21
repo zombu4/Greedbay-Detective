@@ -4,10 +4,10 @@
 #include <QFile>
 #include <QJsonDocument>
 #include <QNetworkAccessManager>
-#include <QNetworkProxy>
 #include <QNetworkReply>
 #include <QNetworkRequest>
 #include <QSaveFile>
+#include <QSslConfiguration>
 
 namespace app::sellerlist {
 
@@ -25,17 +25,22 @@ ListClient::ListClient(QNetworkAccessManager *network, MasterInfo master, QStrin
 {
 }
 
-void ListClient::setLocalTestServer(quint16 port) { m_testPort = port; }
+void ListClient::setLocalTestServer(quint16 port, const QSslCertificate &testRoot)
+{
+    m_testPort = port;
+    m_testRoot = testRoot;
+}
 
 QUrl ListClient::url(const QString &path) const
 {
     QUrl url;
-    url.setScheme(QStringLiteral("http"));
     if (m_testPort != 0) {
+        url.setScheme(m_testRoot.isNull() ? QStringLiteral("http") : QStringLiteral("https"));
         url.setHost(QStringLiteral("127.0.0.1"));
         url.setPort(m_testPort);
     } else {
-        url.setHost(m_master.onion);
+        url.setScheme(QStringLiteral("https"));
+        url.setHost(m_master.host);
     }
     url.setPath(path);
     return url;
@@ -45,11 +50,8 @@ QString ListClient::transportProblem() const
 {
     if (m_testPort != 0)
         return {};
-    if (!isOnionAddress(m_master.onion))
+    if (!isServerHost(m_master.host))
         return tr("the shared list is not set up in this build");
-    const QNetworkProxy proxy = m_network->proxy();
-    if (proxy.type() != QNetworkProxy::Socks5Proxy || proxy.hostName() != QLatin1String("127.0.0.1") || proxy.port() == 0)
-        return tr("Tor is not running; the app never connects directly");
     return {};
 }
 
@@ -132,6 +134,11 @@ QNetworkRequest ListClient::baseRequest(const QString &path) const
     // system's languages (Accept-Language) and its own client name.
     request.setRawHeader("Accept-Language", "en");
     request.setHeader(QNetworkRequest::UserAgentHeader, QByteArrayLiteral("Mozilla/5.0"));
+    if (!m_testRoot.isNull()) {
+        QSslConfiguration tls = request.sslConfiguration();
+        tls.addCaCertificate(m_testRoot);
+        request.setSslConfiguration(tls);
+    }
     return request;
 }
 
