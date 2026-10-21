@@ -41,6 +41,8 @@ class SharedListController : public QObject {
     Q_PROPERTY(QString reportSellerId READ reportSellerId NOTIFY changed)
     Q_PROPERTY(QString reportStatus READ reportStatus NOTIFY changed)
     Q_PROPERTY(bool reportOk READ reportOk NOTIFY changed)
+    // The purchase check is running (it can be stopped).
+    Q_PROPERTY(bool purchaseCheckBusy READ purchaseCheckBusy NOTIFY changed)
     // The purchase check waits for the user in the browser (sign-in).
     Q_PROPERTY(QString purchaseMessage READ purchaseMessage NOTIFY changed)
     // A dispute's outcome.
@@ -63,6 +65,7 @@ public:
     QString reportStatus() const { return m_reportStatus; }
     bool reportOk() const { return m_reportOk; }
     QString purchaseMessage() const { return m_purchase.userMessage(); }
+    bool purchaseCheckBusy() const { return m_purchase.busy(); }
     QString disputeStatus() const { return m_disputeStatus; }
     bool disputeOk() const { return m_disputeOk; }
     int revision() const { return m_revision; }

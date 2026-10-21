@@ -1,11 +1,13 @@
 #include "HttpServer.h"
 
+#include <QEventLoop>
 #include <QFile>
 #include <QFileInfo>
 #include <QSslCertificate>
 #include <QSslConfiguration>
 #include <QSslKey>
 #include <QSslServer>
+#include <QSslSocket>
 #include <QTcpServer>
 #include <QTcpSocket>
 #include <QTimeZone>
@@ -17,8 +19,13 @@ namespace sellerserver {
 
 namespace {
 
+// A certificate this close to its end is reported once a day.
+constexpr qint64 kExpiryWarningSeconds = 14 * 24 * 60 * 60;
+
 // The TLS settings from the two PEM files; std::nullopt and *error when
-// they do not hold a certificate and its matching private key.
+// they do not hold a certificate (and its chain) and a private key of the
+// certificate's kind, or the certificate has expired. Whether the key is the
+// certificate's own is checked by keyMatchesCertificate().
 std::optional<QSslConfiguration> tlsConfiguration(const HttpServer::Tls &tls, QString *error)
 {
     const QList<QSslCertificate> chain = QSslCertificate::fromPath(tls.certificateFile, QSsl::Pem, QSslCertificate::PatternSyntax::FixedString);
@@ -57,6 +64,42 @@ std::optional<QSslConfiguration> tlsConfiguration(const HttpServer::Tls &tls, QS
 
 QDateTime modified(const QString &path) { return QFileInfo(path).lastModified(QTimeZone::UTC); }
 
+// One TLS handshake with `configuration` over the loopback address: it
+// succeeds only when the server can prove it holds the key of the
+// certificate it sends (the TLS signature or key exchange fails with any
+// other key). The client here checks nothing else (VerifyNone): this tests
+// the server's own pair, not a chain.
+bool keyMatchesCertificate(const QSslConfiguration &configuration, int timeoutMs, QString *error)
+{
+    QSslServer server;
+    server.setSslConfiguration(configuration);
+    if (!server.listen(QHostAddress::LocalHost, 0)) {
+        *error = QStringLiteral("the TLS self-check cannot listen: %1").arg(server.errorString());
+        return false;
+    }
+    QSslSocket client;
+    client.setPeerVerifyMode(QSslSocket::VerifyNone);
+    QEventLoop loop;
+    bool ok = false;
+    QString why;
+    QObject::connect(&client, &QSslSocket::encrypted, &loop, [&] {
+        ok = true;
+        loop.quit();
+    });
+    QObject::connect(&client, &QAbstractSocket::errorOccurred, &loop, [&] {
+        why = client.errorString();
+        loop.quit();
+    });
+    QTimer::singleShot(timeoutMs, &loop, &QEventLoop::quit);
+    client.connectToHostEncrypted(QStringLiteral("127.0.0.1"), server.serverPort());
+    loop.exec();
+    client.abort();
+    if (!ok)
+        *error = QStringLiteral("a TLS handshake with this certificate and key fails (is the key the certificate's?): %1")
+                     .arg(why.isEmpty() ? QStringLiteral("no answer") : why);
+    return ok;
+}
+
 // The value of header `name` (case-insensitive) in the header block, or a
 // null array.
 QByteArray headerValue(const QList<QByteArray> &lines, const QByteArray &name)
@@ -91,9 +134,24 @@ void HttpServer::useServer(QTcpServer *server)
     connect(m_server, &QTcpServer::pendingConnectionAvailable, this, &HttpServer::onNewConnection);
 }
 
+std::optional<QSslConfiguration> HttpServer::loadTls(const Tls &tls, QString *error)
+{
+    std::optional<QSslConfiguration> configuration = tlsConfiguration(tls, error);
+    if (configuration && !keyMatchesCertificate(*configuration, m_limits.handshakeMs, error))
+        configuration.reset();
+    return configuration;
+}
+
 bool HttpServer::setTls(const Tls &tls, QString *error)
 {
-    const std::optional<QSslConfiguration> configuration = tlsConfiguration(tls, error);
+    if (m_server->isListening()) {
+        *error = QStringLiteral("TLS must be set before the server listens");
+        return false;
+    }
+    // The times first: a renewal during the load is then seen as a change.
+    const QDateTime certificateTime = modified(tls.certificateFile);
+    const QDateTime keyTime = modified(tls.keyFile);
+    const std::optional<QSslConfiguration> configuration = loadTls(tls, error);
     if (!configuration)
         return false;
     auto *server = new QSslServer(this);
@@ -101,8 +159,10 @@ bool HttpServer::setTls(const Tls &tls, QString *error)
     server->setHandshakeTimeout(m_limits.handshakeMs);
     useServer(server);
     m_tls = tls;
-    m_certificateTime = modified(tls.certificateFile);
-    m_keyTime = modified(tls.keyFile);
+    m_certificateTime = certificateTime;
+    m_keyTime = keyTime;
+    m_expiry = configuration->localCertificate().expiryDate();
+    m_pending = false;
     if (!m_tlsCheck) {
         m_tlsCheck = new QTimer(this);
         connect(m_tlsCheck, &QTimer::timeout, this, &HttpServer::reloadTlsIfChanged);
@@ -113,30 +173,54 @@ bool HttpServer::setTls(const Tls &tls, QString *error)
 
 void HttpServer::reloadTlsIfChanged()
 {
+    if (m_inTlsCheck)
+        return; // the self-check's handshake runs the event loop
+    m_inTlsCheck = true;
+    checkTls();
+    m_inTlsCheck = false;
+}
+
+void HttpServer::checkTls()
+{
+    const QDateTime now = QDateTime::currentDateTimeUtc();
+    if (m_expiry.isValid() && now.secsTo(m_expiry) < kExpiryWarningSeconds
+        && (!m_expiryWarned.isValid() || m_expiryWarned.secsTo(now) >= 24 * 60 * 60)) {
+        m_expiryWarned = now;
+        emit tlsExpiring(m_expiry);
+    }
     // Renewal tools replace both files; a pair is read once neither has
     // changed for a whole check interval, so a half-copied pair is not used.
+    // A pair that does not load is tried again at every check (reported once
+    // per pair) until it loads or the files change again.
     const QDateTime certificateTime = modified(m_tls.certificateFile);
     const QDateTime keyTime = modified(m_tls.keyFile);
     if (certificateTime == m_certificateTime && keyTime == m_keyTime) {
-        m_pendingCertificateTime = {};
-        m_pendingKeyTime = {};
+        m_pending = false;
         return;
     }
-    if (certificateTime != m_pendingCertificateTime || keyTime != m_pendingKeyTime) {
+    if (!m_pending || certificateTime != m_pendingCertificateTime || keyTime != m_pendingKeyTime) {
+        m_pending = true;
         m_pendingCertificateTime = certificateTime;
         m_pendingKeyTime = keyTime;
         return;
     }
-    m_certificateTime = certificateTime;
-    m_keyTime = keyTime;
-    m_pendingCertificateTime = {};
-    m_pendingKeyTime = {};
     QString why;
-    const std::optional<QSslConfiguration> configuration = tlsConfiguration(m_tls, &why);
+    const std::optional<QSslConfiguration> configuration = loadTls(m_tls, &why);
     if (!configuration) {
-        emit tlsReloadFailed(why);
+        if (m_failedCertificateTime != certificateTime || m_failedKeyTime != keyTime || !m_failedReported) {
+            m_failedCertificateTime = certificateTime;
+            m_failedKeyTime = keyTime;
+            m_failedReported = true;
+            emit tlsReloadFailed(why);
+        }
         return;
     }
+    m_certificateTime = certificateTime;
+    m_keyTime = keyTime;
+    m_pending = false;
+    m_failedReported = false;
+    m_expiry = configuration->localCertificate().expiryDate();
+    m_expiryWarned = {};
     // New connections use it; open ones finish with the old one.
     static_cast<QSslServer *>(m_server)->setSslConfiguration(*configuration);
     emit tlsReloaded();

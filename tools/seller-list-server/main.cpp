@@ -348,9 +348,11 @@ int serveCommand(const QMap<QString, QString> &map)
     QHostAddress address = tls ? QHostAddress(QHostAddress::Any) : QHostAddress(QHostAddress::LocalHost);
     if (!map.value(QStringLiteral("listen")).isEmpty() && !address.setAddress(map.value(QStringLiteral("listen"))))
         return fail(QStringLiteral("--listen must be an IP address"));
-    if (!tls && !address.isLoopback())
+    if (!tls && address != QHostAddress(QHostAddress::LocalHost) && address != QHostAddress(QHostAddress::LocalHostIPv6))
         return fail(QStringLiteral("plain HTTP only on 127.0.0.1 or ::1 (for a reverse proxy on this machine); "
                                    "give --tls-cert and --tls-key to serve HTTPS"));
+    // Built (and its TLS files checked) before the passphrase is asked; the
+    // real handler is set once the service exists, before it listens.
     HttpServer http([](const HttpServer::Request &) { return HttpServer::Response{503, "text/plain", "starting\n"}; });
     if (tls && !http.setTls({map.value(QStringLiteral("tls-cert")), map.value(QStringLiteral("tls-key"))}, &error))
         return fail(error);
@@ -408,7 +410,10 @@ int serveCommand(const QMap<QString, QString> &map)
     http.setHandler([&service](const HttpServer::Request &request) { return service.handle(request); });
     QObject::connect(&http, &HttpServer::tlsReloaded, [] { say(QStringLiteral("renewed TLS certificate in use")); });
     QObject::connect(&http, &HttpServer::tlsReloadFailed, [](const QString &why) {
-        fail(QStringLiteral("problem: the renewed TLS files do not load (the previous ones stay in use): %1").arg(why));
+        fail(QStringLiteral("problem: the renewed TLS files do not load (the previous ones stay in use; tried again every minute): %1").arg(why));
+    });
+    QObject::connect(&http, &HttpServer::tlsExpiring, [](const QDateTime &expiry) {
+        fail(QStringLiteral("problem: the TLS certificate in use expires %1; check the renewal (certbot)").arg(expiry.toString(Qt::ISODate)));
     });
     if (!http.listen(address, static_cast<quint16>(*port), &error))
         return fail(error);

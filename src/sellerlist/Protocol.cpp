@@ -65,8 +65,10 @@ std::optional<MasterInfo> MasterInfo::fromJson(const QJsonObject &object)
 
 bool isServerHost(const QString &host)
 {
-    static const QRegularExpression label(QStringLiteral("^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"));
-    static const QRegularExpression topLabel(QStringLiteral("^[a-z]{2,63}$"));
+    // anchoredPattern: the whole label, also no line break at its end (a
+    // bare $ would allow one).
+    static const QRegularExpression label(QRegularExpression::anchoredPattern(QStringLiteral("[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?")));
+    static const QRegularExpression topLabel(QRegularExpression::anchoredPattern(QStringLiteral("[a-z]{2,63}")));
     if (host.size() < 4 || host.size() > 253)
         return false;
     const QStringList labels = host.split(QLatin1Char('.'));

@@ -71,7 +71,7 @@ On the server (`--data <dir>`):
   router in front of it (port forwarding). Port 80 as well while Let's
   Encrypt checks the name with certbot's standalone mode (first issue and
   each renewal).
-- Packages: a C and C++ compiler, `make`, Python 3 (for aqtinstall), certbot,
+- Packages: a C and C++ compiler, `make`, Python 3 with its venv module (for aqtinstall), certbot,
   and the OpenSSL 3 library (Qt's prebuilt Linux libraries load OpenSSL 3 at
   run time for HTTPS). CMake 4.4 and Ninja as in the CI (`.github/workflows/ci.yml`).
 - A service user that owns the data folder and nothing else.
@@ -79,13 +79,25 @@ On the server (`--data <dir>`):
 ## Build
 
 Requirements: CMake 4.4 or newer, a C and C++ compiler, `make` and Ninja, and
-Qt 6.12 base (Qt Core, Network and Sql with the SQLite driver). The project's
-CI installs Qt with aqtinstall from download.qt.io and checks every archive
-against `ci/qt-6.12.0.sha256` (see `.github/workflows/ci.yml`); on Linux:
+Qt 6.12 base (Qt Core, Network and Sql with the SQLite driver). Qt is
+installed the way the project's CI does it (`.github/workflows/ci.yml`):
+aqtinstall in its own Python environment from the hash-pinned requirement
+files, then every downloaded Qt archive checked against `ci/qt-6.12.0.sha256`.
+From the source folder, on Linux:
 
 ```sh
-sudo python3 -m aqt install-qt linux desktop 6.12.0 linux_gcc_64 --base https://download.qt.io -O /opt/Qt
+sudo python3 -m venv /opt/aqt
+sudo /opt/aqt/bin/pip install --require-hashes --no-deps -r ci/requirements-build.txt
+sudo /opt/aqt/bin/pip install --require-hashes --no-deps -r ci/requirements-aqt-deps.txt
+sudo /opt/aqt/bin/pip install --no-deps --no-build-isolation -r ci/requirements-aqt.txt
+sudo /opt/aqt/bin/python -m aqt install-qt linux desktop 6.12.0 linux_gcc_64 -m qtwebsockets qttasktree \
+     --base https://download.qt.io --keep --archive-dest /opt/qt-archives -O /opt/Qt
+sh ci/verify-qt-archives.sh ci/qt-6.12.0.sha256 linux /opt/qt-archives
 ```
+
+The last command must end without an error; it fails when an archive is
+missing, differs, or is not on the list (the list holds the same modules as
+the CI, so the install names them too).
 
 The server alone (no app, no tests; libsodium and liboqs are downloaded and
 checked by SHA-256 as in `cmake/deps.cmake`):
@@ -164,16 +176,20 @@ The examples use `list.example.org`; use your own name.
 
    certbot renews the certificate by itself before it expires (Let's Encrypt
    certificates last 90 days). The running server notices the new files
-   within two minutes and uses them without a restart; if a renewed
-   pair does not load it prints a "problem:" line and keeps the old one.
+   within two minutes and uses them without a restart. It first makes one
+   TLS handshake with the new pair over the loopback address, so a key that
+   is not the certificate's is refused; a renewed pair that does not load is
+   reported once with a "problem:" line, tried again every minute, and the
+   old pair stays in use. From 14 days before the certificate in use expires
+   it prints a "problem:" line once a day.
 
 6. **The passphrase file** (for a start without anyone at the keyboard):
 
    ```sh
-   sudo -u seller-list sh -c 'umask 077; cat > /var/lib/seller-list/passphrase'
+   sudo -u seller-list bash -c 'umask 077; IFS= read -rsp "Passphrase: " p; echo; printf "%s\n" "$p" > /var/lib/seller-list/passphrase'
    ```
 
-   Type the server's passphrase, Enter, then Ctrl-D. Anyone with access to
+   Type the server's passphrase (it is not shown) and Enter. Anyone with access to
    that account or to root can then use the keys; without the file the
    program asks for the passphrase at every start, which needs a terminal.
 

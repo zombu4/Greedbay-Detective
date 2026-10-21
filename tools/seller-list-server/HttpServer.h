@@ -6,9 +6,11 @@
 #include <QHostAddress>
 #include <QMap>
 #include <QObject>
+#include <QSslConfiguration>
 #include <QString>
 
 #include <functional>
+#include <optional>
 
 class QTcpServer;
 class QTcpSocket;
@@ -65,12 +67,16 @@ public:
     explicit HttpServer(Handler handler, QObject *parent = nullptr);
     ~HttpServer() override;
 
-    // Before listen(): serve HTTPS with these files (TLS 1.2 or newer, no
-    // client certificates). They are read now (false and *error when they do
-    // not load) and again whenever either file's time changes (checked every
-    // Limits::tlsCheckMs), so a renewed certificate is used without a restart; a renewed
-    // pair that does not load is reported by tlsReloadFailed() and the last
-    // good pair stays in use.
+    // Before listen() (false afterwards): serve HTTPS with these files (TLS
+    // 1.2 or newer, no client certificates). They are read now - false and
+    // *error when they do not load, the certificate has expired, or a
+    // loopback handshake shows the key is not the certificate's. Every
+    // Limits::tlsCheckMs the file times are looked at: a changed pair is read
+    // once both have stayed unchanged for one more interval, so a renewed
+    // certificate is used without a restart (tlsReloaded). A renewed pair that
+    // does not load is reported once (tlsReloadFailed), tried again at every
+    // check, and the last good pair stays in use. tlsExpiring() once a day
+    // while the certificate in use has less than 14 days left.
     bool setTls(const Tls &tls, QString *error);
 
     // Listens on `address`:`port` (0 = any free port); false and *error when
@@ -80,9 +86,12 @@ public:
 
     static QByteArray reasonPhrase(int status);
 
-    // Replaces the request handler (the server may listen before the service
-    // behind it is ready).
+    // Replaces the request handler (serve builds the server, and checks its
+    // TLS files, before the service behind it exists).
     void setHandler(Handler handler) { m_handler = std::move(handler); }
+
+    // Connections open now (accepted, not yet closed).
+    int openConnections() const { return static_cast<int>(m_connections.size()); }
 
     // The counts since the last call (and starts new ones).
     Counts takeCounts();
@@ -90,6 +99,7 @@ public:
 signals:
     void tlsReloaded();
     void tlsReloadFailed(const QString &why);
+    void tlsExpiring(const QDateTime &expiry);
 
 private:
     struct Connection {
@@ -103,7 +113,9 @@ private:
     void reply(QTcpSocket *socket, const Response &response);
     void drop(QTcpSocket *socket);
     void useServer(QTcpServer *server);
+    std::optional<QSslConfiguration> loadTls(const Tls &tls, QString *error);
     void reloadTlsIfChanged();
+    void checkTls();
 
     Handler m_handler;
     Limits m_limits;
@@ -113,8 +125,15 @@ private:
     Tls m_tls;
     QDateTime m_certificateTime;
     QDateTime m_keyTime;
+    bool m_pending = false;
     QDateTime m_pendingCertificateTime;
     QDateTime m_pendingKeyTime;
+    bool m_failedReported = false;
+    QDateTime m_failedCertificateTime;
+    QDateTime m_failedKeyTime;
+    QDateTime m_expiry;
+    QDateTime m_expiryWarned;
+    bool m_inTlsCheck = false;
     QTimer *m_tlsCheck = nullptr;
 };
 

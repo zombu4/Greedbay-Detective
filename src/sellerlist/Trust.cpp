@@ -22,7 +22,7 @@ std::optional<Authorization> checkedAuthorization(const QJsonObject &bundle, con
         return std::nullopt;
     }
     if (authorization->host != master.host) {
-        *why = QStringLiteral("the server's key document names another address");
+        *why = QStringLiteral("the server's key document names another host name");
         return std::nullopt;
     }
     if (!authorization->validAt(now)) {

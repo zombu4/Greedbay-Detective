@@ -526,7 +526,9 @@ Popup {
                     color: panel.shared.reportBusy || panel.shared.reportOk ? Theme.text : Theme.warnLabel
                 }
                 AppButton {
-                    visible: panel.shared.reportBusy
+                    // Only the purchase check can be stopped; a report being
+                    // sent is one short request that ends by itself.
+                    visible: panel.shared.purchaseCheckBusy
                     text: "Stop"
                     Accessible.name: "Stop the report"
                     onClicked: panel.shared.cancelReport()

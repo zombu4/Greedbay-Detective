@@ -402,7 +402,8 @@ void TestSellerList::serverHostNames()
         QVERIFY2(isServerHost(QString::fromLatin1(good)), good);
     for (const char *bad : {"", "localhost", "example", "List.example.org", "list.example.org.", "127.0.0.1",
                             "list.example.org:443", "https://list.example.org", "-a.example.org", "a-.example.org",
-                            "a..example.org", "list.example.1", "list example.org", "list.example.org/v1", "a.b"})
+                            "a..example.org", "list.example.1", "list example.org", "list.example.org/v1", "a.b",
+                            "list.example.org\n", "a\n.example.org"})
         QVERIFY2(!isServerHost(QString::fromLatin1(bad)), bad);
     QVERIFY(!isServerHost(QStringLiteral("a").repeated(64) + QStringLiteral(".example.org")));
     // A master.json with a host the app may not use is no master at all.
@@ -661,15 +662,23 @@ void TestSellerList::serviceLimits()
 
 namespace {
 
+// Copies fixtures/tls/<name> to `path`, replacing it. A copy from the
+// resources is read-only (on Windows a read-only file cannot be removed), so
+// it is made writable at once. False when any step fails.
+bool copyFixture(const QString &name, const QString &path)
+{
+    if (QFile::exists(path) && !QFile::remove(path))
+        return false;
+    return QFile::copy(QStringLiteral(":/tls/") + name, path)
+        && QFile::setPermissions(path, QFileDevice::ReadOwner | QFileDevice::WriteOwner);
+}
+
 // A test certificate or key from fixtures/tls, copied to `dir` (the server
-// reads files).
+// reads files); an empty path when the copy failed.
 QString fixtureFile(const QTemporaryDir &dir, const QString &name)
 {
     const QString path = dir.filePath(name);
-    QFile::remove(path);
-    QFile::copy(QStringLiteral(":/tls/") + name, path);
-    QFile::setPermissions(path, QFileDevice::ReadOwner | QFileDevice::WriteOwner);
-    return path;
+    return copyFixture(name, path) ? path : QString();
 }
 
 QSslCertificate fixtureCertificate(const QString &name)
@@ -724,19 +733,29 @@ void TestSellerList::httpsEndToEnd()
     // Only counts are kept: the list fetch, then GET /v1/keys and the POST of
     // the dispute (one request per connection). The refusing client sent no
     // request; its connection may still be counted (on macOS it was: the
-    // server had finished its side of the handshake).
+    // server had finished its side of the handshake). The server's side of
+    // that connection is let settle first (the client's answer comes from
+    // the network manager's own thread).
+    QTRY_COMPARE_WITH_TIMEOUT(server.http->openConnections(), 0, 5000);
+    QTest::qWait(200);
     const HttpServer::Counts counts = server.http->takeCounts();
     QCOMPARE(counts.replies.value(200), 2);
     QCOMPARE(counts.replies.value(202), 1);
     QCOMPARE(counts.replies.size(), 2);
-    QVERIFY(counts.connections == 3 || counts.connections == 4);
-    QCOMPARE(server.http->takeCounts().connections, 0);
+    QVERIFY2(counts.connections == 3 || counts.connections == 4, qPrintable(QString::number(counts.connections)));
 
     // Files that hold no certificate or key are refused at the start.
     HttpServer broken([](const HttpServer::Request &) { return HttpServer::Response{}; });
     QVERIFY(!broken.setTls({tls.keyFile, tls.keyFile}, &error));
     QVERIFY(!broken.setTls({tls.certificateFile, tls.certificateFile}, &error));
     QVERIFY(!broken.setTls({files.filePath(QStringLiteral("missing.pem")), tls.keyFile}, &error));
+    // A key of the right kind that is not the certificate's: the loopback
+    // handshake fails.
+    QVERIFY(!broken.setTls({tls.certificateFile, fixtureFile(files, QStringLiteral("key-b.pem"))}, &error));
+    QVERIFY2(error.contains(QStringLiteral("handshake")), qPrintable(error));
+    // Not once the server listens.
+    QVERIFY(broken.listen(QHostAddress::LocalHost, 0, &error));
+    QVERIFY(!broken.setTls(tls, &error));
 }
 
 void TestSellerList::tlsRenewal()
@@ -773,23 +792,33 @@ void TestSellerList::tlsRenewal()
     // A renewal replaces both files: the new pair is used without a restart.
     QSignalSpy reloaded(&server, &HttpServer::tlsReloaded);
     QSignalSpy failed(&server, &HttpServer::tlsReloadFailed);
-    QTest::qWait(1100); // a newer file time than the first pair's on every file system
-    QFile::remove(tls.certificateFile);
-    QFile::remove(tls.keyFile);
-    QVERIFY(QFile::copy(QStringLiteral(":/tls/cert-b.pem"), tls.certificateFile));
-    QVERIFY(QFile::copy(QStringLiteral(":/tls/key-b.pem"), tls.keyFile));
+    // 2.1 s: a newer file time than the first pair's, also on file systems
+    // that keep times in 2 s steps (FAT).
+    QTest::qWait(2100);
+    QVERIFY(copyFixture(QStringLiteral("cert-b.pem"), tls.certificateFile));
+    QVERIFY(copyFixture(QStringLiteral("key-b.pem"), tls.keyFile));
     QVERIFY(reloaded.wait(5000));
     QVERIFY(answers(b));
     QVERIFY(!answers(a));
 
+    // A renewed pair whose key is not the certificate's is reported once,
+    // and the last good pair stays in use.
+    QTest::qWait(2100);
+    QVERIFY(copyFixture(QStringLiteral("cert-a.pem"), tls.certificateFile));
+    QVERIFY(failed.wait(5000));
+    QTest::qWait(300); // several more checks: no second report for the same pair
+    QCOMPARE(failed.size(), 1);
+    QVERIFY(answers(b));
+
     // A renewed pair that does not load is reported; the last good one stays.
-    QTest::qWait(1100);
-    QFile::remove(tls.certificateFile);
+    QTest::qWait(2100);
+    QVERIFY(QFile::remove(tls.certificateFile));
     QFile garbage(tls.certificateFile);
     QVERIFY(garbage.open(QIODevice::WriteOnly));
     garbage.write("not a certificate\n");
     garbage.close();
     QVERIFY(failed.wait(5000));
+    QCOMPARE(failed.size(), 2);
     QVERIFY(answers(b));
 }
 

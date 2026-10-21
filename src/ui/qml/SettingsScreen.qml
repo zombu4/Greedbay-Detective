@@ -476,7 +476,7 @@ Item {
                 note: "Reports by other users of the app about sellers they bought from, on one list the list owner "
                       + "runs. The list is downloaded from the Greedbay Detective server; that server sees your IP "
                       + "address like any website does and does not store it. Nothing about you is sent unless you "
-                      + "report a seller yourself."
+                      + "report a seller or dispute a report yourself."
                 Text {
                     objectName: "sharedListStatus"
                     Layout.fillWidth: true
