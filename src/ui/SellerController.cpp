@@ -94,7 +94,9 @@ QString SellerController::reviewSummary() const
                                                                                                         : QStringLiteral("Neutral"),
                                                         parts.join(QStringLiteral(", ")));
     if (counts[2] > m_feedback->reviews.size())
-        text += QStringLiteral(" (eBay lists %1 of them on its page)").arg(m_feedback->reviews.size());
+        text += QStringLiteral(" (read: %1)").arg(m_feedback->reviews.size());
+    if (!m_feedback->complete && !m_feedback->note.isEmpty())
+        text += QStringLiteral(". %1.").arg(m_feedback->note);
     if (m_feedback->score)
         text = QStringLiteral("Feedback score %1. ").arg(QLocale(QLocale::English, QLocale::UnitedStates).toString(*m_feedback->score)) + text;
     return text;

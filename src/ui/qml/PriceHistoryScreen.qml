@@ -87,6 +87,7 @@ Item {
                             id: pickText
                             anchors.centerIn: parent
                             text: pick.modelData.name
+                            textFormat: Text.PlainText
                             font.family: Theme.sans
                             font.pixelSize: Theme.labelSize + 1
                             font.weight: Font.DemiBold

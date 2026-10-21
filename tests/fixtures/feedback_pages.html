@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<!-- Synthetic classic feedback page with 30 negative ratings in 12 months:
+     the 12-month Negative count shows page 1 of the filtered list (25 rows),
+     the list's Next button page 2 (5 rows), both in place after a short
+     delay, with nav.pagination as recorded 2026-10-20. -->
+<html>
+<head><meta charset="utf-8"><title>Feedback Profile</title></head>
+<body>
+<h2><span>seller-a (9,999)</span></h2>
+<table>
+  <tr><th></th><th><span>1 month</span></th><th><span>6 months</span></th><th><span>12 months</span></th></tr>
+  <tr><td>Negative</td>
+    <td><button aria-label="negative feedback in last 1 month">3</button></td>
+    <td><button aria-label="negative feedback in last 6 months">12</button></td>
+    <td><button id="neg12" aria-label="negative feedback in last 12 months">30</button></td></tr>
+</table>
+<table id="feedback-cards"><tbody id="rows">
+  <tr><td><div class="card__rating"><svg class="icon icon--feedback-positive"></svg></div><div class="card__comment">Fine</div></td>
+    <td><div class="card__from">Buyer: x***1 (4)</div></td><td><div class="card__links">Past month</div></td></tr>
+</tbody></table>
+<nav class="pagination" id="pager"></nav>
+<script>
+function row(n) {
+  return '<tr><td><div class="card__rating"><svg class="icon icon--feedback-negative"></svg></div>' +
+    '<div class="card__comment">Bad order ' + n + '</div><div class="card__item">Acme part ' + n + '</div></td>' +
+    '<td><div class="card__from">Buyer: y***' + n + ' (9)<div class="card__price">US $' + n + '.00</div></div></td>' +
+    '<td><div class="card__links">Past 6 months</div></td></tr>';
+}
+function show(page) {
+  var html = '';
+  var first = page === 1 ? 1 : 26;
+  var last = page === 1 ? 25 : 30;
+  for (var n = first; n <= last; ++n) html += row(n);
+  document.getElementById('rows').innerHTML = html;
+  document.getElementById('pager').innerHTML =
+    '<button class="pagination__previous icon-btn" aria-label="Previous page"' + (page === 1 ? ' aria-disabled="true"' : '') + '></button>' +
+    '<button class="pagination__item" aria-label="1"' + (page === 1 ? ' aria-current="page"' : '') + '>1</button>' +
+    '<button class="pagination__item" aria-label="2"' + (page === 2 ? ' aria-current="page"' : '') + '>2</button>' +
+    '<button class="pagination__next icon-btn" aria-label="Next page"' + (page === 2 ? ' aria-disabled="true"' : '') + '></button>';
+  var next = document.querySelector('#pager .pagination__next');
+  next.addEventListener('click', function () {
+    if (next.getAttribute('aria-disabled') !== 'true') setTimeout(function () { show(2); }, 300);
+  });
+}
+document.getElementById('neg12').addEventListener('click', function () { setTimeout(function () { show(1); }, 300); });
+</script>
+</body>
+</html>

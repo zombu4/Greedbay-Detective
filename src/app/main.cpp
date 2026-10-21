@@ -8,6 +8,10 @@
 // from standard input and exits (src/plugins/PluginRunner.h: plugin code and
 // plugin .zip files are only handled in such a separate process).
 //
+// "--model-runner" as the only argument: no window; the local model's
+// runner (src/model/Runner.h): requests on standard input, answers on
+// standard output, until the input ends.
+//
 // "--uninstall-data=keep" or "--uninstall-data=delete" as the only argument:
 // no window; removes the user's data the same way and exits (the Windows
 // uninstaller calls it, packaging/windows/NSIS.template.in). Exit codes: 0
@@ -21,6 +25,7 @@
 #include "core/WorkFolder.h"
 #include "db/Database.h"
 #include "db/Migrations.h"
+#include "model/Runner.h"
 #include "plugins/PluginRunner.h"
 #include "ui/Backend.h"
 #include "ui/Fonts.h"
@@ -147,6 +152,8 @@ int main(int argc, char *argv[])
         QCoreApplication runner(argc, argv);
         return app::plugins::runPluginRequestOnStdio();
     }
+    if (argc == 2 && std::strcmp(argv[1], "--model-runner") == 0)
+        return app::model::runModelRunner();
     if (argc == 2 && (std::strcmp(argv[1], "--uninstall-data=keep") == 0 || std::strcmp(argv[1], "--uninstall-data=delete") == 0))
         return uninstallData(identifier, std::strcmp(argv[1], "--uninstall-data=keep") == 0);
     QString error;

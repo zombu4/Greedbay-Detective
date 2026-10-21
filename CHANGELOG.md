@@ -43,3 +43,15 @@ Not released yet.
 - Installers for macOS (Apple Silicon), Windows and Ubuntu 24.04, each with a
   full uninstall that asks whether to keep your saved lookups.
 - A daily cap on eBay pages and a pause between pages, both in Settings.
+- A seller's negative or neutral reviews of the last 12 months are read page
+  by page beyond the first 25 (paced, inside the daily cap, kept for the
+  days set in Settings); a read that stops early says how far it got.
+- Shared seller list (off until you turn it on): reports by other users,
+  signed by the list owner's keys and fetched only through Tor; report a
+  seller you bought from (checked first on your own Purchases page; your eBay
+  name is never sent) or dispute a report. The server is a separate program
+  in tools/seller-list-server.
+- Local model (off until you turn it on, a one-time download): double-checks
+  a listing's identity and the counted results; it can only make the app ask
+  you or move a row to "to check" - never add a row or change a price.
+- Text from eBay pages and from other users is always shown as plain text.

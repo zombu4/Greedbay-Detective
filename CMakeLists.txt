@@ -28,6 +28,20 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 include(cmake/warnings.cmake)
 
+# For the list owner's server only: the shared seller list's server program
+# (tools/seller-list-server) and what it needs - Qt Core, Network and Sql,
+# libsodium and liboqs; no app, no tests, no packages.
+option(APP_SERVER_ONLY "Build only tools/seller-list-server" OFF)
+if(APP_SERVER_ONLY)
+    find_package(Qt6 6.12 REQUIRED COMPONENTS Core Network Sql)
+    qt_standard_project_setup(REQUIRES 6.12)
+    include(GNUInstallDirs)
+    include(cmake/deps.cmake)
+    add_subdirectory(src)
+    add_subdirectory(tools/seller-list-server)
+    return()
+endif()
+
 find_package(Qt6 6.12 REQUIRED COMPONENTS Core Gui Network Qml Quick QuickControls2 Sql Test WebSockets Widgets)
 # Qt's private ZIP reader (plugin install from a .zip, src/plugins). Private
 # Qt API carries no compatibility promise. Qt warns that a project using it
@@ -54,8 +68,11 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DE
 endif()
 include(GNUInstallDirs)
 
+include(cmake/deps.cmake)
+
 add_subdirectory(src)
 add_subdirectory(tools/devwindow)
+add_subdirectory(tools/seller-list-server)
 add_subdirectory(tests)
 
 include(cmake/packaging.cmake)

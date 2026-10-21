@@ -157,6 +157,7 @@ Item {
                         Text {
                             Layout.fillWidth: true
                             text: screen.results.title.length > 0 ? screen.results.title : "(the listing was not read)"
+                            textFormat: Text.PlainText
                             wrapMode: Text.WordWrap
                             font.family: Theme.sans
                             font.pixelSize: Theme.sectionSize
@@ -252,6 +253,7 @@ Item {
                 Layout.fillWidth: true
                 visible: screen.results.brokenFlag || screen.results.isAuction || screen.results.shippingFlag
                          || screen.results.cheaperFlag || screen.results.markedFlag || screen.results.ratingFlag
+                         || screen.results.sharedFlag
                 spacing: Theme.gap
                 FlagCard {
                     Layout.fillWidth: true
@@ -277,6 +279,17 @@ Item {
                     kind: "danger"
                     label: "YOU MARKED THIS SELLER"
                     lines: screen.results.markedLines
+                    linkText: "Open seller"
+                    onLinkActivated: screen.openSeller()
+                }
+                FlagCard {
+                    objectName: "sharedFlag"
+                    Layout.fillWidth: true
+                    Layout.preferredWidth: 1
+                    visible: screen.results.sharedFlag
+                    kind: "danger"
+                    label: "ON THE SHARED SELLER LIST"
+                    lines: screen.results.sharedLines
                     linkText: "Open seller"
                     onLinkActivated: screen.openSeller()
                 }

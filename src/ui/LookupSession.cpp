@@ -9,6 +9,7 @@
 #include "plugins/PluginHost.h"
 
 #include <QBuffer>
+#include <QCoreApplication>
 #include <QImage>
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
@@ -35,6 +36,21 @@ LookupSession::LookupSession(WorkFolder folder, lookup::KnownModels *known, cons
                              const lookup::LookupStore *store, QObject *parent)
     : QObject(parent), m_folder(std::move(folder)), m_known(known), m_words(words), m_store(store)
 {
+    // The local model's runner is this program with "--model-runner".
+    model::ModelAssist::Options options;
+    options.modelsDir = m_folder.modelsDir();
+    options.connectionName = m_store->connectionName();
+    options.runnerProgram = QCoreApplication::applicationFilePath();
+    options.runnerArguments = {QStringLiteral("--model-runner")};
+    m_assist = new model::ModelAssist(options, m_known, m_words, this);
+    connect(m_assist, &model::ModelAssist::identityDone, this, &LookupSession::onModelIdentity);
+    connect(m_assist, &model::ModelAssist::sortDone, this, &LookupSession::onModelSorted);
+    connect(m_assist, &model::ModelAssist::progressChanged, this, [this] {
+        if (!m_assist->progressLine().isEmpty()) {
+            m_lastLine = m_assist->progressLine();
+            emit progressChanged();
+        }
+    });
 }
 
 // The app quits during a lookup: what was collected is saved as stopped
@@ -167,6 +183,21 @@ bool LookupSession::startSession(const QString &input, const std::optional<looku
     m_lastLine = QStringLiteral("Starting %1...").arg(chosen->name);
     m_userMessage.clear();
     setError(QString());
+    // The local model, when it is on (DESIGN 3.6): used only when it can be
+    // (downloaded, enough memory); otherwise the lookup says why.
+    m_modelNotes.clear();
+    m_modelIdentity.reset();
+    m_identityPending = false;
+    m_modelSorting = false;
+    m_browserEnded = false;
+    const model::ModelAssist::Config modelConfig{
+        settings.modelEnabled(), settings.modelId().isEmpty() ? model::defaultModelId() : settings.modelId(), settings.modelGpu()};
+    QString modelWhy;
+    m_useModel = m_assist->usable(modelConfig, &modelWhy);
+    if (m_useModel)
+        m_assist->begin(modelConfig);
+    else if (!modelWhy.isEmpty())
+        m_modelNotes.append(QStringLiteral("Local model not used: %1.").arg(modelWhy));
     connect(m_controller, &browser::BrowserController::ready, this, &LookupSession::onReady);
     connect(m_controller, &browser::BrowserController::done, this, [this](const QJsonObject &reply) {
         if (!m_runner)
@@ -216,7 +247,8 @@ void LookupSession::onReady()
                 m_step = StepResearch;
                 break;
             case ebay::PageKind::Feedback:
-                // Not part of a lookup (the seller panel reads it).
+            case ebay::PageKind::Purchases:
+                // Not part of a lookup (the seller panel reads them).
                 break;
             }
             emit progressChanged();
@@ -253,12 +285,40 @@ void LookupSession::onItemReady()
     const lookup::LookupResult &result = m_runner->result();
     if (!m_savedItem)
         fetchPhoto(result.item);
+    // The local model's second opinion (G7: never on the user's, a saved or
+    // a known model's identity); the lookup goes on in onModelIdentity().
+    if (m_useModel && model::mayAskIdentity(result.identity)) {
+        m_identityPending = true;
+        m_assist->checkIdentity(result.item, result.identity);
+        return;
+    }
     if (result.identity.canSearch()) {
         searchOrReview();
         return;
     }
     // Rule 26: no confident model, no search; the user enters it.
     setState(State::AskIdentity);
+}
+
+void LookupSession::onModelIdentity(const model::ModelAssist::IdentityOutcome &outcome)
+{
+    if (!m_identityPending || !m_runner || m_state == State::Closing)
+        return;
+    m_identityPending = false;
+    if (!outcome.note.isEmpty())
+        m_modelNotes.append(outcome.note);
+    using Kind = model::ModelAssist::IdentityOutcome::Kind;
+    // G10: a different identity is never searched without the user; the
+    // model's own suggestion only fills the question.
+    if (outcome.kind == Kind::Disagrees || outcome.kind == Kind::Suggests) {
+        m_modelIdentity = outcome;
+        setState(State::AskIdentity);
+        return;
+    }
+    if (m_runner->result().identity.canSearch())
+        searchOrReview();
+    else
+        setState(State::AskIdentity);
 }
 
 void LookupSession::searchOrReview()
@@ -336,6 +396,7 @@ bool LookupSession::submitIdentity(const QString &brand, const QString &model, c
         return false;
     }
     setError(QString());
+    m_modelIdentity.reset();
     searchOrReview();
     return true;
 }
@@ -354,6 +415,17 @@ void LookupSession::cancel()
     if (!m_controller || m_state == State::Closing)
         return;
     qInfo().noquote() << "lookup: cancel pressed";
+    // The local model's rows: stop it; what it checked is kept (sortDone).
+    if (m_modelSorting) {
+        m_assist->cancel();
+        return;
+    }
+    // Its identity question: dropped; the runner's cancel below ends the
+    // lookup.
+    if (m_identityPending) {
+        m_identityPending = false;
+        m_assist->cancel();
+    }
     if (!m_runner) {
         // The browser is still starting: nothing was read, nothing is saved.
         m_savedOnce = true;
@@ -373,22 +445,64 @@ void LookupSession::cancel()
 
 void LookupSession::onRunnerFinished()
 {
-    saveLookup(m_runner->result());
+    // The local model sorts the rows before they are saved (not after a
+    // cancel: the user wants it to end).
+    const lookup::LookupResult &result = m_runner->result();
+    if (m_useModel && !m_savedOnce && result.status != QLatin1String("cancelled")) {
+        QList<lookup::Row> rows = classifyAndMatch(result);
+        if (!rows.isEmpty()) {
+            m_sortingResult = result;
+            m_modelSorting = true;
+            m_step = StepSaving;
+            emit progressChanged();
+            m_assist->sortRows(m_sortingResult, rows);
+            return;
+        }
+    }
+    saveLookup(result);
     setState(State::Closing);
     m_controller->stop();
+}
+
+void LookupSession::onModelSorted(const QList<lookup::Row> &rows, const QString &note)
+{
+    if (!m_modelSorting)
+        return;
+    m_modelSorting = false;
+    m_modelNotes.append(note);
+    finishSave(m_sortingResult, rows);
+    m_assist->end();
+    if (!m_browserEnded && m_controller) {
+        setState(State::Closing);
+        m_controller->stop();
+    }
+}
+
+QList<lookup::Row> LookupSession::classifyAndMatch(const lookup::LookupResult &result) const
+{
+    QList<lookup::Row> rows = lookup::classifyRows(result, *m_words);
+    // The built-in matcher first, then the matcher plugins on its rows.
+    if (m_plugins)
+        m_plugins->applyMatchers(result, &rows);
+    return rows;
 }
 
 void LookupSession::saveLookup(lookup::LookupResult result)
 {
     if (m_savedOnce)
         return;
+    QList<lookup::Row> rows = classifyAndMatch(result);
+    finishSave(std::move(result), std::move(rows));
+}
+
+void LookupSession::finishSave(lookup::LookupResult result, QList<lookup::Row> rows)
+{
+    if (m_savedOnce)
+        return;
     m_savedOnce = true;
     m_step = StepSaving;
     emit progressChanged();
-    QList<lookup::Row> rows = lookup::classifyRows(result, *m_words);
-    // The built-in matcher first, then the matcher plugins on its rows.
-    if (m_plugins)
-        m_plugins->applyMatchers(result, &rows);
+    result.notes.append(m_modelNotes);
     // The pasted listing is never "not this item" (owner case 11).
     if (!lookup::checkOwnListing(&result, &rows, *m_words))
         qWarning().noquote() << "lookup: the identity does not match the listing's own title; no numbers";
@@ -406,6 +520,13 @@ void LookupSession::saveLookup(lookup::LookupResult result)
 
 void LookupSession::onBrowserFinished(bool normal)
 {
+    m_browserEnded = true;
+    // The browser closed while the local model sorted: what it checked is
+    // saved now (onModelSorted).
+    if (m_modelSorting)
+        m_assist->cancel();
+    m_identityPending = false;
+    m_assist->end();
     qInfo().noquote() << "lookup:" << m_browserName << "closed" << (normal ? "(normal)" : "(abnormal)");
     // The browser ended the session itself: save what was collected.
     if (m_runner && !m_savedOnce) {
@@ -497,7 +618,25 @@ QStringList LookupSession::reviewQueries() const
 
 QString LookupSession::askTitle() const { return m_runner ? m_runner->result().item.title : QString(); }
 QString LookupSession::askItemId() const { return m_runner ? m_runner->result().item.itemId : QString(); }
-QString LookupSession::askReason() const { return m_runner ? m_runner->result().identity.reason : QString(); }
+QString LookupSession::askReason() const
+{
+    if (!m_runner)
+        return {};
+    const lookup::Identity &identity = m_runner->result().identity;
+    if (m_modelIdentity && m_modelIdentity->kind == model::ModelAssist::IdentityOutcome::Kind::Disagrees)
+        return QStringLiteral("The rules read %1 %2, the local model %3 %4. Check which is right, or correct it.")
+            .arg(identity.brandName, identity.model, m_modelIdentity->answer.brand, m_modelIdentity->answer.model);
+    if (m_modelIdentity && m_modelIdentity->kind == model::ModelAssist::IdentityOutcome::Kind::Suggests)
+        return identity.reason + QStringLiteral(" The fields hold the local model's reading; check it.");
+    return identity.reason;
+}
+
+QString LookupSession::askModelAnswer() const
+{
+    if (!m_modelIdentity || m_modelIdentity->kind != model::ModelAssist::IdentityOutcome::Kind::Disagrees)
+        return {};
+    return m_modelIdentity->answer.brand + QLatin1Char(' ') + m_modelIdentity->answer.model;
+}
 
 QStringList LookupSession::askSpecifics() const
 {
@@ -511,16 +650,34 @@ QStringList LookupSession::askSpecifics() const
 
 QStringList LookupSession::askSuggestions() const
 {
-    return m_runner ? m_runner->result().identity.candidates : QStringList();
+    if (!m_runner)
+        return {};
+    QStringList candidates = m_runner->result().identity.candidates;
+    // The local model's model code (guarded), first, when it gave one.
+    if (m_modelIdentity && !m_modelIdentity->answer.model.isEmpty()) {
+        candidates.removeAll(m_modelIdentity->answer.model);
+        candidates.prepend(m_modelIdentity->answer.model);
+    }
+    return candidates;
 }
 
-QString LookupSession::askBrand() const { return m_runner ? m_runner->result().identity.brandName : QString(); }
+QString LookupSession::askBrand() const
+{
+    if (!m_runner)
+        return {};
+    // Not confident: the local model's (guarded) reading fills the field.
+    if (m_modelIdentity && m_modelIdentity->kind == model::ModelAssist::IdentityOutcome::Kind::Suggests)
+        return m_modelIdentity->answer.brand;
+    return m_runner->result().identity.brandName;
+}
 // The model found, else the best suggestion (owner case 12: the field is
 // pre-filled with the best candidate).
 QString LookupSession::askModel() const
 {
     if (!m_runner)
         return {};
+    if (m_modelIdentity && m_modelIdentity->kind == model::ModelAssist::IdentityOutcome::Kind::Suggests)
+        return m_modelIdentity->answer.model;
     const lookup::Identity &identity = m_runner->result().identity;
     return identity.model.isEmpty() ? identity.candidates.value(0) : identity.model;
 }

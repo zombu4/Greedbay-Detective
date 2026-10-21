@@ -16,6 +16,7 @@
 #include <QGuiApplication>
 #include <QImage>
 #include <QProcess>
+#include <QTimer>
 #include <QUrl>
 
 #include <utility>
@@ -57,18 +58,36 @@ Backend::Backend(WorkFolder folder, const QString &connectionName, QObject *pare
         if (!check(input, false))
             emit sessionFailed(m_session ? m_session->errorText() : m_fatalError);
     });
-    m_settings = new SettingsController(
-        m_folder, [this]() { return (m_session && m_session->isRunning()) || (m_sellers && m_sellers->session()->busy()); }, this);
+    m_settings = new SettingsController(m_folder,
+                                        [this]() {
+                                            return (m_session && m_session->isRunning()) || (m_sellers && m_sellers->session()->busy())
+                                                || (m_sharedList && m_sharedList->reportBusy());
+                                        },
+                                        this);
     // Sellers (owner decisions 2026-10-20): the seller panel and the user's
     // marks; a changed mark shows at once on Results.
-    m_sellers = new SellerController(m_folder, connectionName, [this]() { return m_session && m_session->isRunning(); }, this);
+    m_sellers = new SellerController(
+        m_folder, connectionName,
+        [this]() { return (m_session && m_session->isRunning()) || (m_sharedList && m_sharedList->reportBusy()); }, this);
+    // The shared seller list (DESIGN 3.7): its reports show on Results and in
+    // the seller panel; its purchase check uses the browser, so it waits for
+    // a lookup or a review read.
+    m_sharedList = new SharedListController(
+        m_folder, [this]() { return (m_session && m_session->isRunning()) || m_sellers->session()->busy(); }, this);
+    connect(m_sharedList, &SharedListController::listChanged, this,
+            [this]() { m_results->setSharedReports(m_sharedList->linesBySeller()); });
+    // The local model's settings, download and first-run offer (DESIGN 3.6).
+    m_localModel = new ModelController(m_folder, [this]() { return m_session && m_session->isRunning(); }, this);
+    // The saved list, and the daily update when reading is on, once the
+    // window is up.
+    QTimer::singleShot(0, m_sharedList, &SharedListController::startUp);
     connect(m_sellers, &SellerController::marksChanged, m_results, &ResultsController::refreshSellerMarks);
     // Changed seller settings: the flags and badges again.
     connect(m_settings, &SettingsController::sellerRulesChanged, m_results, &ResultsController::refreshSellerMarks);
     // One browser at a time: no lookup while reviews are read, and the page
     // count shown follows the review reads too.
     if (m_session)
-        m_session->setBrowserBusyCheck([this]() { return m_sellers->session()->busy(); });
+        m_session->setBrowserBusyCheck([this]() { return m_sellers->session()->busy() || m_sharedList->reportBusy(); });
     connect(m_sellers->session(), &SellerSession::changed, this, &Backend::pagesChanged);
 
     // Plugins: only the enabled ones run; matchers on each lookup before it

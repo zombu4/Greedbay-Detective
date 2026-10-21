@@ -1,6 +1,8 @@
 // The seller panel: the seller's rating, the user's own mark on the seller
 // (kept only on this computer), and the seller's negative or neutral reviews
-// read from eBay's feedback page on request. Opened with show().
+// read from eBay's feedback page on request; the shared seller list's reports on
+// the seller, a dispute of one, and a report of your own. Opened with show().
+// Text from eBay pages or other users is always shown as plain text.
 import QtQuick
 import QtQuick.Controls.Basic
 import QtQuick.Layouts
@@ -19,12 +21,21 @@ Popup {
     property bool editing: false
     property bool confirming: false
     property string formError: ""
+    // The shared seller list: this seller's reports (re-read when the list
+    // changes), the report form, the report being disputed.
+    readonly property var shared: backend.sharedList
+    readonly property var sharedReports: shared.revision >= 0 ? shared.reportsFor(sellers.sellerId) : []
+    readonly property bool reportHere: shared.reportSellerId === sellers.sellerId
+    property bool reporting: false
+    property string disputeId: ""
 
     // Loads the seller (percent / count are -1 when unknown), then opens.
     function show(sellerId, displayName, percent, count) {
         editing = false
         confirming = false
         formError = ""
+        reporting = false
+        disputeId = ""
         sellers.open(sellerId, displayName, percent, count)
         open()
     }
@@ -73,6 +84,7 @@ Popup {
             Text {
                 Layout.fillWidth: true
                 text: panel.sellers.displayName.length > 0 ? panel.sellers.displayName : panel.sellers.sellerId
+                textFormat: Text.PlainText
                 wrapMode: Text.WordWrap
                 font.family: Theme.sans
                 font.pixelSize: Theme.sectionSize
@@ -84,6 +96,7 @@ Popup {
                 Layout.fillWidth: true
                 visible: panel.sellers.displayName.length > 0 && panel.sellers.sellerId !== panel.sellers.displayName
                 text: panel.sellers.sellerId
+                textFormat: Text.PlainText
                 wrapMode: Text.WrapAnywhere
                 font.family: Theme.mono
                 font.pixelSize: Theme.labelSize
@@ -282,6 +295,261 @@ Popup {
                 color: Theme.warnLabel
             }
 
+            // The shared seller list: other users' reports on this seller, a
+            // dispute of one, and a report of your own.
+            Text {
+                visible: panel.shared.setUp
+                text: "SHARED SELLER LIST"
+                font.family: Theme.sans
+                font.pixelSize: Theme.labelSize
+                font.weight: Font.DemiBold
+                font.letterSpacing: 1
+                color: Theme.mutedText
+            }
+            Muted {
+                visible: panel.shared.setUp && !panel.shared.readEnabled
+                text: "Reading the shared list is off (Settings, Shared seller list)."
+            }
+            Muted {
+                visible: panel.shared.setUp && panel.shared.readEnabled && panel.sharedReports.length === 0
+                text: "No reports on the shared list."
+            }
+            Repeater {
+                model: panel.sharedReports
+                Rectangle {
+                    id: sharedReport
+                    required property var modelData
+                    Layout.fillWidth: true
+                    implicitHeight: sharedColumn.implicitHeight + 2 * Theme.gap
+                    radius: 10
+                    color: Theme.raised
+                    border.color: Theme.border
+                    border.width: 1
+                    Accessible.role: Accessible.StaticText
+                    Accessible.name: sharedReport.modelData.reasonLabel + ": " + sharedReport.modelData.text
+                    ColumnLayout {
+                        id: sharedColumn
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.top: parent.top
+                        anchors.margins: Theme.gap
+                        spacing: 4
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 8
+                            Text {
+                                text: sharedReport.modelData.reasonLabel + " - bought " + sharedReport.modelData.month
+                                font.family: Theme.sans
+                                font.pixelSize: Theme.labelSize
+                                font.weight: Font.DemiBold
+                                color: Theme.text
+                            }
+                            Pill {
+                                visible: sharedReport.modelData.verified
+                                text: "Purchase and item checked"
+                                kind: "neutral"
+                            }
+                            Item { Layout.fillWidth: true }
+                            AppButton {
+                                visible: panel.disputeId !== sharedReport.modelData.id
+                                text: "Dispute"
+                                Accessible.name: "Dispute this report"
+                                onClicked: {
+                                    disputeArea.text = ""
+                                    panel.disputeId = sharedReport.modelData.id
+                                }
+                            }
+                        }
+                        Text {
+                            Layout.fillWidth: true
+                            text: sharedReport.modelData.text
+                            textFormat: Text.PlainText
+                            wrapMode: Text.WordWrap
+                            font.family: Theme.sans
+                            font.pixelSize: Theme.bodySize
+                            color: Theme.text
+                        }
+                    }
+                }
+            }
+            // A dispute of one report (to the list owner).
+            Card {
+                Layout.fillWidth: true
+                visible: panel.disputeId.length > 0
+                fill: Theme.raised
+                ColumnLayout {
+                    anchors.fill: parent
+                    spacing: 8
+                    Muted { text: "What is wrong with this report? It goes to the list owner, over Tor, without your name." }
+                    TextArea {
+                        id: disputeArea
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: 96
+                        wrapMode: TextEdit.Wrap
+                        leftPadding: 12
+                        rightPadding: 12
+                        topPadding: 10
+                        bottomPadding: 10
+                        color: Theme.text
+                        placeholderTextColor: Theme.mutedText
+                        selectionColor: Theme.band
+                        selectedTextColor: Theme.text
+                        font.family: Theme.sans
+                        font.pixelSize: Theme.bodySize
+                        onTextChanged: if (text.length > 1000) text = text.substring(0, 1000)
+                        Accessible.name: "Why the report is wrong"
+                        background: Rectangle {
+                            radius: Theme.controlRadius
+                            color: Theme.surface
+                            border.color: disputeArea.activeFocus ? Theme.accent : Theme.inputBorder
+                            border.width: 1
+                        }
+                    }
+                    Text {
+                        Layout.fillWidth: true
+                        visible: text.length > 0
+                        text: panel.shared.disputeStatus
+                        wrapMode: Text.WordWrap
+                        font.family: Theme.sans
+                        font.pixelSize: Theme.bodySize
+                        color: panel.shared.disputeOk ? Theme.secondaryText : Theme.warnLabel
+                    }
+                    RowLayout {
+                        Layout.alignment: Qt.AlignRight
+                        spacing: 12
+                        Muted { Layout.fillWidth: false; text: disputeArea.text.length + " / 1000"; font.family: Theme.mono }
+                        AppButton {
+                            text: "Close"
+                            onClicked: panel.disputeId = ""
+                        }
+                        AppButton {
+                            text: "Send"
+                            primary: true
+                            enabled: !panel.shared.busy && disputeArea.text.trim().length > 0
+                            onClicked: panel.shared.dispute(panel.sellers.sellerId, panel.disputeId, disputeArea.text)
+                        }
+                    }
+                }
+            }
+            AppButton {
+                visible: panel.shared.setUp && panel.shared.reportEnabled && !panel.reporting
+                         && !(panel.shared.reportBusy && panel.reportHere)
+                enabled: panel.sellers.canAct && !panel.shared.busy && !panel.shared.reportBusy
+                text: "Report this seller to the shared list"
+                Accessible.name: "Report this seller to the shared seller list"
+                onClicked: {
+                    sharedReason.currentIndex = 0
+                    sharedText.text = ""
+                    panel.reporting = true
+                }
+            }
+            Card {
+                Layout.fillWidth: true
+                visible: panel.reporting
+                fill: Theme.raised
+                ColumnLayout {
+                    anchors.fill: parent
+                    spacing: 8
+                    Muted {
+                        text: "The app first looks for your purchase from this seller on your own eBay Purchases page "
+                              + "(in the app's browser, counted in the daily pages). Then it sends only the seller's "
+                              + "user id, your reason and words, and that purchase's item number and month - over Tor, "
+                              + "without your eBay name. One report per seller."
+                    }
+                    Muted { text: "Reason" }
+                    ComboBox {
+                        id: sharedReason
+                        Layout.fillWidth: true
+                        implicitHeight: Theme.target
+                        model: panel.sellers.reasons
+                        textRole: "label"
+                        valueRole: "id"
+                        Accessible.name: "Reason for the report"
+                    }
+                    Muted { text: "What happened (shown on the shared list)" }
+                    TextArea {
+                        id: sharedText
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: 96
+                        wrapMode: TextEdit.Wrap
+                        leftPadding: 12
+                        rightPadding: 12
+                        topPadding: 10
+                        bottomPadding: 10
+                        color: Theme.text
+                        placeholderTextColor: Theme.mutedText
+                        selectionColor: Theme.band
+                        selectedTextColor: Theme.text
+                        font.family: Theme.sans
+                        font.pixelSize: Theme.bodySize
+                        onTextChanged: if (text.length > 500) text = text.substring(0, 500)
+                        Accessible.name: "What happened with this seller"
+                        background: Rectangle {
+                            radius: Theme.controlRadius
+                            color: Theme.surface
+                            border.color: sharedText.activeFocus ? Theme.accent : Theme.inputBorder
+                            border.width: 1
+                        }
+                    }
+                    RowLayout {
+                        Layout.alignment: Qt.AlignRight
+                        spacing: 12
+                        Muted { Layout.fillWidth: false; text: sharedText.text.length + " / 500"; font.family: Theme.mono }
+                        AppButton {
+                            text: "Cancel"
+                            onClicked: panel.reporting = false
+                        }
+                        AppButton {
+                            text: "Check purchase and send"
+                            primary: true
+                            enabled: sharedReason.currentIndex >= 0 && sharedText.text.trim().length > 0
+                            onClicked: {
+                                panel.reporting = false
+                                panel.shared.report(panel.sellers.sellerId, sharedReason.currentValue, sharedText.text)
+                            }
+                        }
+                    }
+                }
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                visible: panel.reportHere && panel.shared.reportStatus.length > 0
+                spacing: 12
+                Text {
+                    Layout.fillWidth: true
+                    text: panel.shared.reportStatus
+                    wrapMode: Text.WordWrap
+                    font.family: Theme.sans
+                    font.pixelSize: Theme.bodySize
+                    color: panel.shared.reportBusy || panel.shared.reportOk ? Theme.text : Theme.warnLabel
+                }
+                AppButton {
+                    visible: panel.shared.reportBusy
+                    text: "Stop"
+                    Accessible.name: "Stop the report"
+                    onClicked: panel.shared.cancelReport()
+                }
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                visible: panel.reportHere && panel.shared.purchaseMessage.length > 0
+                spacing: 12
+                Text {
+                    Layout.fillWidth: true
+                    text: panel.shared.purchaseMessage
+                    wrapMode: Text.WordWrap
+                    font.family: Theme.sans
+                    font.pixelSize: Theme.bodySize
+                    color: Theme.warnLabel
+                }
+                AppButton {
+                    text: "Continue"
+                    primary: true
+                    Accessible.name: "Continue the purchase check"
+                    onClicked: panel.shared.continuePurchaseCheck()
+                }
+            }
+
             // Reviews, read from eBay's feedback page on request.
             Text {
                 text: "REVIEWS"
@@ -403,6 +671,7 @@ Popup {
                         Text {
                             Layout.fillWidth: true
                             text: review.modelData.comment
+                            textFormat: Text.PlainText
                             wrapMode: Text.WordWrap
                             font.family: Theme.sans
                             font.pixelSize: Theme.bodySize
@@ -413,6 +682,7 @@ Popup {
                             spacing: 8
                             Text {
                                 text: review.modelData.item
+                                textFormat: Text.PlainText
                                 font.family: Theme.sans
                                 font.pixelSize: Theme.labelSize
                                 color: Theme.mutedText

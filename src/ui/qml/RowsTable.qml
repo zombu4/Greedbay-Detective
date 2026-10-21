@@ -88,6 +88,7 @@ ColumnLayout {
             required property string seller
             required property string sellerBadge
             required property bool sellerMarked
+            required property int sellerShared
             required property double sellerPercent
             required property int sellerCount
             required property bool view
@@ -130,6 +131,7 @@ ColumnLayout {
                 Text {
                     Layout.preferredWidth: table.conditionWidth
                     text: line.condition.length > 0 ? line.condition : "-"
+                    textFormat: Text.PlainText
                     elide: Text.ElideRight
                     font.family: Theme.sans
                     font.pixelSize: Theme.labelSize + 1
@@ -216,6 +218,11 @@ ColumnLayout {
                             kind: "danger"
                         }
                         Pill {
+                            visible: line.sellerShared > 0
+                            text: "SHARED LIST (" + line.sellerShared + ")"
+                            kind: "danger"
+                        }
+                        Pill {
                             visible: line.sellerBadge.length > 0
                             text: line.sellerBadge
                             kind: line.sellerBadge.startsWith("rating") ? "danger" : "neutral"
@@ -226,6 +233,7 @@ ColumnLayout {
                         Layout.fillWidth: true
                         visible: table.showReasons && line.reason.length > 0
                         text: line.reason
+                        textFormat: Text.PlainText
                         wrapMode: Text.WordWrap
                         font.family: Theme.sans
                         font.pixelSize: Theme.labelSize

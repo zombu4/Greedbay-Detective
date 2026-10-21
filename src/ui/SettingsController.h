@@ -54,6 +54,7 @@ class SettingsController : public QObject {
     Q_PROPERTY(double shippingMinAboveDollars READ shippingMinAboveDollars NOTIFY changed)
     // The IBM Plex font license (SIL Open Font License 1.1), shipped with the app.
     Q_PROPERTY(QString fontLicense READ fontLicense CONSTANT)
+    Q_PROPERTY(QString libraryLicenses READ libraryLicenses CONSTANT)
 public:
     // `sessionRunning` tells whether a lookup's browser session runs (no
     // sign-out then).
@@ -84,6 +85,7 @@ public:
     double shippingRatio() const;
     double shippingMinAboveDollars() const;
     QString fontLicense() const;
+    QString libraryLicenses() const;
 
     Q_INVOKABLE QString setPreferredBrowser(const QString &browserId);
     Q_INVOKABLE QString setPageDelaySeconds(int minSeconds, int maxSeconds);

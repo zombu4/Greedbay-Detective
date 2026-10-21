@@ -66,6 +66,7 @@ ApplicationWindow {
         HomeScreen {
             id: home
             backend: window.backend
+            onSettingsRequested: window.screen = 3
         }
         ResultsScreen {
             backend: window.backend

@@ -68,6 +68,7 @@ target_link_libraries(tst_lookupstore PRIVATE applookup)
 # the test itself).
 app_add_unit_test(tst_ui tst_ui.cpp)
 target_link_libraries(tst_ui PRIVATE appui appuiplugin)
+app_copy_runtime_dlls(tst_ui)
 
 # Plugins: manifest, install, sandbox, limits, examples; and export files.
 # pluginrunner: the plugin runner process, as the app starts itself with
@@ -93,6 +94,8 @@ set(app_test_fixtures
     fixtures/check_page.html
     fixtures/error_page.html
     fixtures/feedback.html
+    fixtures/feedback_pages.html
+    fixtures/purchases_pages.html
     fixtures/feedback_partial.html
     fixtures/feedback_ready.html
     fixtures/feedback_stuck.html
@@ -121,3 +124,30 @@ qt_add_resources(tst_extractors "extractor_fixtures" PREFIX "/fixtures" BASE fix
 # again after Continue). CI's macOS runner needed more than 120 s for the
 # whole suite (run 39495969553); its own limit is 300 s.
 set_tests_properties(tst_extractors PROPERTIES TIMEOUT 300)
+
+# The shared seller list (DESIGN 3.7): cryptography, trust chain, the server
+# (tools/seller-list-server) and the app's client against it; TorRunner
+# against faketor, a stand-in speaking tor's control protocol.
+app_add_test_helper(faketor helpers/faketor.cpp)
+target_link_libraries(faketor PRIVATE Qt6::Network)
+app_add_unit_test(tst_sellerlist tst_sellerlist.cpp)
+target_link_libraries(tst_sellerlist PRIVATE sellerserver appsellerlist Qt6::Network)
+app_copy_runtime_dlls(tst_sellerlist)
+target_compile_definitions(tst_sellerlist PRIVATE FAKE_TOR_PATH="$<TARGET_FILE:faketor>")
+add_dependencies(tst_sellerlist faketor)
+
+# Paging of the purchase check and the review read, without a browser.
+app_add_unit_test(tst_sellerpaging tst_sellerpaging.cpp)
+target_link_libraries(tst_sellerpaging PRIVATE appui)
+app_copy_runtime_dlls(tst_sellerpaging)
+
+# The local model (DESIGN 3.6) without a model: guards, prompts, the fake
+# runner (recorded answers), the real runner's refusals, the download.
+app_add_test_helper(fakemodelrunner helpers/fakemodelrunner.cpp)
+app_add_test_helper(modelrunner helpers/modelrunner.cpp)
+target_link_libraries(modelrunner PRIVATE appmodel)
+app_add_unit_test(tst_model tst_model.cpp)
+target_link_libraries(tst_model PRIVATE appmodel)
+target_compile_definitions(tst_model PRIVATE FAKE_MODEL_RUNNER="$<TARGET_FILE:fakemodelrunner>"
+                                             MODEL_RUNNER="$<TARGET_FILE:modelrunner>")
+add_dependencies(tst_model fakemodelrunner modelrunner)

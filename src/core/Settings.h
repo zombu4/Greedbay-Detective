@@ -67,6 +67,28 @@ public:
     bool updateCheck() const;
     void setUpdateCheck(bool enabled);
 
+    // The local model (DESIGN 3.6; owner: default Off). "model/enabled":
+    // anything but "true" is off. "model/id": a model of the catalog (empty:
+    // none chosen; the app's default is used). "model/gpu": the graphics
+    // chip is used unless "false". "model/offerAnswered": the first-run offer
+    // on Home was answered ("true") and is not shown again.
+    bool modelEnabled() const;
+    void setModelEnabled(bool enabled);
+    QString modelId() const;
+    void setModelId(const QString &id);
+    bool modelGpu() const;
+    void setModelGpu(bool enabled);
+    bool modelOfferAnswered() const;
+    void setModelOfferAnswered();
+
+    // Keys "sharedlist/read" and "sharedlist/report": whether the app reads
+    // the shared seller list and may send reports to it (owner decision
+    // 2026-10-20: opt-in, both off by default). Anything but "true" is off.
+    bool sharedListRead() const;
+    void setSharedListRead(bool enabled);
+    bool sharedListReport() const;
+    void setSharedListReport(bool enabled);
+
     // Key "browser/preferred": the id of the browser the user picked in
     // Settings ("brave", "chrome", "edge", "chromium"), or an empty string for
     // "automatic" (the first installed browser in the preference order).

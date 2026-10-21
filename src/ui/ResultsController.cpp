@@ -74,7 +74,7 @@ void RowsModel::update(const QList<Entry> &entries)
     }
     m_entries = entries;
     if (!m_entries.isEmpty())
-        emit dataChanged(index(0), index(count() - 1), {IncludedRole, MarkRole, SellerBadgeRole, SellerMarkedRole});
+        emit dataChanged(index(0), index(count() - 1), {IncludedRole, MarkRole, SellerBadgeRole, SellerMarkedRole, SellerSharedRole});
 }
 
 int RowsModel::rowCount(const QModelIndex &parent) const
@@ -124,6 +124,8 @@ QVariant RowsModel::data(const QModelIndex &index, int role) const
         return entry.sellerBadge;
     case SellerMarkedRole:
         return entry.sellerMarked;
+    case SellerSharedRole:
+        return entry.sellerShared;
     case SellerPercentRole:
         return entry.sellerPercent;
     case SellerCountRole:
@@ -140,6 +142,7 @@ QHash<int, QByteArray> RowsModel::roleNames() const
             {ReasonRole, "reason"},   {MarkRole, "mark"},       {BrokenRole, "broken"},
             {FormatRole, "format"}, {TimeLeftRole, "timeLeft"}, {ViewRole, "view"},   {ViewNoteRole, "viewNote"},
             {SellerRole, "seller"}, {SellerBadgeRole, "sellerBadge"}, {SellerMarkedRole, "sellerMarked"},
+            {SellerSharedRole, "sellerShared"},
             {SellerPercentRole, "sellerPercent"}, {SellerCountRole, "sellerCount"}};
 }
 
@@ -174,6 +177,20 @@ void ResultsController::refreshSellerMarks()
     }
     emit changed();
 }
+
+void ResultsController::setSharedReports(const QHash<QString, QStringList> &linesBySeller)
+{
+    m_shared = linesBySeller;
+    if (!m_saved.result.item.itemId.isEmpty()) {
+        m_sameItem->update(entries(true));
+        m_notThisItem->update(entries(false));
+    }
+    emit changed();
+}
+
+bool ResultsController::sharedFlag() const { return !sellerId().isEmpty() && m_shared.contains(sellerId().toLower()); }
+
+QStringList ResultsController::sharedLines() const { return sharedFlag() ? m_shared.value(sellerId().toLower()) : QStringList(); }
 
 bool ResultsController::markedFlag() const
 {
@@ -405,6 +422,7 @@ QList<RowsModel::Entry> ResultsController::entries(bool sameItem) const
             entry.sellerPercent = record.sellerPositivePercent.value_or(-1);
             entry.sellerCount = record.sellerFeedbackCount.value_or(-1);
             entry.sellerMarked = !record.sellerName.isEmpty() && m_marks.contains(record.sellerName.toLower());
+            entry.sellerShared = record.sellerName.isEmpty() ? 0 : static_cast<int>(m_shared.value(record.sellerName.toLower()).size());
             entry.sellerBadge = lookup::ratingNote(record.sellerPositivePercent, record.sellerFeedbackCount, rules.threshold,
                                                    rules.fewRatings).badge;
             entry.where = soldRow ? (record.confirmed ? QStringLiteral("sold") : QStringLiteral("sold, price not confirmed"))

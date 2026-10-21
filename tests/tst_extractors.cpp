@@ -103,6 +103,7 @@ private slots:
     void pageReadAgainAfterContinue();
     void failedLoadIsNotReadAfterContinue();
     void feedbackPage();
+    void purchasesPage();
     void dailyCapStopsLoads();
     void browserClosesCleanly();
 };
@@ -786,11 +787,92 @@ void TestExtractors::feedbackPage()
     QCOMPARE(readyReviews.size(), 1);
     QCOMPARE(readyReviews.at(0).toObject().value("comment").toString(), QStringLiteral("Wrong part sent"));
 
+    // More than 25: page 1 with a next page, then page 2 read on the page
+    // (paced and counted like a load), then page 2 asked again (as after
+    // Continue): no second click.
+    const char *paged = "https://www.ebay.com/fdbk/feedback_profile/seller-a?filter=feedback_page%3ARECEIVED_AS_SELLER&sort=RELEVANCEV2&p=1#negative";
+    result = extract("feedback_pages.html", paged, PageKind::Feedback, &error);
+    QVERIFY2(result, qPrintable(error));
+    QCOMPARE(result->value("page").toString(), QStringLiteral("expected"));
+    const QJsonObject pageOne = result->value("data").toObject();
+    QCOMPARE(pageOne.value("reviews").toArray().size(), 25);
+    QCOMPARE(pageOne.value("page").toInt(), 1);
+    QVERIFY(pageOne.value("hasNext").toBool());
+    for (int round = 0; round < 2; ++round) {
+        QSignalSpy again(m_controller, &BrowserController::done);
+        m_controller->readOnPage(QStringLiteral("negative@2"));
+        QVERIFY(again.wait(60000) || !again.isEmpty());
+        const QJsonObject reply = again.at(0).at(0).toJsonObject();
+        QCOMPARE(reply.value("status").toString(), QStringLiteral("ok"));
+        const QJsonObject second = reply.value("result").toObject();
+        QCOMPARE(second.value("page").toInt(), 2);
+        QVERIFY(!second.value("hasNext").toBool());
+        const QJsonArray rest = second.value("reviews").toArray();
+        QCOMPARE(rest.size(), 5);
+        QCOMPARE(rest.at(0).toObject().value("comment").toString(), QStringLiteral("Bad order 26"));
+    }
+    // Page 3 of a 2-page list: said, not guessed.
+    {
+        QSignalSpy third(m_controller, &BrowserController::done);
+        m_controller->readOnPage(QStringLiteral("negative@3"));
+        if (!third.wait(60000) && third.isEmpty())
+            QFAIL("no answer for page 3");
+        QCOMPARE(third.at(0).at(0).toJsonObject().value("status").toString(), QStringLiteral("unexpected_page"));
+    }
+
     // The list never switches: the extractor gives up and says so.
     result = extract("feedback_stuck.html", negative, PageKind::Feedback, &error);
     QVERIFY2(result, qPrintable(error));
     QCOMPARE(result->value("page").toString(), QStringLiteral("unexpected"));
     QVERIFY(result->value("reason").toString().contains(QStringLiteral("did not switch")));
+}
+
+void TestExtractors::purchasesPage()
+{
+    // Page 1: 25 orders with the item number, the seller id and the month,
+    // nothing else of the order; then page 2 read on the page (one click on
+    // Next), twice (as after Continue: no second click).
+    QString error;
+    std::optional<QJsonObject> result
+        = extract("purchases_pages.html", "https://www.ebay.com/mye/myebay/purchase", PageKind::Purchases, &error);
+    QVERIFY2(result, qPrintable(error));
+    QCOMPARE(result->value("page").toString(), QStringLiteral("expected"));
+    const QJsonObject pageOne = result->value("data").toObject();
+    QCOMPARE(pageOne.value("page").toInt(), 1);
+    QVERIFY(pageOne.value("hasNext").toBool());
+    const QJsonArray orders = pageOne.value("orders").toArray();
+    QCOMPARE(orders.size(), 25);
+    const QJsonObject first = orders.at(0).toObject();
+    QCOMPARE(first.value("itemId").toString(), QStringLiteral("100000000001"));
+    QCOMPARE(first.value("sellerId").toString(), QStringLiteral("shop_1"));
+    QCOMPARE(first.value("month").toString(), QStringLiteral("2026-02"));
+    QCOMPARE(first.keys(), QStringList({QStringLiteral("itemId"), QStringLiteral("month"), QStringLiteral("sellerId")}));
+    QVERIFY(orders.at(1).toObject().value("month").isNull()); // no date on the card: none made up
+    QCOMPARE(orders.at(2).toObject().value("itemId").toString(), QStringLiteral("100000000003")); // title path
+    const QByteArray text = QJsonDocument(pageOne).toJson(QJsonDocument::Compact);
+    QVERIFY(!text.contains("US $") && !text.contains("00-0000"));
+
+    for (int round = 0; round < 2; ++round) {
+        QSignalSpy again(m_controller, &BrowserController::done);
+        m_controller->readOnPage(QStringLiteral("@2"));
+        QVERIFY(again.wait(60000) || !again.isEmpty());
+        const QJsonObject reply = again.at(0).at(0).toJsonObject();
+        QCOMPARE(reply.value("status").toString(), QStringLiteral("ok"));
+        const QJsonObject second = reply.value("result").toObject();
+        QCOMPARE(second.value("page").toInt(), 2);
+        QVERIFY(!second.value("hasNext").toBool());
+        const QJsonArray rest = second.value("orders").toArray();
+        QCOMPARE(rest.size(), 3);
+        QCOMPARE(rest.at(1).toObject().value("sellerId").toString(), QStringLiteral("wanted_seller"));
+        QCOMPARE(rest.at(1).toObject().value("month").toString(), QStringLiteral("2026-04"));
+    }
+    {
+        QSignalSpy wrong(m_controller, &BrowserController::done);
+        m_controller->readOnPage(QStringLiteral("negative@2"));
+        if (!wrong.wait(60000) && wrong.isEmpty())
+            QFAIL("no answer for a feedback option on the purchases page");
+        QCOMPARE(wrong.at(0).at(0).toJsonObject().value("status").toString(), QStringLiteral("unexpected_page"));
+    }
 }
 
 void TestExtractors::dailyCapStopsLoads()

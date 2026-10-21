@@ -15,6 +15,7 @@ enum class PageKind {
     Item,         // /itm/<item number>
     Research,     // /sh/research?...&tabName=SOLD (Seller Hub Product Research)
     Feedback,     // /fdbk/feedback_profile/<seller>?... (classic feedback view; #negative or #neutral)
+    Purchases,    // /mye/myebay/purchase (the user's own purchases; the shared-report purchase check)
 };
 
 // The names used in the browser worker protocol and in extractor results.

@@ -103,7 +103,9 @@ Support/GreedbayDetective` on macOS, `%LOCALAPPDATA%\GreedbayDetective` on
 Windows, `$HOME/.local/share/GreedbayDetective` on Linux. That includes the
 browser profile the app uses for eBay (your eBay sign-in and cookies), and
 the sellers you marked and the seller reviews the app read (in the saved
-lookups' database; never uploaded or shared). On
+lookups' database; never uploaded or shared), the shared seller list's last
+copy and tor's data (when you use the shared list), and a downloaded local
+model (when you use one). On
 macOS the browser also makes `$HOME/Library/Caches/GreedbayDetective`, which
 the uninstall removes too. Exports go to your Downloads folder and are yours
 to keep.
@@ -117,7 +119,8 @@ keep your saved lookups and history:
   reviews read), their backups and the brands and models you confirmed stay;
   installing the app again uses them. Everything else the
   app saved is deleted: settings, logs, the app's browser profiles (your eBay
-  sign-in and cookies), installed plugins, temporary files.
+  sign-in and cookies), installed plugins, temporary files, the shared seller
+  list's copy, tor's data and downloaded local models.
 - **Delete everything**: the whole work folder goes.
 
 Then, depending on the system:
@@ -132,6 +135,51 @@ Then, depending on the system:
   for your password; where that is not possible it shows the command).
   `sudo apt remove greedbay-detective` or `apt purge` removes the program
   only; your work folder stays.
+
+## Shared seller list
+
+Optional, off until you turn it on in **Settings > Shared seller list**:
+reports by other users of the app about sellers they bought from, on one
+list the list owner runs. Reading and reporting are separate switches.
+
+- Everything goes through Tor, which the app starts only while it updates the
+  list or sends a report; no one sees your internet address, not even the
+  list's server. Without Tor the app keeps the last copy and says the list was
+  not updated - it never connects any other way.
+- The list is signed (Ed25519 and ML-DSA-65, both must hold) by a server key
+  that the list owner's master key authorized; the app refuses anything else,
+  and any list older than the one it has.
+- A report sends only the seller's eBay user id, your reason and your words,
+  and the item number and month of your purchase from that seller - found
+  first on your own eBay Purchases page, in the app's browser. Your eBay name
+  is never sent. The report is encrypted to the server's key (X25519 and
+  ML-KEM-768). One report per seller; reports go live after the server has
+  checked the item on eBay's public item page; anyone can dispute a report,
+  and the list owner removes reports on request.
+
+The server is a separate program: [tools/seller-list-server](tools/seller-list-server/README.md).
+Builds without the list owner's keys (`src/sellerlist/data/master.json`) say
+the list is not set up.
+
+## Local model
+
+Optional, off until you turn it on in **Settings > Local model**: a small
+language model (Qwen3-4B, or Qwen2.5-1.5B for smaller computers, Apache-2.0)
+that runs on your computer only - nothing is sent anywhere. Settings shows its
+license, download size and memory need before the one-time download from the
+maker's own repository; the file is checked (SHA-256) before every use.
+
+- It double-checks the identity of a listing; when it reads it differently
+  from the app's rules, the app asks you and shows both readings.
+- It looks at the counted results again; a row it doubts goes to "to check",
+  where you decide. It never adds a row to the numbers, never sets an
+  identity by itself and never changes a price.
+- Every answer passes the app's checks first (the model and brand must be in
+  the listing, no specifications as models, no made-up brands, ...); each
+  lookup says in one line what the model did.
+- It runs in a separate process with time limits; if it is missing, slow or
+  fails, the lookup goes on with the rules. On x86-64 it needs a processor
+  with AVX2 (most made since 2013-2015); Settings says so when it is missing.
 
 ## Plugins
 
@@ -209,6 +257,14 @@ Compiler warnings are errors in every build.
 The app's text uses IBM Plex Sans and IBM Plex Mono from IBM's official
 release, under the SIL Open Font License 1.1; source, versions and checksums
 are in [resources/fonts/README.md](resources/fonts/README.md).
+
+## Libraries
+
+Built into the app from pinned, SHA-256-checked source archives
+([cmake/deps.cmake](cmake/deps.cmake)): libsodium 1.0.22 (ISC), liboqs 0.16.0
+(MIT, parts under their own terms) and llama.cpp v0.7.0 (MIT). Their license
+texts: [resources/licenses/THIRD-PARTY-NOTICES.txt](resources/licenses/THIRD-PARTY-NOTICES.txt),
+also in **Settings > Licenses**.
 
 ## License
 

@@ -62,6 +62,9 @@ Rectangle {
                 suggestions: overlay.session.askSuggestions
                 brand: overlay.session.askBrand
                 model: overlay.session.askModel
+                modelAnswer: overlay.session.askModelAnswer
+                modelAnswerBrand: overlay.session.askModelAnswerBrand
+                modelAnswerModel: overlay.session.askModelAnswerModel
                 productName: overlay.session.askProductName
                 error: overlay.session.errorText
                 onSaveRequested: (brand, model, productName) => overlay.session.submitIdentity(brand, model, productName)

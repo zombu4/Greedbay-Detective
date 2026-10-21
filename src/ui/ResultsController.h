@@ -51,6 +51,7 @@ public:
         SellerRole,       // the seller's user id as the card shows it, or ""
         SellerBadgeRole,  // "rating 94.8%" (below the threshold) / "only 7 ratings", or ""
         SellerMarkedRole, // true: the user marked this seller
+        SellerSharedRole, // the seller's reports on the shared seller list (0: none)
         SellerPercentRole, // the card's positive percentage, -1 when not shown
         SellerCountRole,   // the card's feedback count, -1 when not shown
     };
@@ -74,6 +75,7 @@ public:
         QString seller;
         QString sellerBadge;
         bool sellerMarked = false;
+        int sellerShared = 0;
         double sellerPercent = -1;
         int sellerCount = -1;
     };
@@ -147,6 +149,9 @@ class ResultsController : public QObject {
     Q_PROPERTY(int sellerCount READ sellerCount NOTIFY changed)
     Q_PROPERTY(bool markedFlag READ markedFlag NOTIFY changed)
     Q_PROPERTY(QStringList markedLines READ markedLines NOTIFY changed)
+    // The listing's seller on the shared seller list: one line per report.
+    Q_PROPERTY(bool sharedFlag READ sharedFlag NOTIFY changed)
+    Q_PROPERTY(QStringList sharedLines READ sharedLines NOTIFY changed)
     Q_PROPERTY(bool ratingFlag READ ratingFlag NOTIFY changed)
     Q_PROPERTY(QString ratingLine READ ratingLine NOTIFY changed)
     // LIKELY BROKEN (owner decision 2026-10-19): a warning about this listing,
@@ -286,6 +291,10 @@ public:
     int sellerCount() const { return m_saved.result.item.sellerFeedbackCount.value_or(-1); }
     bool markedFlag() const;
     QStringList markedLines() const;
+    bool sharedFlag() const;
+    QStringList sharedLines() const;
+    // The shared seller list changed: report lines by lower-case seller id.
+    void setSharedReports(const QHash<QString, QStringList> &linesBySeller);
     bool ratingFlag() const;
     QString ratingLine() const;
     // The user marked or unmarked a seller: the flags and badges again.
@@ -383,6 +392,8 @@ private:
     lookup::SellerStore m_sellers;
     // The user's marks by lower-case seller id.
     QHash<QString, lookup::SellerMark> m_marks;
+    // The shared seller list's report lines by lower-case seller id.
+    QHash<QString, QStringList> m_shared;
     lookup::SavedLookup m_saved;
     lookup::Valuation m_valuation;
     QString m_photoSource;

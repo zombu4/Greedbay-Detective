@@ -38,6 +38,12 @@ qt_generate_deploy_qml_app_script(
 )
 install(SCRIPT "${app_deploy_script}")
 
+# libsodium's DLL on Windows (cmake/deps.cmake): the deploy tool copies only
+# Qt's own libraries.
+if(WIN32)
+    install(FILES "${APP_SODIUM_DLL_RELEASE}" DESTINATION "${CMAKE_INSTALL_BINDIR}")
+endif()
+
 if(MSVC)
     # "searches for compiler-provided system runtime libraries and adds
     # installation rules for them"; the destination defaults to bin on

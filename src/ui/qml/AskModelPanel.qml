@@ -1,7 +1,9 @@
 // The model is not known with confidence (owner rule 26): nothing is
 // searched until the user says what the item is. Shows the listing's title,
 // item specifics and a link to it (photos), the app's suggestions, and the
-// brand / model / product name fields.
+// brand / model / product name fields. When the local model reads the
+// listing differently from the rules, its reading is shown with a button that
+// puts it into the fields (DESIGN 3.6, G10: the user decides).
 import QtQuick
 import QtQuick.Controls.Basic
 import QtQuick.Layouts
@@ -21,6 +23,10 @@ ColumnLayout {
     property string brand
     property string model
     property string productName
+    // "Brand Model" as the local model reads it, when it differs; else "".
+    property string modelAnswer
+    property string modelAnswerBrand
+    property string modelAnswerModel
     property string error
     signal saveRequested(string brand, string model, string productName)
     signal openListingRequested()
@@ -47,6 +53,7 @@ ColumnLayout {
     Text {
         Layout.fillWidth: true
         text: panel.title
+        textFormat: Text.PlainText
         wrapMode: Text.WordWrap
         font.family: Theme.sans
         font.pixelSize: Theme.bodySize
@@ -110,6 +117,29 @@ ColumnLayout {
             visible: !panel.showAllSuggestions && panel.suggestions.length > panel.shortList
             text: "Show all " + panel.suggestions.length
             onActivated: panel.showAllSuggestions = true
+        }
+    }
+    RowLayout {
+        objectName: "modelAnswerRow"
+        Layout.fillWidth: true
+        visible: panel.modelAnswer.length > 0
+        spacing: 12
+        Text {
+            Layout.fillWidth: true
+            text: "The local model reads it as: " + panel.modelAnswer
+            textFormat: Text.PlainText
+            wrapMode: Text.WordWrap
+            font.family: Theme.sans
+            font.pixelSize: Theme.bodySize
+            color: Theme.text
+        }
+        AppButton {
+            text: "Use this reading"
+            Accessible.name: "Put the local model's reading into the brand and model fields"
+            onClicked: {
+                brandField.text = panel.modelAnswerBrand
+                modelField.text = panel.modelAnswerModel
+            }
         }
     }
     GridLayout {

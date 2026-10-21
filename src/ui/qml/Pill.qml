@@ -17,6 +17,7 @@ Rectangle {
         id: label
         anchors.centerIn: parent
         text: pill.text
+        textFormat: Text.PlainText
         font.family: Theme.sans
         font.pixelSize: 12
         font.weight: Font.DemiBold

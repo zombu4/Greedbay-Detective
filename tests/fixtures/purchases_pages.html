@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>Purchases | My eBay | eBay</title></head>
+<body>
+<!-- Synthetic: the purchases page's structure from the 2026-10-20 recon
+     (div.m-ph-card.m-order-card per order, the item link a.nav-link, "Order
+     date:" then the date span, "Sold by:" then a DIV with a.PSEUDOLINK
+     /usr/<seller id>, nav.pagination). Made-up items, sellers and amounts.
+     Two pages: 25 orders, then 3; Next shows page 2 after 300 ms. Order 2
+     has no date, order 3 a link with a title path. -->
+<div id="orders"></div>
+<nav class="pagination" aria-label="Pagination"><div class="m-pagination-v2" id="pager"></div></nav>
+<script>
+var MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+function card(n) {
+  var item = String(100000000000 + n);
+  var seller = n === 27 ? 'wanted_seller' : 'shop_' + n;
+  var href = n === 3 ? 'https://www.ebay.com/itm/some-title-words/' + item + '?var=1' : 'https://www.ebay.com/itm/' + item;
+  var date = n === 2 ? '' : '<span class="primary__item--item-text">' + MONTHS[n % 12] + ' ' + (n % 28 + 1) + ', 2026</span>';
+  return '<div class="m-ph-card m-order-card">' +
+    '<div><span>Order date:</span>' + date + '</div>' +
+    '<div><span>Order total:</span><span>US $' + n + '.00</span></div>' +
+    '<div><span>Order number:</span><span>00-0000' + n + '-0000</span></div>' +
+    '<div class="item"><a class="nav-link" href="' + href + '">Made-up item ' + n + '</a></div>' +
+    '<div class="seller"><div>Sold by:</div><div><a class="PSEUDOLINK" href="https://www.ebay.com/usr/' + seller + '">' + seller + '</a></div></div>' +
+    '</div>';
+}
+function show(page) {
+  var html = '';
+  var first = page === 1 ? 1 : 26;
+  var last = page === 1 ? 25 : 28;
+  for (var n = first; n <= last; ++n) html += card(n);
+  document.getElementById('orders').innerHTML = html;
+  document.getElementById('pager').innerHTML =
+    '<button class="pagination__previous" aria-label="Previous page"' + (page === 1 ? ' aria-disabled="true"' : '') + '></button>' +
+    '<button class="pagination__item" aria-label="1"' + (page === 1 ? ' aria-current="page"' : '') + '>1</button>' +
+    '<button class="pagination__item" aria-label="2"' + (page === 2 ? ' aria-current="page"' : '') + '>2</button>' +
+    '<button class="pagination__next" aria-label="Next page of results"' + (page === 2 ? ' aria-disabled="true"' : '') + '></button>';
+  var next = document.querySelector('#pager .pagination__next');
+  next.addEventListener('click', function () {
+    if (next.getAttribute('aria-disabled') !== 'true') setTimeout(function () { show(2); }, 300);
+  });
+}
+show(1);
+</script>
+</body>
+</html>

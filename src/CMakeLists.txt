@@ -53,8 +53,12 @@ qt_add_resources(appcore "migrations"
         db/migrations/0003_formats.sql
         db/migrations/0004_seller_ratings.sql
         db/migrations/0005_sellers.sql
+        db/migrations/0006_model_answers.sql
 )
 
+# A server-only build (APP_SERVER_ONLY, the top-level CMakeLists.txt) needs
+# appcore, applookup and appsellerlist only.
+if(NOT APP_SERVER_ONLY)
 # appbrowser: drives the user's installed browser over the DevTools protocol
 # and holds the page extractors.
 qt_add_library(appbrowser STATIC
@@ -84,9 +88,11 @@ qt_add_resources(appbrowser "extractors"
         browser/extractors/common.js
         browser/extractors/feedback.js
         browser/extractors/item.js
+        browser/extractors/purchases.js
         browser/extractors/research.js
         browser/extractors/search.js
 )
+endif()
 
 # applookup: one lookup (item page -> identity -> queries -> comparison pages
 # -> records -> matching -> value), and saving lookups in the database
@@ -131,6 +137,26 @@ target_link_libraries(applookup PUBLIC appcore)
 
 app_enable_warnings(applookup)
 
+# appsellerlist: the shared seller list's cryptography and documents (DESIGN
+# 3.7), used by the app and by tools/seller-list-server: libsodium and
+# liboqs (cmake/deps.cmake).
+qt_add_library(appsellerlist STATIC
+    sellerlist/Crypto.cpp
+    sellerlist/Crypto.h
+    sellerlist/Protocol.cpp
+    sellerlist/Protocol.h
+    sellerlist/Trust.cpp
+    sellerlist/Trust.h
+    sellerlist/TorRunner.cpp
+    sellerlist/TorRunner.h
+    sellerlist/ListClient.cpp
+    sellerlist/ListClient.h
+)
+target_link_libraries(appsellerlist PUBLIC applookup Qt6::Core Qt6::Network PRIVATE app_sodium app_oqs)
+# The headers include <sodium.h> only in the .cpp files.
+target_include_directories(appsellerlist PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
+app_enable_warnings(appsellerlist)
+
 # The matcher's data ships inside the binary as :/lookup/<name>.json.
 qt_add_resources(applookup "lookup_data"
     PREFIX "/lookup"
@@ -139,6 +165,10 @@ qt_add_resources(applookup "lookup_data"
         lookup/data/known-models.json
         lookup/data/match-words.json
 )
+
+if(APP_SERVER_ONLY)
+    return()
+endif()
 
 # appplugins: JavaScript plugins (DESIGN 5, PLAN 15): the manifest, the
 # catalog of built-in examples and installed plugins, the host that runs the
@@ -184,6 +214,8 @@ qt_add_resources(appplugins "plugin_examples"
 qt_add_library(appui STATIC
     ui/Backend.cpp
     ui/Backend.h
+    ui/BrowserTask.cpp
+    ui/BrowserTask.h
     ui/Fonts.cpp
     ui/Fonts.h
     ui/Format.cpp
@@ -192,10 +224,14 @@ qt_add_library(appui STATIC
     ui/HistoryController.h
     ui/LookupSession.cpp
     ui/LookupSession.h
+    ui/ModelController.cpp
+    ui/ModelController.h
     ui/PhotoProvider.cpp
     ui/PhotoProvider.h
     ui/PluginsController.cpp
     ui/PluginsController.h
+    ui/PurchaseCheck.cpp
+    ui/PurchaseCheck.h
     ui/RecentModel.cpp
     ui/RecentModel.h
     ui/ResultsController.cpp
@@ -206,9 +242,11 @@ qt_add_library(appui STATIC
     ui/SellerSession.h
     ui/SettingsController.cpp
     ui/SettingsController.h
+    ui/SharedListController.cpp
+    ui/SharedListController.h
 )
 
-target_link_libraries(appui PUBLIC appbrowser applookup appplugins Qt6::Gui Qt6::Network Qt6::Qml Qt6::Quick Qt6::QuickControls2)
+target_link_libraries(appui PUBLIC appbrowser applookup appplugins appsellerlist appmodel Qt6::Gui Qt6::Network Qt6::Qml Qt6::Quick Qt6::QuickControls2)
 # The QML type registration code that qt_add_qml_module writes includes the
 # headers by file name (<Backend.h>).
 target_include_directories(appui PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/ui")
@@ -289,10 +327,64 @@ qt_add_resources(appui "licenses"
     FILES
         "${PROJECT_SOURCE_DIR}/resources/fonts/IBM-Plex-LICENSE.txt"
 )
+# The license texts of the libraries built into the app (cmake/deps.cmake):
+# :/licenses/THIRD-PARTY-NOTICES.txt.
+qt_add_resources(appui "library_licenses"
+    PREFIX "/licenses"
+    BASE "${PROJECT_SOURCE_DIR}/resources/licenses"
+    FILES
+        "${PROJECT_SOURCE_DIR}/resources/licenses/THIRD-PARTY-NOTICES.txt"
+)
+
+# appmodel: the local model (DESIGN 3.6): catalog, prompts and grammars, the
+# guards, the answer cache, the download, the runner ("--model-runner") on
+# llama.cpp (cmake/deps.cmake) and the app's side of it.
+qt_add_library(appmodel STATIC
+    model/Guards.cpp
+    model/Guards.h
+    model/ModelAssist.cpp
+    model/ModelAssist.h
+    model/ModelCatalog.cpp
+    model/ModelCatalog.h
+    model/ModelClient.cpp
+    model/ModelClient.h
+    model/ModelDownload.cpp
+    model/ModelDownload.h
+    model/ModelStore.cpp
+    model/ModelStore.h
+    model/Prompts.cpp
+    model/Prompts.h
+    model/Runner.cpp
+    model/Runner.h
+)
+target_link_libraries(appmodel PUBLIC applookup Qt6::Core Qt6::Network Qt6::Sql PRIVATE app_llama_all)
+target_include_directories(appmodel PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
+app_enable_warnings(appmodel)
+# The models' license texts as their repositories have them (shown before a
+# download): :/models/<file>.
+qt_add_resources(appmodel "model_licenses"
+    PREFIX "/models"
+    BASE "${PROJECT_SOURCE_DIR}/resources/models"
+    FILES
+        "${PROJECT_SOURCE_DIR}/resources/models/Qwen2.5-1.5B-LICENSE.txt"
+        "${PROJECT_SOURCE_DIR}/resources/models/Qwen3-4B-LICENSE.txt"
+)
+
+# The shared seller list's owner keys and onion address (DESIGN 3.7), made
+# by the list owner with tools/seller-list-server "app-master" and put here.
+# Without the file the app says the list is not set up in this build.
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/sellerlist/data/master.json")
+    qt_add_resources(appui "sellerlist_master"
+        PREFIX "/sellerlist"
+        BASE "${CMAKE_CURRENT_SOURCE_DIR}/sellerlist/data"
+        FILES "${CMAKE_CURRENT_SOURCE_DIR}/sellerlist/data/master.json"
+    )
+endif()
 
 # The app.
 qt_add_executable(${APP_NAME} MACOSX_BUNDLE WIN32 app/main.cpp)
 target_link_libraries(${APP_NAME} PRIVATE appui appuiplugin)
+app_copy_runtime_dlls(${APP_NAME})
 set_target_properties(${APP_NAME} PROPERTIES
     MACOSX_BUNDLE_BUNDLE_NAME "${APP_DISPLAY_NAME}"
     MACOSX_BUNDLE_GUI_IDENTIFIER "${APP_BUNDLE_ID}"

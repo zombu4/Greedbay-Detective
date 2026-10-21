@@ -79,6 +79,7 @@ struct HistorySaleRow {
 class LookupStore {
 public:
     explicit LookupStore(QString connectionName);
+    QString connectionName() const { return m_connectionName; }
 
     // Saves a finished lookup: the listing, identity, queries, every row with
     // its bucket, reasons and checkbox, and the numbers. The new lookup's id,

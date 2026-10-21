@@ -471,7 +471,7 @@ void TestLookupStore::priceHistory()
 void TestLookupStore::upgradesVersion1()
 {
     const QList<app::Migration> all = shippedMigrations();
-    QCOMPARE(all.size(), 5);
+    QCOMPARE(all.size(), 6);
     const Database::Result created =
         Database::open(QStringLiteral("v1"), m_db, m_backups, QStringLiteral(TEST_APP_NAME), all.mid(0, 1));
     QVERIFY2(created.ok(), qPrintable(created.error));
@@ -515,9 +515,10 @@ void TestLookupStore::upgradesVersion1()
     QVERIFY2(upgraded.ok(), qPrintable(upgraded.error));
     QCOMPARE(upgraded.outcome, Database::Outcome::Upgraded);
     QCOMPARE(upgraded.fromVersion, 1);
-    QCOMPARE(upgraded.toVersion, 5);
-    // Version 5: the seller tables exist, empty.
-    for (const char *table : {"marked_sellers", "seller_feedback"}) {
+    QCOMPARE(upgraded.toVersion, 6);
+    // Versions 5 and 6: the seller tables and the local model's answers exist,
+    // empty.
+    for (const char *table : {"marked_sellers", "seller_feedback", "model_answers"}) {
         QCOMPARE(scalar(QStringLiteral("v2"), QStringLiteral("SELECT count(*) FROM %1").arg(QLatin1String(table))).toInt(), 0);
     }
     QVERIFY(QFileInfo::exists(upgraded.backupPath));

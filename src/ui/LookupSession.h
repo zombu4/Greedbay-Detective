@@ -4,6 +4,7 @@
 #include "lookup/KnownModels.h"
 #include "lookup/LookupStore.h"
 #include "lookup/MatchWords.h"
+#include "model/ModelAssist.h"
 
 #include <QJsonObject>
 #include <QObject>
@@ -101,6 +102,11 @@ class LookupSession : public QObject {
     Q_PROPERTY(QString askBrand READ askBrand NOTIFY stateChanged)
     Q_PROPERTY(QString askModel READ askModel NOTIFY stateChanged)
     Q_PROPERTY(QString askProductName READ askProductName NOTIFY stateChanged)
+    // The local model's identity when it differs from the rules' ("Brand
+    // Model"), shown next to the rules' answer; empty otherwise.
+    Q_PROPERTY(QString askModelAnswer READ askModelAnswer NOTIFY stateChanged)
+    Q_PROPERTY(QString askModelAnswerBrand READ askModelAnswerBrand NOTIFY stateChanged)
+    Q_PROPERTY(QString askModelAnswerModel READ askModelAnswerModel NOTIFY stateChanged)
     // ReviewSearches: the queries and this lookup's depths (from Settings).
     Q_PROPERTY(QStringList reviewQueries READ reviewQueries NOTIFY stateChanged)
     Q_PROPERTY(int reviewSoldDepth READ reviewSoldDepth NOTIFY stateChanged)
@@ -167,6 +173,9 @@ public:
     QString askBrand() const;
     QString askModel() const;
     QString askProductName() const;
+    QString askModelAnswer() const;
+    QString askModelAnswerBrand() const { return askModelAnswer().isEmpty() ? QString() : m_modelIdentity->answer.brand; }
+    QString askModelAnswerModel() const { return askModelAnswer().isEmpty() ? QString() : m_modelIdentity->answer.model; }
     QStringList reviewQueries() const;
     int reviewSoldDepth() const { return m_depths.sold; }
     int reviewActiveDepth() const { return m_depths.active; }
@@ -199,7 +208,13 @@ private:
     // `lookupId`: the saved lookup being corrected, if any.
     bool saveIdentity(const QString &itemId, const lookup::ConfirmedIdentity &identity, std::optional<qint64> lookupId,
                       QString *error);
+    // Rows by the rules (and the matcher plugins), then finishSave().
     void saveLookup(lookup::LookupResult result);
+    QList<lookup::Row> classifyAndMatch(const lookup::LookupResult &result) const;
+    // The own-listing check, the numbers, the local model's notes, the save.
+    void finishSave(lookup::LookupResult result, QList<lookup::Row> rows);
+    void onModelIdentity(const model::ModelAssist::IdentityOutcome &outcome);
+    void onModelSorted(const QList<lookup::Row> &rows, const QString &note);
     void fetchPhoto(const lookup::ItemRecord &item);
     void onPhotoReply(QNetworkReply *reply, const QString &itemId, const QString &url);
 
@@ -226,6 +241,18 @@ private:
     QString m_browserName;
     QString m_userMessage;
     QString m_errorText;
+
+    // The local model (DESIGN 3.6): used in this lookup, its notes for the
+    // saved lookup, its identity answer while the user is asked, and the
+    // lookup's result while its rows are sorted.
+    model::ModelAssist *m_assist;
+    bool m_useModel = false;
+    bool m_identityPending = false;
+    bool m_modelSorting = false;
+    bool m_browserEnded = false;
+    QStringList m_modelNotes;
+    std::optional<model::ModelAssist::IdentityOutcome> m_modelIdentity;
+    lookup::LookupResult m_sortingResult;
 };
 
 } // namespace app::ui

@@ -76,8 +76,9 @@ struct FeedbackReview {
 
 // What one read of a seller's feedback page gave: the rating counts of the
 // page's table (1 month, 6 months, 12 months) and the reviews of one kind
-// ("negative" or "neutral") of the last 12 months, as the page lists them
-// (at most one page, 25).
+// ("negative" or "neutral") of the last 12 months, page by page as the list
+// shows them (25 a page). complete is false when the reading stopped before
+// the list's last page (note says why).
 struct SellerFeedback {
     QString sellerId;
     QString kind;
@@ -86,6 +87,8 @@ struct SellerFeedback {
     int neutral[3] = {-1, -1, -1};
     int negative[3] = {-1, -1, -1};
     QList<FeedbackReview> reviews;
+    bool complete = true;
+    QString note;
     QDateTime fetchedAt; // UTC
 
     QJsonObject toJson() const;

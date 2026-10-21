@@ -525,7 +525,31 @@ void BrowserController::fetch(const QUrl &url, ebay::PageKind kind)
     }
     m_op = Op::Fetch;
     m_kind = kind;
+    m_pageOption = url.fragment();
+    m_readOnPage = false;
     scheduleLoad(url);
+}
+
+void BrowserController::readOnPage(const QString &option)
+{
+    if (!m_ready || isBusy()) {
+        emit done(failedReply(m_ready ? QStringLiteral("another request is still running")
+                                      : QStringLiteral("the browser is not ready")));
+        return;
+    }
+    if (!m_documentUrl.isValid() || !m_lastLoadOk) {
+        emit done(failedReply(QStringLiteral("no page was loaded to read again")));
+        return;
+    }
+    m_op = Op::Fetch;
+    m_pageOption = option;
+    m_readOnPage = true;
+    // The same pause as before a page load.
+    const qint64 minMs = std::max(0, m_options.pageDelayMinMs);
+    const qint64 maxMs = std::max<qint64>(minMs, m_options.pageDelayMaxMs);
+    const qint64 delay = QRandomGenerator::global()->bounded(minMs, maxMs + 1);
+    const qint64 wait = std::clamp<qint64>(delay - m_sinceLastLoad.elapsed(), 0, std::numeric_limits<int>::max());
+    m_delayTimer->start(static_cast<int>(wait));
 }
 
 void BrowserController::signIn()
@@ -625,6 +649,17 @@ void BrowserController::startLoad()
         finish(reply);
         return;
     }
+    if (m_readOnPage) {
+        // No load: the page as it is, read with the option.
+        m_readOnPage = false;
+        ++m_serial;
+        m_loadClock.start();
+        m_sinceLastLoad.start();
+        m_settleClock.start();
+        qCInfo(lcBrowser).noquote() << "fetch" << ebay::pageKindName(m_kind) << "read again on the page:" << m_pageOption;
+        runExtractor();
+        return;
+    }
     // Exactly one tab before every page load the app makes.
     keepOneTab(nullptr);
     m_loading = true;
@@ -710,9 +745,10 @@ void BrowserController::evaluateExtractor(const QUrl &pageUrl, std::function<voi
             handle(changed);
             return;
         }
-        // The requested URL's fragment is the page's option (the feedback
-        // page's kind); the page's own scripts may change location.hash.
-        const QJsonObject params{{QStringLiteral("expression"), Extractor::script(m_kind, pageUrl, m_url.fragment())},
+        // The page's option: the fetched URL's fragment (the feedback page's
+        // kind; the page's own scripts may change location.hash) or
+        // readOnPage's option.
+        const QJsonObject params{{QStringLiteral("expression"), Extractor::script(m_kind, pageUrl, m_pageOption)},
                                  {QStringLiteral("contextId"), created.value(QStringLiteral("executionContextId"))},
                                  {QStringLiteral("returnByValue"), true},
                                  {QStringLiteral("awaitPromise"), true}};

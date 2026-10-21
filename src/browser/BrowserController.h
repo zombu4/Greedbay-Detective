@@ -113,6 +113,13 @@ public:
     bool start(QString *error);
 
     void fetch(const QUrl &url, ebay::PageKind kind);
+    // Reads the page loaded by the last fetch() again, without loading it,
+    // with `option` for its extractor (the feedback page: "negative@3" makes
+    // the list show its page 3 - a click on Next when it shows page 2 - and
+    // reads it; read again after Continue it does not click twice).
+    // Paced like a page load and counted as one page in the daily cap (the
+    // page asks eBay for the next part); one done() reply as for fetch().
+    void readOnPage(const QString &option);
     void signIn();
     // The user has done what needsUser() asked for.
     void continueAfterUser();
@@ -213,6 +220,10 @@ private:
     QString m_navigationError;
     int m_httpStatus = 0;
     QUrl m_documentUrl;
+    // The extractor's option: the fetched URL's fragment, or readOnPage's.
+    QString m_pageOption;
+    // The next startLoad() reads the current page instead of loading one.
+    bool m_readOnPage = false;
     bool m_lastLoadOk = false;
     bool m_waitingForUser = false;
     // While waiting for the user: HTTP status of the last main-frame page the

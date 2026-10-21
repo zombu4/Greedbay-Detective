@@ -1,5 +1,6 @@
 // Home (ui-spec 1): the paste field and Check button, then the recent
-// lookups as a 2-column grid of cards with the pages used today.
+// lookups as a 2-column grid of cards with the pages used today. Once, the
+// local model's offer (DESIGN 3.6: off by default, a clear first-run offer).
 import QtQuick
 import QtQuick.Controls.Basic
 import QtQuick.Layouts
@@ -10,6 +11,7 @@ Item {
     property string error
     // Let the user check the searches and depths before they run.
     property alias reviewFirst: review.checked
+    signal settingsRequested()
 
     function setInput(text) {
         input.text = text
@@ -78,6 +80,40 @@ Item {
             font.family: Theme.sans
             font.pixelSize: Theme.bodySize
             color: Theme.warnLabel
+        }
+        Card {
+            objectName: "localModelOffer"
+            Layout.fillWidth: true
+            visible: home.backend.localModel.offerVisible
+            fill: Theme.raised
+            ColumnLayout {
+                anchors.fill: parent
+                spacing: 8
+                Text {
+                    Layout.fillWidth: true
+                    text: home.backend.localModel.offerText
+                    wrapMode: Text.WordWrap
+                    font.family: Theme.sans
+                    font.pixelSize: Theme.bodySize
+                    color: Theme.text
+                }
+                RowLayout {
+                    spacing: 12
+                    AppButton {
+                        text: "Set it up in Settings"
+                        primary: true
+                        onClicked: {
+                            home.backend.localModel.answerOffer()
+                            home.settingsRequested()
+                        }
+                    }
+                    AppButton {
+                        text: "Not now"
+                        Accessible.name: "Not now; the offer is not shown again"
+                        onClicked: home.backend.localModel.answerOffer()
+                    }
+                }
+            }
         }
 
         RowLayout {
@@ -148,6 +184,7 @@ Item {
                             Text {
                                 Layout.fillWidth: true
                                 text: cell.name
+                                textFormat: Text.PlainText
                                 elide: Text.ElideRight
                                 font.family: Theme.sans
                                 font.pixelSize: 16

@@ -25,6 +25,11 @@ namespace app {
 //   tmp/                     temporary files of this process
 //   plugins/                 plugins the user installed, one subfolder per
 //                            plugin (plugins/<id>/manifest.json, main.js)
+//   tor/                     the bundled tor's settings and data while the
+//                            shared seller list is used (sellerlist/TorRunner)
+//   sharedlist/              the last verified shared seller list and this
+//                            installation's report key (sellerlist/ListClient)
+//   models/                  the downloaded local model files (local model)
 class WorkFolder {
 public:
     // The default location: <GenericDataLocation>/<appIdentifier>, which is
@@ -76,6 +81,9 @@ public:
     QString browserProfilesDir() const;
     QString tmpDir() const;
     QString pluginsDir() const;
+    QString torDir() const;
+    QString sharedListDir() const;
+    QString modelsDir() const;
 
     static constexpr const char *kMarkerFileName = ".workfolder";
     static constexpr const char *kLockFileName = ".lock";

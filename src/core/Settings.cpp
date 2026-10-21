@@ -8,6 +8,12 @@ namespace {
 const QString kSoldHistoryDaysKey = QStringLiteral("lookup/soldHistoryDays");
 const QString kPreferredBrowserKey = QStringLiteral("browser/preferred");
 const QString kUpdateCheckKey = QStringLiteral("updates/check");
+const QString kModelEnabledKey = QStringLiteral("model/enabled");
+const QString kModelIdKey = QStringLiteral("model/id");
+const QString kModelGpuKey = QStringLiteral("model/gpu");
+const QString kModelOfferKey = QStringLiteral("model/offerAnswered");
+const QString kSharedReadKey = QStringLiteral("sharedlist/read");
+const QString kSharedReportKey = QStringLiteral("sharedlist/report");
 const QString kPageDelayMinKey = QStringLiteral("pace/pageDelayMinMs");
 const QString kPageDelayMaxKey = QStringLiteral("pace/pageDelayMaxMs");
 const QString kDailyPageCapKey = QStringLiteral("pace/dailyPageCap");
@@ -330,6 +336,48 @@ bool Settings::updateCheck() const
 void Settings::setUpdateCheck(bool enabled)
 {
     m_settings.setValue(kUpdateCheckKey, enabled ? QStringLiteral("true") : QStringLiteral("false"));
+}
+
+bool Settings::modelEnabled() const { return m_settings.value(kModelEnabledKey).toString() == QLatin1String("true"); }
+
+void Settings::setModelEnabled(bool enabled)
+{
+    m_settings.setValue(kModelEnabledKey, enabled ? QStringLiteral("true") : QStringLiteral("false"));
+}
+
+QString Settings::modelId() const { return m_settings.value(kModelIdKey).toString(); }
+
+void Settings::setModelId(const QString &id) { m_settings.setValue(kModelIdKey, id); }
+
+bool Settings::modelGpu() const { return m_settings.value(kModelGpuKey).toString() != QLatin1String("false"); }
+
+void Settings::setModelGpu(bool enabled)
+{
+    m_settings.setValue(kModelGpuKey, enabled ? QStringLiteral("true") : QStringLiteral("false"));
+}
+
+bool Settings::modelOfferAnswered() const { return m_settings.value(kModelOfferKey).toString() == QLatin1String("true"); }
+
+void Settings::setModelOfferAnswered() { m_settings.setValue(kModelOfferKey, QStringLiteral("true")); }
+
+bool Settings::sharedListRead() const
+{
+    return m_settings.value(kSharedReadKey).toString() == QLatin1String("true");
+}
+
+void Settings::setSharedListRead(bool enabled)
+{
+    m_settings.setValue(kSharedReadKey, enabled ? QStringLiteral("true") : QStringLiteral("false"));
+}
+
+bool Settings::sharedListReport() const
+{
+    return m_settings.value(kSharedReportKey).toString() == QLatin1String("true");
+}
+
+void Settings::setSharedListReport(bool enabled)
+{
+    m_settings.setValue(kSharedReportKey, enabled ? QStringLiteral("true") : QStringLiteral("false"));
 }
 
 bool Settings::sync()

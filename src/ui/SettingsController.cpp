@@ -106,6 +106,14 @@ QString SettingsController::fontLicense() const
     return QString::fromUtf8(file.readAll());
 }
 
+QString SettingsController::libraryLicenses() const
+{
+    QFile file(QStringLiteral(":/licenses/THIRD-PARTY-NOTICES.txt"));
+    if (!file.open(QIODevice::ReadOnly))
+        return QStringLiteral("The library license texts are missing from this build.");
+    return QString::fromUtf8(file.readAll());
+}
+
 QString SettingsController::setPreferredBrowser(const QString &browserId)
 {
     Settings settings(m_folder.settingsPath());

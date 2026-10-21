@@ -31,6 +31,7 @@ Card {
                 required property string modelData
                 Layout.fillWidth: true
                 text: modelData
+                textFormat: Text.PlainText
                 wrapMode: Text.WordWrap
                 // Amounts and ratios: mono (ui-spec "Look").
                 font.family: Theme.mono

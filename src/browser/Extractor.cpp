@@ -30,6 +30,8 @@ QString kindScriptPath(ebay::PageKind kind)
         return QStringLiteral(":/extractors/research.js");
     case ebay::PageKind::Feedback:
         return QStringLiteral(":/extractors/feedback.js");
+    case ebay::PageKind::Purchases:
+        return QStringLiteral(":/extractors/purchases.js");
     }
     return {};
 }

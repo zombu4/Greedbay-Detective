@@ -91,7 +91,9 @@ QJsonObject SellerFeedback::toJson() const
                        {QStringLiteral("positive"), countsJson(positive)},
                        {QStringLiteral("neutral"), countsJson(neutral)},
                        {QStringLiteral("negative"), countsJson(negative)},
-                       {QStringLiteral("reviews"), reviewArray}};
+                       {QStringLiteral("reviews"), reviewArray},
+                       {QStringLiteral("complete"), complete},
+                       {QStringLiteral("note"), note}};
     if (score)
         object.insert(QStringLiteral("score"), *score);
     return object;
@@ -111,6 +113,8 @@ std::optional<SellerFeedback> SellerFeedback::fromJson(const QJsonObject &data)
         return std::nullopt;
     if (data.value(QStringLiteral("score")).isDouble())
         feedback.score = data.value(QStringLiteral("score")).toInt();
+    feedback.complete = data.value(QStringLiteral("complete")).toBool(true);
+    feedback.note = data.value(QStringLiteral("note")).toString();
     for (const QJsonValue &value : data.value(QStringLiteral("reviews")).toArray()) {
         const QJsonObject object = value.toObject();
         FeedbackReview review;

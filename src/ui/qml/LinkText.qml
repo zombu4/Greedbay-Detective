@@ -10,6 +10,7 @@ Text {
     font.underline: area.containsMouse || activeFocus
     activeFocusOnTab: true
     Accessible.role: Accessible.Link
+    textFormat: Text.PlainText
     Accessible.name: text
     Accessible.onPressAction: link.activated()
     Keys.onReturnPressed: link.activated()

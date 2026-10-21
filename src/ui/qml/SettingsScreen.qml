@@ -331,6 +331,7 @@ Item {
                                     Text {
                                         Layout.fillWidth: true
                                         text: markRow.modelData.sellerId
+                                        textFormat: Text.PlainText
                                         elide: Text.ElideRight
                                         font.family: Theme.mono
                                         font.pixelSize: Theme.bodySize
@@ -350,6 +351,7 @@ Item {
                                     visible: markRow.modelData.note.length > 0
                                     wrapMode: Text.WordWrap
                                     text: markRow.modelData.note
+                                    textFormat: Text.PlainText
                                     color: Theme.secondaryText
                                 }
                                 RowLayout {
@@ -468,6 +470,222 @@ Item {
             }
 
             Section {
+                id: sharedSection
+                readonly property var shared: screen.backend.sharedList
+                heading: "Shared seller list"
+                note: "Reports by other users of the app about sellers they bought from, on one list the list owner "
+                      + "runs. Everything goes through Tor, which comes with the app and runs only while the list is "
+                      + "updated or a report is sent, so no one sees your internet address - not even the list's "
+                      + "server. Nothing is sent unless you report a seller yourself."
+                Text {
+                    objectName: "sharedListStatus"
+                    Layout.fillWidth: true
+                    text: sharedSection.shared.statusText
+                    wrapMode: Text.WordWrap
+                    font.family: Theme.sans
+                    font.pixelSize: Theme.bodySize
+                    color: Theme.text
+                }
+                CheckBox {
+                    objectName: "sharedListRead"
+                    text: "Read the shared seller list (updated at most once a day, and with Update now)"
+                    checked: sharedSection.shared.readEnabled
+                    enabled: sharedSection.shared.setUp
+                    onToggled: sharedSection.shared.setReadEnabled(checked)
+                }
+                CheckBox {
+                    objectName: "sharedListReport"
+                    text: "Let me report sellers to the shared list"
+                    checked: sharedSection.shared.reportEnabled
+                    enabled: sharedSection.shared.setUp
+                    onToggled: sharedSection.shared.setReportEnabled(checked)
+                }
+                FieldLabel {
+                    Layout.fillWidth: true
+                    wrapMode: Text.WordWrap
+                    text: "A report sends only the seller's eBay user id, your reason and your words, and the item "
+                          + "number and month of your purchase from them. Before anything is sent, the app finds that "
+                          + "purchase on your own eBay Purchases page; your eBay name is never sent. A report goes "
+                          + "live once the list's server has checked the item, and the list owner removes reports on "
+                          + "request."
+                }
+                AppButton {
+                    text: "Update now"
+                    enabled: sharedSection.shared.setUp && sharedSection.shared.readEnabled && !sharedSection.shared.busy
+                    Accessible.name: "Update the shared seller list now"
+                    onClicked: sharedSection.shared.refresh()
+                }
+            }
+
+            Section {
+                id: modelSection
+                objectName: "localModelSection"
+                readonly property var localModel: screen.backend.localModel
+                // The model whose license is shown before its download.
+                property string licenseFor: ""
+                heading: "Local model (identity and sorting help)"
+                note: "A small language model that runs on this computer only - nothing is sent anywhere. In a lookup "
+                      + "it double-checks the listing's identity (when it reads it differently, the app asks you) and "
+                      + "looks at the counted results again (a row it doubts goes to \"to check\", where you decide). "
+                      + "It never adds a row to the numbers and never changes a price. Off until you turn it on."
+                Result {
+                    message: modelSection.localModel.unsupportedText
+                    ok: false
+                }
+                CheckBox {
+                    objectName: "localModelEnabled"
+                    text: "Use the local model in lookups"
+                    checked: modelSection.localModel.enabled
+                    enabled: modelSection.localModel.canEnable || modelSection.localModel.enabled
+                    onToggled: {
+                        if (!modelSection.localModel.setEnabled(checked))
+                            checked = modelSection.localModel.enabled
+                    }
+                }
+                CheckBox {
+                    visible: modelSection.localModel.gpuAvailable
+                    text: "Use the graphics chip (faster)"
+                    checked: modelSection.localModel.gpu
+                    onToggled: modelSection.localModel.setGpu(checked)
+                }
+                Repeater {
+                    model: modelSection.localModel.models
+                    Card {
+                        id: modelCard
+                        required property var modelData
+                        readonly property bool chosen: modelSection.localModel.selectedId === modelData.id
+                        readonly property bool loading: modelSection.localModel.downloadingId === modelData.id
+                        Layout.fillWidth: true
+                        fill: Theme.raised
+                        ColumnLayout {
+                            anchors.fill: parent
+                            spacing: 6
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: 8
+                                RadioButton {
+                                    checked: modelCard.chosen
+                                    enabled: !modelSection.localModel.downloading
+                                    Accessible.name: "Choose " + modelCard.modelData.name
+                                    onClicked: modelSection.localModel.select(modelCard.modelData.id)
+                                }
+                                Text {
+                                    text: modelCard.modelData.name
+                                    font.family: Theme.sans
+                                    font.pixelSize: Theme.bodySize
+                                    font.weight: Font.DemiBold
+                                    color: Theme.text
+                                }
+                                Pill {
+                                    visible: modelCard.modelData.recommended
+                                    text: "recommended"
+                                    kind: "neutral"
+                                }
+                                Pill {
+                                    visible: modelCard.modelData.downloaded
+                                    text: "downloaded"
+                                    kind: "neutral"
+                                }
+                                Item { Layout.fillWidth: true }
+                            }
+                            FieldLabel {
+                                Layout.fillWidth: true
+                                wrapMode: Text.WordWrap
+                                text: "Download " + modelCard.modelData.sizeText + "; " + modelCard.modelData.memoryText
+                                      + "; license " + modelCard.modelData.license + "."
+                            }
+                            RowLayout {
+                                Layout.fillWidth: true
+                                visible: modelCard.loading
+                                spacing: 12
+                                ProgressBar {
+                                    Layout.fillWidth: true
+                                    from: 0
+                                    to: 1
+                                    value: modelSection.localModel.progress
+                                    Accessible.name: "Download progress"
+                                }
+                                FieldLabel { text: modelSection.localModel.progressText }
+                                AppButton {
+                                    text: "Stop"
+                                    Accessible.name: "Stop the download"
+                                    onClicked: modelSection.localModel.cancelDownload()
+                                }
+                            }
+                            RowLayout {
+                                spacing: 12
+                                visible: !modelCard.loading
+                                AppButton {
+                                    visible: !modelCard.modelData.downloaded
+                                    enabled: !modelSection.localModel.downloading
+                                    text: "Download..."
+                                    Accessible.name: "Download " + modelCard.modelData.name + " (shows its license first)"
+                                    onClicked: modelSection.licenseFor = modelCard.modelData.id
+                                }
+                                AppButton {
+                                    visible: modelCard.modelData.downloaded
+                                    text: "Delete"
+                                    Accessible.name: "Delete the downloaded " + modelCard.modelData.name
+                                    onClicked: modelSection.localModel.remove(modelCard.modelData.id)
+                                }
+                            }
+                        }
+                    }
+                }
+                // The license, shown before the download starts.
+                Card {
+                    Layout.fillWidth: true
+                    visible: modelSection.licenseFor.length > 0
+                    fill: Theme.raised
+                    ColumnLayout {
+                        anchors.fill: parent
+                        spacing: 8
+                        FieldLabel {
+                            Layout.fillWidth: true
+                            wrapMode: Text.WordWrap
+                            text: "The model's license, as its maker publishes it. The file comes from the maker's own "
+                                  + "repository and is checked (SHA-256) before it is used."
+                        }
+                        ScrollView {
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: 220
+                            clip: true
+                            TextArea {
+                                readOnly: true
+                                text: modelSection.licenseFor.length > 0 ? modelSection.localModel.licenseText(modelSection.licenseFor) : ""
+                                textFormat: TextEdit.PlainText
+                                wrapMode: TextEdit.Wrap
+                                font.family: Theme.mono
+                                font.pixelSize: Theme.labelSize
+                                color: Theme.text
+                                Accessible.name: "License text"
+                            }
+                        }
+                        RowLayout {
+                            Layout.alignment: Qt.AlignRight
+                            spacing: 12
+                            AppButton {
+                                text: "Cancel"
+                                onClicked: modelSection.licenseFor = ""
+                            }
+                            AppButton {
+                                text: "Accept and download"
+                                primary: true
+                                onClicked: {
+                                    modelSection.localModel.download(modelSection.licenseFor)
+                                    modelSection.licenseFor = ""
+                                }
+                            }
+                        }
+                    }
+                }
+                Result {
+                    message: modelSection.localModel.message
+                    ok: modelSection.localModel.messageOk
+                }
+            }
+
+            Section {
                 heading: "eBay sign-in"
                 note: "Signing out deletes the app's browser profile (the eBay sign-in, cookies and cache) from the work "
                       + "folder. Your own browser is not touched."
@@ -503,6 +721,7 @@ Item {
                                 Text {
                                     Layout.fillWidth: true
                                     text: plugin.modelData.name
+                                    textFormat: Text.PlainText
                                     elide: Text.ElideRight
                                     font.family: Theme.sans
                                     font.pixelSize: Theme.bodySize + 1
@@ -679,6 +898,29 @@ Item {
                     wrapMode: TextEdit.Wrap
                     textFormat: TextEdit.PlainText
                     text: screen.settings.fontLicense
+                    font.family: Theme.mono
+                    font.pixelSize: Theme.labelSize
+                    color: Theme.secondaryText
+                }
+                FieldLabel {
+                    Layout.fillWidth: true
+                    wrapMode: Text.WordWrap
+                    text: "Built in: libsodium (ISC), liboqs (MIT, with parts under their own terms) and llama.cpp "
+                          + "(MIT)."
+                }
+                AppButton {
+                    text: libraryLicenses.visible ? "Hide the library licenses" : "Show the library licenses"
+                    onClicked: libraryLicenses.visible = !libraryLicenses.visible
+                }
+                TextEdit {
+                    id: libraryLicenses
+                    Layout.fillWidth: true
+                    visible: false
+                    readOnly: true
+                    selectByMouse: true
+                    wrapMode: TextEdit.Wrap
+                    textFormat: TextEdit.PlainText
+                    text: screen.settings.libraryLicenses
                     font.family: Theme.mono
                     font.pixelSize: Theme.labelSize
                     color: Theme.secondaryText

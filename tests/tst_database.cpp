@@ -229,10 +229,10 @@ void TestDatabase::createsTheShippedSchema()
     QVERIFY2(result.ok(), qPrintable(result.error));
     QCOMPARE(result.outcome, Database::Outcome::Created);
     QCOMPARE(result.fromVersion, 0);
-    QCOMPARE(result.toVersion, 5);
+    QCOMPARE(result.toVersion, 6);
     QVERIFY(result.backupPath.isEmpty());
 
-    QCOMPARE(queryOn(QStringLiteral("main"), QStringLiteral("PRAGMA user_version")).toInt(), 5);
+    QCOMPARE(queryOn(QStringLiteral("main"), QStringLiteral("PRAGMA user_version")).toInt(), 6);
     QCOMPARE(queryOn(QStringLiteral("main"), QStringLiteral("PRAGMA application_id")).toInt(),
              Database::kApplicationId);
     QCOMPARE(queryOn(QStringLiteral("main"), QStringLiteral("PRAGMA foreign_keys")).toInt(), 1);

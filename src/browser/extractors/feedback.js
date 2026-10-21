@@ -14,6 +14,15 @@
 // click on a count button replaces the list IN PLACE with that kind and
 // period (same URL, no page load).
 //
+// Paging (recon 2026-10-20 "review paging"): nav.pagination with BUTTONs -
+// pagination__item (aria-current="page" on the current one) and
+// pagination__next (aria-disabled="true" when there is no next page). The
+// option "negative@N" (N >= 2) asks for page N of the filtered list: read as
+// it is when it shows page N; one click on Next when it shows page N - 1,
+// then read once the list shows page N with only that kind. A click on Next
+// of a filtered list was not observed in recon: when the list does not
+// change, the extractor says so (never guesses).
+//
 // Reads the counts. When the list already shows exactly the wanted reviews
 // (every row of that kind, as many as the 12-month count, at most 25 - also
 // when the page is read again after the user acted in the window), it is
@@ -72,6 +81,26 @@ function scoreOf(sellerId) {
     return null;
 }
 
+// The list's page number and whether it has a next page.
+function paging() {
+    const nav = document.querySelector('nav.pagination');
+    const current = nav ? nav.querySelector('button.pagination__item[aria-current="page"]') : null;
+    const next = nav ? nav.querySelector('button.pagination__next') : null;
+    return {
+        page: current ? intOf(norm(current.textContent)) || 1 : 1,
+        next: next && next.getAttribute('aria-disabled') !== 'true' ? next : null,
+    };
+}
+
+function onlyKind(kind) {
+    const rows = listRows();
+    return rows.length > 0 && rows.every(function (row) { return ratingOf(row) === kind; });
+}
+
+function signature() {
+    return listRows().map(function (row) { return norm(row.textContent).slice(0, 80); }).join('|');
+}
+
 function listRows() {
     const table = document.querySelector('table#feedback-cards');
     if (!table)
@@ -111,9 +140,11 @@ function extract(input) {
     const sellerId = sellerIdOfPage();
     if (!document.querySelector('table#feedback-cards') || sellerId === null)
         return missingKeyElements('the feedback list (table#feedback-cards) is missing');
-    const kind = input.option || '';
-    if (kind !== 'negative' && kind !== 'neutral')
+    const option = /^(negative|neutral)(?:@(\d{1,4}))?$/.exec(input.option || '');
+    if (!option)
         return notExpected('unexpected', 'no review kind (negative or neutral) was asked for');
+    const kind = option[1];
+    const page = option[2] ? parseInt(option[2], 10) : 1;
     const found = countButtons();
     const base = {
         sellerId: sellerId,
@@ -125,13 +156,20 @@ function extract(input) {
         reviews: [],
     };
     const wanted = found.counts[kind][2];
-    if (wanted === 0)
+    if (wanted === 0) {
+        base.page = 1;
+        base.hasNext = false;
         return expected(base);
+    }
+    if (page >= 2)
+        return nextPage(base, kind, page);
     const button = found.buttons[kind];
     if (!button || wanted < 0)
         return missingKeyElements('the rating count table has no ' + kind + ' count for 12 months');
     if (listShows(kind, wanted)) {
         base.reviews = listRows().map(reviewOf);
+        base.page = paging().page;
+        base.hasNext = paging().next !== null;
         return expected(base);
     }
     button.click();
@@ -141,10 +179,43 @@ function extract(input) {
             if (listShows(kind, wanted)) {
                 clearInterval(timer);
                 base.reviews = listRows().slice(0, 25).map(reviewOf);
+                base.page = paging().page;
+                base.hasNext = paging().next !== null;
                 resolve(expected(base));
             } else if (Date.now() - started > WAIT_MS) {
                 clearInterval(timer);
                 resolve(notExpected('unexpected', 'the list did not switch to the ' + kind + ' reviews'));
+            }
+        }, POLL_MS);
+    });
+}
+
+// Page `page` (>= 2) of the filtered list.
+function nextPage(base, kind, page) {
+    const finish = function () {
+        base.reviews = listRows().slice(0, 25).map(reviewOf);
+        base.page = page;
+        base.hasNext = paging().next !== null;
+        return expected(base);
+    };
+    if (!onlyKind(kind))
+        return notExpected('unexpected', 'the list does not show the ' + kind + ' reviews');
+    const now = paging();
+    if (now.page === page)
+        return finish();
+    if (now.page !== page - 1 || now.next === null)
+        return notExpected('unexpected', 'the list shows page ' + now.page + ', not page ' + (page - 1) + ' with a next page');
+    const before = signature();
+    now.next.click();
+    return new Promise(function (resolve) {
+        const started = Date.now();
+        const timer = setInterval(function () {
+            if (paging().page === page && onlyKind(kind) && signature() !== before) {
+                clearInterval(timer);
+                resolve(finish());
+            } else if (Date.now() - started > WAIT_MS) {
+                clearInterval(timer);
+                resolve(notExpected('unexpected', 'the list did not move to page ' + page));
             }
         }, POLL_MS);
     });

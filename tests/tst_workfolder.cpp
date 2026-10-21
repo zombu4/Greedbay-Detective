@@ -61,7 +61,7 @@ void TestWorkFolder::createsLayoutAndMarker()
     QVERIFY2(folder, qPrintable(error));
 
     const QStringList dirs = {folder->backupsDir(), folder->logsDir(), folder->browserProfilesDir(), folder->tmpDir(),
-                              folder->pluginsDir()};
+                              folder->pluginsDir(), folder->torDir(), folder->sharedListDir(), folder->modelsDir()};
     for (const QString &dir : dirs)
         QVERIFY2(QFileInfo(dir).isDir(), qPrintable(dir));
 
