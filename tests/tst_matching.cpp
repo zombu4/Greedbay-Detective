@@ -802,6 +802,15 @@ void TestMatching::rows_data()
                                          << Bucket::SameItem;
     QTest::newRow("with cables to connect") << sencore << "QG70" << "Sencore QG70 analyzer with cables to connect" << ""
                                             << Bucket::SameItem;
+    // A with-word covers the rest of the title; a word of another name of
+    // the same brand may stand between the brand and a digits-only model
+    // (known-models: "B&K Dynascan") - lookup 19, 2026-10-22.
+    QTest::newRow("with covers the rest") << "B&K Precision" << "467" << "B&K 467 tube restorer w/ 4 adapters, case, manual"
+                                          << "Pre-Owned" << Bucket::SameItem;
+    QTest::newRow("brand name word between") << "B&K Precision" << "467" << "BK Precision DynaScan 467 picture tube analyzer"
+                                             << "Pre-Owned" << Bucket::SameItem;
+    QTest::newRow("manual before with") << "B&K Precision" << "467" << "B&K 467 manual with schematics" << ""
+                                        << Bucket::Documentation;
     QTest::newRow("connects to") << sencore << "QG70" << "Sencore probe tip connects to QG70 input" << ""
                                  << Bucket::PartFits;
     QTest::newRow("4 shoe code") << sencore << "VG91" << "Running shoe VG91-5040" << "" << Bucket::NoMatch;

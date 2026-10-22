@@ -11,6 +11,7 @@
 #include <QLoggingCategory>
 #include <QMap>
 #include <QRandomGenerator>
+#include <QRegularExpression>
 #include <QTimer>
 #include <QUrlQuery>
 
@@ -942,7 +943,13 @@ void BrowserController::readDescription(QJsonObject data, int triesLeft, std::fu
         });
     };
     if (frameSession.isEmpty()) {
-        again(QStringLiteral("no description frame on the page"));
+        // Which frames the page has (host and path, item numbers masked), so
+        // a missing description can be told from a missing frame.
+        QStringList frames;
+        for (const ChildFrame &frame : std::as_const(m_childFrames))
+            frames.append(frame.url.host() + QString(frame.url.path()).replace(QRegularExpression(QStringLiteral("\\d")), QStringLiteral("#")));
+        again(QStringLiteral("no description frame on the page (child frames: %1)")
+                  .arg(frames.isEmpty() ? QStringLiteral("none") : frames.join(QStringLiteral(", "))));
         return;
     }
     // Each try ends within kScriptTimeoutMs: a frame that never answers (it

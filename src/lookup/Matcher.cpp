@@ -202,7 +202,7 @@ qsizetype firstNotWithItem(const QStringList &words, const QStringList &phrases,
     for (const QString &phrase : phrases) {
         for (const qsizetype at : phrasePositions(words, phrase)) {
             bool withItem = false;
-            for (qsizetype k = std::max<qsizetype>(0, at - 3); k < at && !withItem; ++k)
+            for (qsizetype k = 0; k < at && !withItem; ++k)
                 withItem = matchWords.withItem.contains(words.at(k), Qt::CaseInsensitive);
             if (!withItem && !insideNotAccessory(words, at, matchWords)) {
                 *which = phrase;
@@ -213,14 +213,15 @@ qsizetype firstNotWithItem(const QStringList &words, const QStringList &phrases,
     return -1;
 }
 
-// The phrases of `phrases` that stand right after a with-item word ("with
-// leads", "w/ manual"): they come with the item. For the reason text.
+// The phrases of `phrases` that stand anywhere after a with-item word ("with
+// leads", "w/ 10 adapters, manual"): they come with the item. For the reason
+// text.
 QStringList withItemPhrases(const QStringList &words, const QStringList &phrases, const MatchWords &matchWords)
 {
     QStringList found;
     for (const QString &phrase : phrases) {
         for (const qsizetype at : phrasePositions(words, phrase)) {
-            for (qsizetype k = std::max<qsizetype>(0, at - 3); k < at; ++k) {
+            for (qsizetype k = 0; k < at; ++k) {
                 if (matchWords.withItem.contains(words.at(k), Qt::CaseInsensitive)) {
                     found.append(QStringLiteral("\"%1\" after \"%2\"").arg(phrase, words.at(k)));
                     break;
@@ -369,8 +370,18 @@ Match matchRow(const QString &title, const Identity &identity, const MatchWords 
             }))
             afterNames.append(k + 1);
     }
+    // The other words of the brand's own names ("Dynascan" of "B&K Dynascan"):
+    // "BK Precision DynaScan 467" has the model right after the brand too.
+    QStringList brandNameWords;
+    for (const QString &name : identity.matchNames) {
+        const QStringList parts = listWords(name);
+        for (qsizetype k = 1; k < parts.size(); ++k)
+            brandNameWords.append(parts.at(k));
+    }
     if (digitsOnly && std::none_of(models.cbegin(), models.cend(), [&](const Span &span) {
-            return brands.contains(span.at - 1) || afterNames.contains(span.at);
+            return brands.contains(span.at - 1) || afterNames.contains(span.at)
+                   || (span.at >= 2 && brands.contains(span.at - 2)
+                       && brandNameWords.contains(codeList.at(span.at - 1), Qt::CaseInsensitive));
         })) {
         if (firstNotWithItem(list, words.documentation, words, &word) >= 0) {
             reasons.append(QStringLiteral("documentation (\"%1\"); %2 does not follow the brand name").arg(word, identity.model));
@@ -430,7 +441,7 @@ Match matchRow(const QString &title, const Identity &identity, const MatchWords 
     for (const QString &phrase : words.kitWords) {
         for (const qsizetype at : phrasePositions(list, phrase)) {
             bool withItem = false;
-            for (qsizetype k = std::max<qsizetype>(0, at - 3); k < at && !withItem; ++k)
+            for (qsizetype k = 0; k < at && !withItem; ++k)
                 withItem = words.withItem.contains(list.at(k), Qt::CaseInsensitive);
             const bool afterAccessory = at > 0 && accessoryWords.contains(list.at(at - 1), Qt::CaseInsensitive);
             if (!withItem && !afterAccessory && !kitFound) {
