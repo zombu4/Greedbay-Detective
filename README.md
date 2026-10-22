@@ -110,6 +110,14 @@ macOS the browser also makes `$HOME/Library/Caches/GreedbayDetective`, which
 the uninstall removes too. Exports go to your Downloads folder and are yours
 to keep.
 
+Backups of the saved lookups are kept beside the work folder, in
+`GreedbayDetective-Backups` (same parent folder): one a day (the last 7) and
+one before every database upgrade, restore or uninstall (the last 3).
+**Settings > Your data** lists them and restores one at the next start.
+
+Builds from source in Debug use `GreedbayDetective-Dev` instead, so trying
+out a build never touches the data of the installed app.
+
 ## Uninstall
 
 Use **Settings > Your data > Uninstall...** in the app. It asks whether to
@@ -121,7 +129,9 @@ keep your saved lookups and history:
   app saved is deleted: settings, logs, the app's browser profiles (your eBay
   sign-in and cookies), installed plugins, temporary files, the shared seller
   list's copy and downloaded local models.
-- **Delete everything**: the whole work folder goes.
+- **Delete everything**: the whole work folder goes. The backups go too only
+  when you also tick "Also delete the database backups"; the Windows
+  uninstaller always keeps them.
 
 Then, depending on the system:
 
