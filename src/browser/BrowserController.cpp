@@ -915,19 +915,6 @@ void BrowserController::readDescription(QJsonObject data, int triesLeft, std::fu
 {
     const quint64 serial = m_serial;
     const QString itemId = data.value(QStringLiteral("itemId")).toString();
-    QString frameSession;
-    QString frameTarget;
-    for (auto it = m_childFrames.cbegin(); it != m_childFrames.cend(); ++it) {
-        // The description frame of this item, and nothing else (recon
-        // 2026-10-21): https://itm.ebaydesc.com/itmdesc/<item id>.
-        const QString path = it->url.path();
-        const QString prefix = QStringLiteral("/itmdesc/") + itemId;
-        if (!itemId.isEmpty() && it->url.scheme() == QLatin1String("https") && it->url.host() == QLatin1String("itm.ebaydesc.com")
-            && path.startsWith(prefix) && (path.size() == prefix.size() || !path.at(prefix.size()).isDigit())) {
-            frameSession = it.key();
-            frameTarget = it->targetId;
-        }
-    }
     auto again = [this, serial, data, triesLeft, done](const QString &why) {
         if (serial != m_serial || m_op != Op::Fetch)
             return;
@@ -942,16 +929,64 @@ void BrowserController::readDescription(QJsonObject data, int triesLeft, std::fu
                 readDescription(data, triesLeft - 1, done);
         });
     };
-    if (frameSession.isEmpty()) {
-        // Which frames the page has (host and path, item numbers masked), so
-        // a missing description can be told from a missing frame.
-        QStringList frames;
-        for (const ChildFrame &frame : std::as_const(m_childFrames))
-            frames.append(frame.url.host() + QString(frame.url.path()).replace(QRegularExpression(QStringLiteral("\\d")), QStringLiteral("#")));
-        again(QStringLiteral("no description frame on the page (child frames: %1)")
-                  .arg(frames.isEmpty() ? QStringLiteral("none") : frames.join(QStringLiteral(", "))));
-        return;
-    }
+    // The browser's frame targets as they are now (measured 2026-10-22: an
+    // auto-attached frame reports an empty address at attach time; the
+    // target list has its current one).
+    command(QStringLiteral("Target.getTargets"), {},
+            [this, serial, itemId, data, done, again](const QJsonObject &result, const QJsonObject &) {
+        if (serial != m_serial || m_op != Op::Fetch)
+            return;
+        QString frameTarget;
+        QStringList seen;
+        for (const QJsonValue &value : result.value(QStringLiteral("targetInfos")).toArray()) {
+            const QJsonObject target = value.toObject();
+            if (target.value(QStringLiteral("type")).toString() != QLatin1String("iframe"))
+                continue;
+            const QUrl url(target.value(QStringLiteral("url")).toString());
+            seen.append(url.host() + QString(url.path()).replace(QRegularExpression(QStringLiteral("\\d")), QStringLiteral("#")));
+            // The description frame of this item, and nothing else (recon
+            // 2026-10-21): https://itm.ebaydesc.com/itmdesc/<item id>.
+            const QString path = url.path();
+            const QString prefix = QStringLiteral("/itmdesc/") + itemId;
+            if (!itemId.isEmpty() && url.scheme() == QLatin1String("https") && url.host() == QLatin1String("itm.ebaydesc.com")
+                && path.startsWith(prefix) && (path.size() == prefix.size() || !path.at(prefix.size()).isDigit()))
+                frameTarget = target.value(QStringLiteral("targetId")).toString();
+        }
+        if (frameTarget.isEmpty()) {
+            again(QStringLiteral("no description frame on the page (frames: %1)")
+                      .arg(seen.isEmpty() ? QStringLiteral("none") : seen.join(QStringLiteral(", "))));
+            return;
+        }
+        QString frameSession;
+        for (auto it = m_childFrames.cbegin(); it != m_childFrames.cend(); ++it) {
+            if (it->targetId == frameTarget)
+                frameSession = it.key();
+        }
+        if (!frameSession.isEmpty()) {
+            readDescriptionIn(frameSession, frameTarget, data, done, again);
+            return;
+        }
+        // Not attached yet: attach to that frame now.
+        command(QStringLiteral("Target.attachToTarget"), {{QStringLiteral("targetId"), frameTarget}, {QStringLiteral("flatten"), true}},
+                [this, serial, frameTarget, data, done, again](const QJsonObject &attached, const QJsonObject &) {
+            if (serial != m_serial || m_op != Op::Fetch)
+                return;
+            const QString session = attached.value(QStringLiteral("sessionId")).toString();
+            if (session.isEmpty()) {
+                again(QStringLiteral("the description frame cannot be attached"));
+                return;
+            }
+            m_childFrames.insert(session, {frameTarget, QUrl()});
+            readDescriptionIn(session, frameTarget, data, done, again);
+        }, false);
+    }, false);
+}
+
+void BrowserController::readDescriptionIn(const QString &frameSession, const QString &frameTarget, const QJsonObject &data,
+                                          std::function<void(const QJsonObject &)> done,
+                                          std::function<void(const QString &)> again)
+{
+    const quint64 serial = m_serial;
     // Each try ends within kScriptTimeoutMs: a frame that never answers (it
     // went away mid-command) counts as not there.
     auto answered = std::make_shared<bool>(false);

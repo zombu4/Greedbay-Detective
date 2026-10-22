@@ -2162,6 +2162,18 @@
             "from"
         ]
     },
+    "companionFillers": {
+        "words": [
+            "working",
+            "a",
+            "an",
+            "the",
+            "original",
+            "vintage",
+            "used",
+            "tested"
+        ]
+    },
     "withExtras": {
         "words": [
             "with",

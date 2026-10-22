@@ -186,6 +186,9 @@ private:
     static constexpr int kMaxDescriptionChars = 20000;
     static constexpr int kDescriptionTries = 12;
     void readDescription(QJsonObject data, int triesLeft, std::function<void(const QJsonObject &)> done);
+    // The read in the description frame's own session (an isolated world).
+    void readDescriptionIn(const QString &frameSession, const QString &frameTarget, const QJsonObject &data,
+                           std::function<void(const QJsonObject &)> done, std::function<void(const QString &)> again);
     void finishExpected(const QJsonObject &data, const QString &logPrefix);
     void checkSignedIn(bool loadOk);
     void waitForUser(const QJsonObject &reply, const QString &message);

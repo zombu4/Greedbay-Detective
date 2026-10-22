@@ -815,6 +815,9 @@ void TestMatching::rows_data()
     QTest::newRow("faceplate from") << sencore << "QG70" << "FACEPLATE - SENCORE - LABELED FACEPLATE FROM SENCORE QG70 ANALYZER"
                                     << "" << Bucket::PartFits;
     QTest::newRow("back plate") << sencore << "QG70" << "Sencore QG70 back plate" << "" << Bucket::PartFits;
+    QTest::newRow("from working model") << sencore << "QG70"
+                                        << "QX-1289 - ACME - POWER TRANSFORMER FROM WORKING SENCORE QG70 ANALYZER" << ""
+                                        << Bucket::PartFits;
     QTest::newRow("connects to") << sencore << "QG70" << "Sencore probe tip connects to QG70 input" << ""
                                  << Bucket::PartFits;
     QTest::newRow("4 shoe code") << sencore << "VG91" << "Running shoe VG91-5040" << "" << Bucket::NoMatch;

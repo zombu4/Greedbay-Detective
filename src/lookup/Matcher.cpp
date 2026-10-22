@@ -471,11 +471,13 @@ Match matchRow(const QString &title, const Identity &identity, const MatchWords 
     const QStringList others = otherModelCodes(codeList, identity, words, models.first().at);
     for (const QString &companion : words.companion) {
         for (const qsizetype at : phrasePositions(codeList, companion)) {
-            const bool forModel = std::any_of(models.cbegin(), models.cend(), [at, &brands](const Span &span) {
-                if (span.at <= at || span.at - at > kForReach + 1)
+            const bool forModel = std::any_of(models.cbegin(), models.cend(), [at, &brands, &codeList, &words](const Span &span) {
+                if (span.at <= at || span.at - at > kForReach + 2)
                     return false;
+                // Only brand names and filler words in between ("from
+                // working Tektronix 1910").
                 for (qsizetype k = at + 1; k < span.at; ++k) {
-                    if (!brands.contains(k))
+                    if (!brands.contains(k) && !words.companionFillers.contains(codeList.at(k), Qt::CaseInsensitive))
                         return false;
                 }
                 return true;
@@ -485,7 +487,11 @@ Match matchRow(const QString &title, const Identity &identity, const MatchWords 
             const QStringList before = codeList.mid(0, at);
             const QStringList beforeList = listWords(before.join(QLatin1Char(' ')));
             const QStringList otherBefore = otherModelCodes(before, identity, words, -1);
-            if (!otherBefore.isEmpty()) {
+            // "<thing> from <model>" is taken from the item: a part (or an
+            // accessory, below), never a product made for it - a code in
+            // front is its part number.
+            const bool takenFrom = companion.compare(QLatin1String("from"), Qt::CaseInsensitive) == 0;
+            if (!otherBefore.isEmpty() && !takenFrom) {
                 reasons.append(QStringLiteral("companion: %1 ... \"%2\" %3").arg(otherBefore.first(), companion, identity.model));
                 return done(Bucket::Companion);
             }
@@ -494,7 +500,8 @@ Match matchRow(const QString &title, const Identity &identity, const MatchWords 
                 reasons.append(QStringLiteral("accessory (\"%1\" ... \"%2\" %3)").arg(word, companion, identity.model));
                 return done(Bucket::Accessory);
             }
-            reasons.append(QStringLiteral("part or fits (\"%1\" %2)").arg(companion, identity.model));
+            reasons.append(QStringLiteral("\"%1\" %2: %3 -> part or fits")
+                               .arg(companion, identity.model, takenFrom ? QStringLiteral("taken from the item") : QStringLiteral("made for it")));
             return done(Bucket::PartFits);
         }
     }

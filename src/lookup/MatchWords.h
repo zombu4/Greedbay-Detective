@@ -43,6 +43,7 @@ struct MatchWords {
     QStringList notAccessory; // phrases with an accessory word that are the item's own ("original case")
     QStringList withItem;     // an accessory word after one of these is part of the item
     QStringList companion;    // "for": "<other model> ... for <model>"
+    QStringList companionFillers; // may stand between "for/from" and the model ("from working Tektronix 1910")
     QStringList withExtras;   // model codes after one of these come with the item ("with 7A26 plug-in")
     QStringList bundleJoins;  // "<other model> ... and <model>": two items in one listing, a lot
     // eBay's "Located in" countries for the location badges (owner decisions
