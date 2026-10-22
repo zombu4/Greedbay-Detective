@@ -34,9 +34,15 @@ private slots:
 
 void TestWorkFolder::defaultPathIsGenericDataPlusAppIdentifier()
 {
+    // The real mapping, worked out with Qt's test mode off for the moment
+    // (support/TestGuard.cpp turns it on for every test); only a path is
+    // computed, nothing is opened or written.
+    QStandardPaths::setTestModeEnabled(false);
     const QString base = QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation);
-    QVERIFY(!base.isEmpty());
     const QString path = WorkFolder::defaultPath(QStringLiteral(TEST_APP_NAME));
+    const QString empty = WorkFolder::defaultPath(QString());
+    QStandardPaths::setTestModeEnabled(true);
+    QVERIFY(!base.isEmpty());
     QCOMPARE(path, QDir::cleanPath(base + QStringLiteral("/" TEST_APP_NAME)));
 #if defined(Q_OS_MACOS)
     QCOMPARE(path, QDir::homePath() + QStringLiteral("/Library/Application Support/" TEST_APP_NAME));
@@ -48,7 +54,7 @@ void TestWorkFolder::defaultPathIsGenericDataPlusAppIdentifier()
     else
         QCOMPARE(path, QDir::cleanPath(qEnvironmentVariable("XDG_DATA_HOME")) + QStringLiteral("/" TEST_APP_NAME));
 #endif
-    QVERIFY(WorkFolder::defaultPath(QString()).isEmpty());
+    QVERIFY(empty.isEmpty());
 }
 
 void TestWorkFolder::createsLayoutAndMarker()

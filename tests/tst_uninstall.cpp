@@ -3,6 +3,8 @@
 // are looked at; nothing is searched for. Temporary work folders have no
 // known paths (those belong to the app's default folder only), and the one
 // default folder the test uses has an identifier of its own.
+#include <QStandardPaths>
+#include "core/SafeDelete.h"
 #include "core/Uninstall.h"
 #include "core/WorkFolder.h"
 #include "support/TestFiles.h"
@@ -51,6 +53,7 @@ private slots:
     void deletesEverything();
     void neverFollowsLinks();
     void checksBeforeDeleting();
+    void realFolderIsProtected();
 };
 
 void TestUninstall::keepsTheHistory()
@@ -60,7 +63,7 @@ void TestUninstall::keepsTheHistory()
     const std::optional<WorkFolder> folder = WorkFolder::open(temp.path() + "/work", QStringLiteral(TEST_APP_NAME), &error);
     QVERIFY2(folder, qPrintable(error));
     QVERIFY(fill(*folder));
-    const Uninstall::Report report = Uninstall::run(*folder, true);
+    const Uninstall::Report report = Uninstall::run(*folder, true, app::DeleteGrants::confirmedUninstall());
     QVERIFY2(report.ok(), qPrintable(report.failed.join('\n')));
     // Kept: the database and its journal, its backups, the marker, the
     // confirmed models.
@@ -87,7 +90,7 @@ void TestUninstall::deletesEverything()
     const std::optional<WorkFolder> folder = WorkFolder::open(temp.path() + "/work", QStringLiteral(TEST_APP_NAME), &error);
     QVERIFY2(folder, qPrintable(error));
     QVERIFY(fill(*folder));
-    const Uninstall::Report report = Uninstall::run(*folder, false);
+    const Uninstall::Report report = Uninstall::run(*folder, false, app::DeleteGrants::confirmedUninstall());
     QVERIFY2(report.ok(), qPrintable(report.failed.join('\n')));
     QVERIFY(!present(folder->path()));
     QVERIFY(report.kept.isEmpty());
@@ -106,10 +109,54 @@ void TestUninstall::neverFollowsLinks()
     QVERIFY(writeTestFile(outside + "/precious.txt", "keep me"));
     QVERIFY(QDir().mkpath(folder->browserProfilesDir() + "/brave"));
     QVERIFY(makeDirectoryLink(outside, folder->browserProfilesDir() + "/brave/linked"));
-    const Uninstall::Report report = Uninstall::run(*folder, false);
+    const Uninstall::Report report = Uninstall::run(*folder, false, app::DeleteGrants::confirmedUninstall());
     QVERIFY2(report.ok(), qPrintable(report.failed.join('\n')));
     QVERIFY(!present(folder->path()));
     QCOMPARE(readTestFile(outside + "/precious.txt"), QByteArray("keep me"));
+}
+
+void TestUninstall::realFolderIsProtected()
+{
+    // Every test runs in Qt's test mode with the real and the dev work folder
+    // protected (support/TestGuard.cpp); nothing here touches either.
+    QVERIFY(QStandardPaths::isTestModeEnabled());
+    const QString real = app::SafeDelete::realWorkFolder();
+    const QString dev = app::SafeDelete::devWorkFolder();
+    QVERIFY(real.endsWith(QStringLiteral("/" TEST_APP_NAME)));
+    QVERIFY(dev.endsWith(QStringLiteral("/" TEST_APP_NAME "-Dev")));
+    QVERIFY(!real.contains(QStringLiteral(".qttest")));
+    // A delete of the real folder fails at the guard - also with the
+    // uninstall's grant - and so does opening it.
+    const app::DeleteGrant grant = app::DeleteGrants::confirmedUninstall();
+    for (const QString &target : {real, real + QStringLiteral("/logs"), dev}) {
+        QStringList failed;
+        QVERIFY(!app::SafeDelete::removeTree(target, nullptr, &failed));
+        QVERIFY2(failed.first().contains(QStringLiteral("protected")), qPrintable(failed.first()));
+        failed.clear();
+        QVERIFY(!app::SafeDelete::removeTree(target, &grant, &failed));
+    }
+    QString error;
+    QVERIFY(!WorkFolder::open(real, QStringLiteral(TEST_APP_NAME), &error));
+    QVERIFY2(error.contains(QStringLiteral("protected")), qPrintable(error));
+    QVERIFY(!writeTestFile(real + QStringLiteral("/never.txt"), "x"));
+
+    // The rules outside tests, with a temporary folder standing for the real
+    // one: nothing inside it without a grant; the uninstall grant covers all
+    // of it; the sign-out grant only the browser profiles.
+    QTemporaryDir temp;
+    const QString root = temp.path() + QStringLiteral("/work");
+    const app::DeleteGrant signOut = app::DeleteGrants::confirmedSignOut();
+    QVERIFY(!app::SafeDelete::refusalFor(root, nullptr, root).isEmpty());
+    QVERIFY(!app::SafeDelete::refusalFor(root + QStringLiteral("/logs"), nullptr, root).isEmpty());
+    QVERIFY(app::SafeDelete::refusalFor(root, &grant, root).isEmpty());
+    QVERIFY(app::SafeDelete::refusalFor(root + QStringLiteral("/browser/brave"), &signOut, root).isEmpty());
+    QVERIFY(!app::SafeDelete::refusalFor(root + QStringLiteral("/browser"), &signOut, root).isEmpty());
+    QVERIFY(!app::SafeDelete::refusalFor(root + QStringLiteral("/logs"), &signOut, root).isEmpty());
+    QVERIFY(!app::SafeDelete::refusalFor(root, &signOut, root).isEmpty());
+    QVERIFY(app::SafeDelete::refusalFor(temp.path() + QStringLiteral("/elsewhere"), nullptr, root).isEmpty());
+    QVERIFY(!app::SafeDelete::refusalFor(QStringLiteral("relative/path"), &grant, root).isEmpty());
+    // A path that only begins with the same letters is not inside.
+    QVERIFY(app::SafeDelete::refusalFor(root + QStringLiteral("-other"), nullptr, root).isEmpty());
 }
 
 void TestUninstall::checksBeforeDeleting()
@@ -139,7 +186,7 @@ void TestUninstall::checksBeforeDeleting()
     QCOMPARE(holder.readLine().trimmed(), QByteArray("locked"));
     QVERIFY(Uninstall::check(*folder).contains("running"));
     // run() takes the lock itself: while the app holds it, nothing goes.
-    const Uninstall::Report refused = Uninstall::run(*folder, false);
+    const Uninstall::Report refused = Uninstall::run(*folder, false, app::DeleteGrants::confirmedUninstall());
     QVERIFY(!refused.ok());
     QVERIFY(refused.removed.isEmpty());
     QVERIFY(present(folder->markerPath()));
@@ -151,7 +198,7 @@ void TestUninstall::checksBeforeDeleting()
 
     // Clean up through run(): the test's own default folder, and on macOS its
     // cache folder, are gone afterwards.
-    const Uninstall::Report report = Uninstall::run(*folder, false);
+    const Uninstall::Report report = Uninstall::run(*folder, false, app::DeleteGrants::confirmedUninstall());
     QVERIFY2(report.ok(), qPrintable(report.failed.join('\n')));
     QVERIFY(!present(path));
     for (const QString &known : Uninstall::knownPaths(identifier))

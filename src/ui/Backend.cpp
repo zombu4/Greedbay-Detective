@@ -1,5 +1,6 @@
 #include "ui/Backend.h"
 
+#include "core/Backups.h"
 #include "core/ExportFiles.h"
 #include "core/PageBudget.h"
 #include "core/Settings.h"
@@ -184,12 +185,15 @@ QString Backend::uninstallNote() const
 #endif
 }
 
-QString Backend::uninstall(bool keepHistory)
+QString Backend::backupsFolder() const { return QDir::toNativeSeparators(Backups::folderFor(m_folder.appIdentifier())); }
+
+QString Backend::uninstall(bool keepHistory, bool deleteBackups)
 {
     if (m_session && m_session->isRunning())
         return QStringLiteral("A lookup is running: uninstall after it has finished.");
 #if defined(Q_OS_WIN)
     Q_UNUSED(keepHistory);
+    Q_UNUSED(deleteBackups);
     // The installer puts the program in <install>\bin and its uninstaller in
     // <install> (packaging/windows/NSIS.template.in).
     const QString uninstaller = QDir::cleanPath(QCoreApplication::applicationDirPath() + QStringLiteral("/../Uninstall.exe"));
@@ -199,6 +203,11 @@ QString Backend::uninstall(bool keepHistory)
         return QStringLiteral("The uninstaller cannot be started (%1).").arg(QDir::toNativeSeparators(uninstaller));
 #else
     m_uninstallKeep = keepHistory;
+    // uninstall() is called only by the Uninstall dialog's confirm button
+    // (SettingsScreen.qml): the one place the work folder's delete grant is
+    // made in the app's window.
+    m_uninstallGrant = DeleteGrants::confirmedUninstall();
+    m_uninstallBackups = !keepHistory && deleteBackups;
 #endif
     QCoreApplication::quit();
     return {};

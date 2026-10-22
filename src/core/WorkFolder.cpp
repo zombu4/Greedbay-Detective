@@ -1,5 +1,7 @@
 #include "core/WorkFolder.h"
 
+#include "core/SafeDelete.h"
+
 #include "core/PathChecks.h"
 
 #include <QByteArray>
@@ -113,6 +115,13 @@ std::optional<WorkFolder> WorkFolder::open(const QString &path, const QString &a
         return failWith(error, QStringLiteral("the work folder path is not absolute"));
 
     const QString root = QDir::cleanPath(path);
+    // Tests and tools protect the real and the dev work folder
+    // (SafeDelete::forbid): never opened, made or written by them.
+    for (const QString &forbidden : SafeDelete::forbiddenRoots()) {
+        if (SafeDelete::isInside(root, forbidden))
+            return failWith(error, QStringLiteral("the work folder %1 is protected here (a test or tool may not use it)")
+                                       .arg(QDir::toNativeSeparators(root)));
+    }
     if (isLink(root))
         return failWith(error, QStringLiteral("the work folder is a link; links are never followed"));
 

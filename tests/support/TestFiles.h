@@ -3,14 +3,21 @@
 // File helpers for tests. They return a result instead of using QVERIFY, so a
 // failed setup step stops the calling test (QVERIFY inside a helper would only
 // return from the helper).
+#include "core/SafeDelete.h"
+
 #include <QByteArray>
 #include <QDir>
 #include <QFile>
 #include <QProcess>
 #include <QString>
 
+// Never inside the protected real or dev work folder (support/TestGuard.cpp).
 inline bool writeTestFile(const QString &path, const QByteArray &content)
 {
+    for (const QString &root : app::SafeDelete::forbiddenRoots()) {
+        if (app::SafeDelete::isInside(QDir::cleanPath(QDir(path).absolutePath()), root))
+            return false;
+    }
     QFile file(path);
     return file.open(QIODevice::WriteOnly | QIODevice::Truncate) && file.write(content) == content.size();
 }

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "core/SafeDelete.h"
 #include "core/WorkFolder.h"
 
 #include <QString>
@@ -43,7 +44,8 @@ public:
     // true when there is no profile folder. If a deletion fails part way, the
     // remaining entries are still tried and false is returned with the first
     // error.
-    static bool clear(const WorkFolder &folder, const QString &browserId, QString *error);
+    // The deletes go through SafeDelete with `grant` (the sign-out grant).
+    static bool clear(const WorkFolder &folder, const QString &browserId, const DeleteGrant &grant, QString *error);
 };
 
 } // namespace app

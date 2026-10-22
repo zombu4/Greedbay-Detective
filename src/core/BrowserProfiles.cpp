@@ -1,5 +1,7 @@
 #include "core/BrowserProfiles.h"
 
+#include "core/SafeDelete.h"
+
 #include "core/PathChecks.h"
 
 #include <QDir>
@@ -10,41 +12,6 @@
 #include <QStandardPaths>
 
 namespace app {
-
-namespace {
-
-// Removes a link itself, never its target. A symbolic link to a file (and on
-// Unix any symbolic link) is removed with QFile::remove; a Windows junction or
-// directory symbolic link is a directory entry and is removed with rmdir,
-// which deletes the link, not the folder it points to.
-bool removeLink(const QString &path)
-{
-    return QFile::remove(path) || QDir().rmdir(path);
-}
-
-// Deletes everything inside `dir` without following links. Keeps going after
-// a failure so as much as possible is removed; the first failure is reported.
-void removeContents(const QString &dir, QString *firstError)
-{
-    const QFileInfoList entries =
-        QDir(dir).entryInfoList(QDir::AllEntries | QDir::Hidden | QDir::System | QDir::NoDotAndDotDot);
-    for (const QFileInfo &entry : entries) {
-        const QString path = entry.filePath();
-        bool ok = true;
-        if (isLink(path)) {
-            ok = removeLink(path);
-        } else if (entry.isDir()) {
-            removeContents(path, firstError);
-            ok = QDir().rmdir(path);
-        } else {
-            ok = QFile::remove(path);
-        }
-        if (!ok && firstError->isEmpty())
-            *firstError = QStringLiteral("cannot delete %1").arg(QDir::toNativeSeparators(path));
-    }
-}
-
-} // namespace
 
 bool BrowserProfiles::isValidId(const QString &browserId)
 {
@@ -78,7 +45,7 @@ QString BrowserProfiles::macCacheTwinDir(const WorkFolder &folder, const QString
 #endif
 }
 
-bool BrowserProfiles::clear(const WorkFolder &folder, const QString &browserId, QString *error)
+bool BrowserProfiles::clear(const WorkFolder &folder, const QString &browserId, const DeleteGrant &grant, QString *error)
 {
     auto fail = [error](const QString &message) {
         if (error)
@@ -108,19 +75,16 @@ bool BrowserProfiles::clear(const WorkFolder &folder, const QString &browserId, 
         return fail(QStringLiteral("cannot create the browser profile lock; nothing was deleted"));
     }
 
-    QString firstError;
-    removeContents(dir, &firstError);
-    if (!QDir().rmdir(dir) && firstError.isEmpty())
-        firstError = QStringLiteral("cannot delete %1").arg(QDir::toNativeSeparators(dir));
+    // Through the app's one delete function (core/SafeDelete), with the
+    // sign-out grant: browser profiles only.
+    QStringList failed;
+    SafeDelete::removeTree(dir, &grant, &failed);
     const QString twin = macCacheTwinDir(folder, browserId);
-    if (!twin.isEmpty() && QFileInfo(twin).isDir() && !isLink(twin)) {
-        removeContents(twin, &firstError);
-        if (!QDir().rmdir(twin) && firstError.isEmpty())
-            firstError = QStringLiteral("cannot delete %1").arg(QDir::toNativeSeparators(twin));
-    }
+    if (!twin.isEmpty() && QFileInfo(twin).isDir() && !isLink(twin))
+        SafeDelete::removeTree(twin, &grant, &failed);
     lock.unlock();
-    if (!firstError.isEmpty())
-        return fail(firstError);
+    if (!failed.isEmpty())
+        return fail(failed.first());
     return true;
 }
 

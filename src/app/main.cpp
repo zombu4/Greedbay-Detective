@@ -20,6 +20,7 @@
 #include "core/Logging.h"
 #include "core/PathChecks.h"
 #include "core/SingleInstance.h"
+#include "core/Backups.h"
 #include "core/Uninstall.h"
 #include "core/Version.h"
 #include "core/WorkFolder.h"
@@ -107,23 +108,37 @@ int uninstallData(const QString &identifier, bool keepHistory)
         std::fprintf(stderr, "%s\n", qPrintable(refusal));
         return 2;
     }
-    const app::Uninstall::Report report = app::Uninstall::run(*folder, keepHistory);
+    // A copy of the database outside the work folder first; the Windows
+    // uninstaller has no backups choice, so they stay (core/Backups).
+    app::Backups backups(app::Backups::folderFor(identifier));
+    if (!backups.beforeChange(folder->databasePath(), QStringLiteral("uninstall"), &error))
+        std::fprintf(stderr, "backups: no copy before the uninstall: %s\n", qPrintable(error));
+    // The Windows uninstaller starts this after its own dialog asked.
+    const app::Uninstall::Report report = app::Uninstall::run(*folder, keepHistory, app::DeleteGrants::confirmedUninstall());
     std::fprintf(stdout, "%s\n", qPrintable(reportText(report)));
     return report.ok() ? 0 : 3;
 }
 
 // The end of an in-app uninstall (macOS, Linux): the data, then the program,
 // then a window that says what was done.
-int finishUninstall(const app::WorkFolder &folder, bool keepHistory)
+int finishUninstall(const app::WorkFolder &folder, bool keepHistory, bool deleteBackups, const app::DeleteGrant &grant)
 {
     QString heading = QStringLiteral("Greedbay Detective was uninstalled");
     QString text;
+    // A copy of the database outside the work folder first (core/Backups).
+    QString backupError;
+    app::Backups backups(app::Backups::folderFor(folder.appIdentifier()));
+    if (!deleteBackups && !backups.beforeChange(folder.databasePath(), QStringLiteral("uninstall"), &backupError))
+        qWarning().noquote() << "backups: no copy before the uninstall:" << backupError;
     const QString refusal = app::Uninstall::check(folder);
     if (!refusal.isEmpty()) {
         heading = QStringLiteral("Nothing was uninstalled");
         text = refusal;
     } else {
-        const app::Uninstall::Report report = app::Uninstall::run(folder, keepHistory);
+        app::Uninstall::Report report = app::Uninstall::run(folder, keepHistory, grant);
+        // The backups only when the user ticked that too.
+        if (deleteBackups && app::SafeDelete::removeTree(backups.folder(), &grant, &report.failed))
+            report.removed.append(QDir::toNativeSeparators(backups.folder()));
         text = reportText(report);
         if (report.ok()) {
             bool removed = false;
@@ -147,7 +162,14 @@ int finishUninstall(const app::WorkFolder &folder, bool keepHistory)
 
 int main(int argc, char *argv[])
 {
+    // The data's identifier (owner decision 2026-10-22): only Release builds
+    // (the installers') use the real work folder; every other build uses
+    // "<identifier>-Dev" (src/CMakeLists.txt defines APP_REAL_DATA).
+#if defined(APP_REAL_DATA)
     const QString identifier = QString::fromLatin1(app::version::kIdentifier);
+#else
+    const QString identifier = QString::fromLatin1(app::version::kIdentifier) + QStringLiteral("-Dev");
+#endif
     if (argc == 2 && std::strcmp(argv[1], "--plugin-runner") == 0) {
         QCoreApplication runner(argc, argv);
         return app::plugins::runPluginRequestOnStdio();
@@ -193,6 +215,8 @@ int main(int argc, char *argv[])
 
     int code = 1;
     std::optional<bool> uninstallKeep;
+    std::optional<app::DeleteGrant> uninstallGrant;
+    bool uninstallBackups = false;
     {
         if (!app::ui::loadFonts(&error))
             qWarning().noquote() << "ui:" << error << "- the system font is used instead";
@@ -200,6 +224,14 @@ int main(int argc, char *argv[])
         if (!migrations) {
             code = showStartupError(engine, QStringLiteral("The database upgrades cannot be read: %1").arg(error));
         } else {
+            // Backups outside the work folder (core/Backups): a restore the
+            // user chose runs first, then a copy before any upgrade.
+            app::Backups backups(app::Backups::folderFor(identifier));
+            if (!backups.applyPendingRestore(folder->databasePath(), &error))
+                qWarning().noquote() << "backups: the restore did not run:" << error;
+            const int latest = migrations->isEmpty() ? 0 : migrations->last().version;
+            if (!backups.beforeMigration(folder->databasePath(), latest, &error))
+                qWarning().noquote() << "backups: no copy before the upgrade:" << error;
             const app::DatabaseResult database = app::Database::open(QString::fromLatin1(kConnection), folder->databasePath(),
                                                                       folder->backupsDir(), identifier, *migrations);
             if (!database.ok()) {
@@ -210,6 +242,8 @@ int main(int argc, char *argv[])
                                       << database.toVersion << "- backup" << database.backupPath;
                 if (!database.warning.isEmpty())
                     qWarning().noquote() << "database:" << database.warning;
+                if (!backups.daily(QString::fromLatin1(kConnection), &error))
+                    qWarning().noquote() << "backups: no daily copy:" << error;
                 {
                     app::ui::Backend backend(*folder, QString::fromLatin1(kConnection));
                     if (!backend.fatalError().isEmpty()) {
@@ -224,17 +258,19 @@ int main(int argc, char *argv[])
                         code = ui.rootObjects().isEmpty() ? 1 : QGuiApplication::exec();
                     }
                     uninstallKeep = backend.uninstallRequest();
+                    uninstallGrant = backend.uninstallGrant();
+                    uninstallBackups = backend.uninstallDeletesBackups();
                 }
                 app::Database::close(QString::fromLatin1(kConnection));
             }
         }
     }
     app::Logging::uninstall();
-    if (uninstallKeep) {
+    if (uninstallKeep && uninstallGrant) {
         // Everything in the work folder is closed now: the views, the
         // database, the log; the lock goes last.
         instance.release();
-        return finishUninstall(*folder, *uninstallKeep);
+        return finishUninstall(*folder, *uninstallKeep, uninstallBackups, *uninstallGrant);
     }
     return code;
 }

@@ -14,7 +14,9 @@
 
 int main(int argc, char *argv[])
 {
-    const QString identifier = QString::fromLatin1(app::version::kIdentifier);
+    // The dev window never uses the real work folder (owner decision
+    // 2026-10-22): its own "<identifier>-Dev".
+    const QString identifier = QString::fromLatin1(app::version::kIdentifier) + QStringLiteral("-Dev");
     QString error;
     const std::optional<app::WorkFolder> folder =
         app::WorkFolder::open(app::WorkFolder::defaultPath(identifier), identifier, &error);

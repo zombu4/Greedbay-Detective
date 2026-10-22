@@ -1,5 +1,7 @@
 #include "core/Uninstall.h"
 
+#include "core/SafeDelete.h"
+
 #include "core/PathChecks.h"
 
 #include <QCoreApplication>
@@ -19,44 +21,6 @@ QString shown(const QString &path)
     return QDir::toNativeSeparators(path);
 }
 
-// Removes `path`: a link as a link, a folder with everything in it (never
-// following a link inside), a file. Failures go to *failed; returns true
-// when `path` is gone.
-bool removeEntry(const QString &path, QStringList *failed)
-{
-    const QFileInfo info(path);
-    if (isLink(path)) {
-#if defined(Q_OS_WIN)
-        // On Windows a junction or a link to a folder is a folder entry of its
-        // own: removing it like an empty folder leaves its target alone.
-        const bool removed = (info.isJunction() || info.isDir()) ? QDir().rmdir(path) : QFile::remove(path);
-#else
-        // Elsewhere every link is a file entry; unlinking it leaves its target
-        // alone.
-        const bool removed = QFile::remove(path);
-#endif
-        if (!removed)
-            failed->append(QStringLiteral("%1: the link cannot be removed").arg(shown(path)));
-        return removed;
-    }
-    if (info.isDir()) {
-        bool all = true;
-        const QDir dir(path);
-        const QStringList names = dir.entryList(QDir::AllEntries | QDir::NoDotAndDotDot | QDir::Hidden | QDir::System);
-        for (const QString &name : names)
-            all = removeEntry(dir.filePath(name), failed) && all;
-        if (all && !QDir().rmdir(path)) {
-            failed->append(QStringLiteral("%1: the folder cannot be removed").arg(shown(path)));
-            return false;
-        }
-        return all;
-    }
-    if (!QFile::remove(path)) {
-        failed->append(QStringLiteral("%1: the file cannot be removed").arg(shown(path)));
-        return false;
-    }
-    return true;
-}
 
 } // namespace
 
@@ -104,7 +68,7 @@ QString Uninstall::check(const WorkFolder &folder)
     return {};
 }
 
-Uninstall::Report Uninstall::run(const WorkFolder &folder, bool keepHistory)
+Uninstall::Report Uninstall::run(const WorkFolder &folder, bool keepHistory, const DeleteGrant &grant)
 {
     Report report;
     // The app's own lock, held until everything else is gone: no instance
@@ -130,14 +94,14 @@ Uninstall::Report Uninstall::run(const WorkFolder &folder, bool keepHistory)
         }
         if (!somethingAt(path))
             continue;
-        if (removeEntry(path, &report.failed))
+        if (SafeDelete::removeTree(path, &grant, &report.failed))
             report.removed.append(shown(path));
     }
     // Then the lock (unlock() deletes its file), and the marker last: until
     // everything else is gone the folder stays recognizable as the app's.
     lock.unlock();
     if (!keepHistory && somethingAt(folder.markerPath()) && report.ok()) {
-        if (removeEntry(folder.markerPath(), &report.failed))
+        if (SafeDelete::removeTree(folder.markerPath(), &grant, &report.failed))
             report.removed.append(shown(folder.markerPath()));
     }
     if (keepHistory) {
@@ -145,7 +109,9 @@ Uninstall::Report Uninstall::run(const WorkFolder &folder, bool keepHistory)
         if (somethingAt(folder.markerPath()) && !report.kept.contains(shown(folder.markerPath())))
             report.kept.append(shown(folder.markerPath()));
     } else if (report.ok()) {
-        if (QDir().rmdir(folder.path()))
+        if (const QString why = SafeDelete::refusal(folder.path(), &grant); !why.isEmpty())
+            report.failed.append(why);
+        else if (QDir().rmdir(folder.path()))
             report.removed.append(shown(folder.path()));
         else
             report.failed.append(QStringLiteral("%1: the folder cannot be removed").arg(shown(folder.path())));
@@ -156,7 +122,7 @@ Uninstall::Report Uninstall::run(const WorkFolder &folder, bool keepHistory)
     for (const QString &path : defaultFolder ? knownPaths(folder.appIdentifier()) : QStringList()) {
         if (!somethingAt(path))
             continue;
-        if (removeEntry(path, &report.failed))
+        if (SafeDelete::removeTree(path, &grant, &report.failed))
             report.removed.append(shown(path));
     }
     return report;

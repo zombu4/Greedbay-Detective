@@ -1,5 +1,7 @@
 #include "ui/SettingsController.h"
 
+#include <QLocale>
+#include "core/Backups.h"
 #include "browser/BrowserCatalog.h"
 #include "core/BrowserProfiles.h"
 #include "core/Settings.h"
@@ -206,6 +208,34 @@ QString SettingsController::setNumbers(double outlierFactor, int high, int mediu
                   QStringLiteral("The outlier factor and the shipping ratio must be numbers above 0."));
 }
 
+QVariantList SettingsController::backups() const
+{
+    QVariantList out;
+    const QLocale english(QLocale::English, QLocale::UnitedStates);
+    for (const Backups::Entry &entry : Backups(Backups::folderFor(m_folder.appIdentifier())).list()) {
+        out.append(QVariantMap{{QStringLiteral("name"), entry.name},
+                               {QStringLiteral("kind"), entry.kind},
+                               {QStringLiteral("made"), entry.made.toLocalTime().toString(QStringLiteral("yyyy-MM-dd HH:mm"))},
+                               {QStringLiteral("size"), english.formattedDataSize(entry.bytes, 1, QLocale::DataSizeSIFormat)}});
+    }
+    return out;
+}
+
+QString SettingsController::restoreBackup(const QString &name)
+{
+    QString error;
+    if (!Backups(Backups::folderFor(m_folder.appIdentifier())).scheduleRestore(name, &error))
+        return QStringLiteral("The backup cannot be restored: %1.").arg(error);
+    return {};
+}
+
+QString SettingsController::backupsFolder() const
+{
+    return QDir::toNativeSeparators(Backups::folderFor(m_folder.appIdentifier()));
+}
+
+QString SettingsController::pendingRestore() const { return Backups(Backups::folderFor(m_folder.appIdentifier())).pendingRestore(); }
+
 QVariantMap SettingsController::signOut()
 {
     auto reply = [](bool ok, const QString &message) {
@@ -214,9 +244,11 @@ QVariantMap SettingsController::signOut()
     if (m_sessionRunning && m_sessionRunning())
         return reply(false, QStringLiteral("A lookup is running: sign out after it has finished."));
     QStringList failed;
+    // The user pressed Sign out: the only place that makes this grant.
+    const DeleteGrant grant = DeleteGrants::confirmedSignOut();
     for (const QString &id : browser::BrowserCatalog::preferenceOrder()) {
         QString error;
-        if (!BrowserProfiles::clear(m_folder, id, &error))
+        if (!BrowserProfiles::clear(m_folder, id, grant, &error))
             failed.append(QStringLiteral("%1: %2").arg(id, error));
     }
     if (!failed.isEmpty())

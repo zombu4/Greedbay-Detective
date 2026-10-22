@@ -110,6 +110,13 @@ public:
     // eBay sign-in, cookies and cache of the app's browsers. Returns
     // {ok: bool, message: what happened, in plain words}.
     Q_INVOKABLE QVariantMap signOut();
+    // The database backups (core/Backups), newest first:
+    // [{name, kind, made ("2026-10-22 18:40"), size ("1.2 MB")}].
+    Q_INVOKABLE QVariantList backups() const;
+    // Puts the backup `name` back at the next start; "" or why not.
+    Q_INVOKABLE QString restoreBackup(const QString &name);
+    Q_INVOKABLE QString backupsFolder() const;
+    Q_INVOKABLE QString pendingRestore() const;
 
     // Reads the installed browsers again.
     Q_INVOKABLE void refreshBrowsers();

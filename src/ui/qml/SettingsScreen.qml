@@ -922,6 +922,44 @@ Item {
                 heading: "Your data"
                 note: "Export saves every lookup in your Downloads folder: a CSV list, and a JSON file with every row. "
                       + "Uninstall removes the app and what it saved; you choose whether your saved lookups stay."
+                // The database backups, outside the work folder (core/Backups).
+                property var backupList: screen.settings.backups()
+                property string restoreNote: screen.settings.pendingRestore()
+                FieldLabel {
+                    Layout.fillWidth: true
+                    wrapMode: Text.WordWrap
+                    text: "Backups of your saved lookups: one a day (the last 7) and one before every upgrade, "
+                          + "restore or uninstall (the last 3), in " + screen.settings.backupsFolder() + "."
+                }
+                Repeater {
+                    model: parent.backupList
+                    RowLayout {
+                        required property var modelData
+                        Layout.fillWidth: true
+                        spacing: 12
+                        Text {
+                            Layout.fillWidth: true
+                            text: modelData.made + "  " + modelData.kind + "  " + modelData.size
+                            textFormat: Text.PlainText
+                            font.family: Theme.mono
+                            font.pixelSize: Theme.labelSize
+                            color: Theme.text
+                        }
+                        AppButton {
+                            text: "Restore"
+                            Accessible.name: "Restore the backup of " + modelData.made
+                            onClicked: {
+                                const refusal = screen.settings.restoreBackup(modelData.name)
+                                restoreResult.ok = refusal.length === 0
+                                restoreResult.message = refusal.length === 0
+                                    ? "Restored at the next start: quit the app and open it again. A copy of the current "
+                                      + "lookups is made first."
+                                    : refusal
+                            }
+                        }
+                    }
+                }
+                Result { id: restoreResult }
                 RowLayout {
                     Layout.fillWidth: true
                     spacing: 12
@@ -1112,7 +1150,17 @@ Item {
                       + "sign-in and cookies, installed plugins and temporary files."
             }
             RadioButton {
+                id: deleteEverything
                 text: "Delete everything the app saved"
+                font.family: Theme.sans
+                font.pixelSize: Theme.bodySize
+            }
+            CheckBox {
+                id: deleteBackups
+                Layout.leftMargin: 32
+                visible: deleteEverything.checked
+                checked: false
+                text: "Also delete the database backups (" + screen.backend.backupsFolder + ")"
                 font.family: Theme.sans
                 font.pixelSize: Theme.bodySize
             }
@@ -1138,7 +1186,7 @@ Item {
                 primary: true
                 onClicked: {
                     uninstallDialog.close()
-                    const refusal = screen.backend.uninstall(keepHistory.checked)
+                    const refusal = screen.backend.uninstall(keepHistory.checked, deleteEverything.checked && deleteBackups.checked)
                     uninstallResult.ok = refusal.length === 0
                     uninstallResult.message = refusal
                 }

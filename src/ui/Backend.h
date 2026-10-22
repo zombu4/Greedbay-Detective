@@ -1,5 +1,6 @@
 #pragma once
 
+#include "core/SafeDelete.h"
 #include "core/WorkFolder.h"
 #include "lookup/KnownModels.h"
 #include "lookup/LookupStore.h"
@@ -114,9 +115,17 @@ public:
     // lock are closed, removes the program and shows what was done. Windows:
     // starts the installer's uninstaller, which asks the same question and
     // removes the data and the program, and quits. Empty when it went ahead.
-    Q_INVOKABLE QString uninstall(bool keepHistory);
+    // deleteBackups: the user also ticked "delete the database backups"
+    // (only with "delete everything").
+    Q_INVOKABLE QString uninstall(bool keepHistory, bool deleteBackups);
+    // Where the database backups are (core/Backups), as shown.
+    Q_PROPERTY(QString backupsFolder READ backupsFolder CONSTANT)
+    QString backupsFolder() const;
+    bool uninstallDeletesBackups() const { return m_uninstallBackups; }
     // The choice uninstall() recorded (macOS and Linux), if any.
     std::optional<bool> uninstallRequest() const { return m_uninstallKeep; }
+    // The grant the confirmed Uninstall dialog made (with uninstallRequest()).
+    std::optional<DeleteGrant> uninstallGrant() const { return m_uninstallGrant; }
 
 signals:
     void pagesChanged();
@@ -150,6 +159,8 @@ private:
     std::unique_ptr<plugins::PluginHost> m_pluginHost;
     PluginsController *m_plugins = nullptr;
     std::optional<bool> m_uninstallKeep;
+    std::optional<DeleteGrant> m_uninstallGrant;
+    bool m_uninstallBackups = false;
     SettingsController *m_settings;
     SellerController *m_sellers;
     SharedListController *m_sharedList = nullptr;

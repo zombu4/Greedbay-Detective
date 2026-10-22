@@ -1,5 +1,6 @@
 #pragma once
 
+#include "core/SafeDelete.h"
 #include "core/WorkFolder.h"
 
 #include <QString>
@@ -57,7 +58,9 @@ public:
     // the app holds it (it runs), nothing is removed. Call after check()
     // passed and after this process closed its database, its log and its own
     // lock. Every failure is reported; the rest is still tried.
-    static Report run(const WorkFolder &folder, bool keepHistory);
+    // Every delete goes through SafeDelete with `grant` (only the confirmed
+    // uninstall makes one, core/SafeDelete.h).
+    static Report run(const WorkFolder &folder, bool keepHistory, const DeleteGrant &grant);
 
     // The program itself, after an in-app uninstall (macOS and Linux; on
     // Windows the installer's uninstaller removes it):

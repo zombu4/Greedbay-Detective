@@ -5,11 +5,15 @@ qt_add_library(appcore STATIC
     core/BrowserProfiles.h
     core/ExportFiles.cpp
     core/ExportFiles.h
+    core/Backups.cpp
+    core/Backups.h
     core/Logging.cpp
     core/Logging.h
     core/PageBudget.cpp
     core/PageBudget.h
     core/PathChecks.h
+    core/SafeDelete.cpp
+    core/SafeDelete.h
     core/Settings.cpp
     core/Settings.h
     core/SingleInstance.cpp
@@ -392,6 +396,9 @@ endif()
 qt_add_executable(${APP_NAME} MACOSX_BUNDLE WIN32 app/main.cpp)
 target_link_libraries(${APP_NAME} PRIVATE appui appuiplugin)
 app_copy_runtime_dlls(${APP_NAME})
+# Only Release builds (the installers') use the real work folder; Debug and
+# RelWithDebInfo builds use "<identifier>-Dev" (owner decision 2026-10-22).
+target_compile_definitions(${APP_NAME} PRIVATE $<$<CONFIG:Release>:APP_REAL_DATA>)
 set_target_properties(${APP_NAME} PROPERTIES
     MACOSX_BUNDLE_BUNDLE_NAME "${APP_DISPLAY_NAME}"
     MACOSX_BUNDLE_GUI_IDENTIFIER "${APP_BUNDLE_ID}"

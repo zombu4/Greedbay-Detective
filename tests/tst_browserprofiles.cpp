@@ -99,7 +99,7 @@ void TestBrowserProfiles::clearDeletesTheProfileFolder()
     const std::optional<WorkFolder> folder = filled(temp);
     QVERIFY(folder);
     QString error;
-    QVERIFY2(BrowserProfiles::clear(*folder, QStringLiteral("brave"), &error), qPrintable(error));
+    QVERIFY2(BrowserProfiles::clear(*folder, QStringLiteral("brave"), app::DeleteGrants::confirmedSignOut(), &error), qPrintable(error));
     QVERIFY(!present(BrowserProfiles::profileDir(*folder, QStringLiteral("brave"))));
 }
 
@@ -110,7 +110,7 @@ void TestBrowserProfiles::clearWithoutProfileSucceeds()
     QString error;
     const std::optional<WorkFolder> folder = WorkFolder::open(temp.path() + QStringLiteral("/work"), TEST_APP_NAME, &error);
     QVERIFY2(folder, qPrintable(error));
-    QVERIFY2(BrowserProfiles::clear(*folder, QStringLiteral("edge"), &error), qPrintable(error));
+    QVERIFY2(BrowserProfiles::clear(*folder, QStringLiteral("edge"), app::DeleteGrants::confirmedSignOut(), &error), qPrintable(error));
 }
 
 void TestBrowserProfiles::clearKeepsOtherBrowsersAndTheWorkFolder()
@@ -124,7 +124,7 @@ void TestBrowserProfiles::clearKeepsOtherBrowsersAndTheWorkFolder()
     QVERIFY(writeTestFile(chrome + QStringLiteral("/Local State"), "s"));
     QVERIFY(writeTestFile(folder->settingsPath(), "[general]\n"));
     QString error;
-    QVERIFY2(BrowserProfiles::clear(*folder, QStringLiteral("brave"), &error), qPrintable(error));
+    QVERIFY2(BrowserProfiles::clear(*folder, QStringLiteral("brave"), app::DeleteGrants::confirmedSignOut(), &error), qPrintable(error));
     QVERIFY(present(chrome + QStringLiteral("/Local State")));
     QVERIFY(present(folder->settingsPath()));
     QVERIFY(present(folder->markerPath()));
@@ -145,7 +145,7 @@ void TestBrowserProfiles::removesLinksWithoutFollowingThem()
     if (kCanLinkFiles)
         QVERIFY(QFile::link(outside + QStringLiteral("/keep.txt"), dir + QStringLiteral("/filelink")));
     QString error;
-    QVERIFY2(BrowserProfiles::clear(*folder, QStringLiteral("brave"), &error), qPrintable(error));
+    QVERIFY2(BrowserProfiles::clear(*folder, QStringLiteral("brave"), app::DeleteGrants::confirmedSignOut(), &error), qPrintable(error));
     QVERIFY(!present(dir));
     QCOMPARE(readTestFile(outside + QStringLiteral("/keep.txt")), QByteArray("keep"));
 }
@@ -163,12 +163,12 @@ void TestBrowserProfiles::refusesWhileTheBrowserRuns()
     QVERIFY(holder.waitForReadyRead(30000));
     QCOMPARE(holder.readLine().trimmed(), QByteArray("locked"));
     QString error;
-    QVERIFY(!BrowserProfiles::clear(*folder, QStringLiteral("brave"), &error));
+    QVERIFY(!BrowserProfiles::clear(*folder, QStringLiteral("brave"), app::DeleteGrants::confirmedSignOut(), &error));
     QVERIFY(error.contains(QStringLiteral("still running")));
     QVERIFY(present(BrowserProfiles::profileDir(*folder, QStringLiteral("brave")) + QStringLiteral("/Default/Cookies")));
     holder.write("\n");
     QVERIFY(holder.waitForFinished(30000));
-    QVERIFY2(BrowserProfiles::clear(*folder, QStringLiteral("brave"), &error), qPrintable(error));
+    QVERIFY2(BrowserProfiles::clear(*folder, QStringLiteral("brave"), app::DeleteGrants::confirmedSignOut(), &error), qPrintable(error));
     QVERIFY(!present(BrowserProfiles::profileDir(*folder, QStringLiteral("brave"))));
 }
 
@@ -183,7 +183,7 @@ void TestBrowserProfiles::takesOverTheLockOfACrashedApp()
     QVERIFY(holder.waitForFinished(30000));
     QVERIFY(present(BrowserProfiles::lockPath(*folder, QStringLiteral("brave"))));
     QString error;
-    QVERIFY2(BrowserProfiles::clear(*folder, QStringLiteral("brave"), &error), qPrintable(error));
+    QVERIFY2(BrowserProfiles::clear(*folder, QStringLiteral("brave"), app::DeleteGrants::confirmedSignOut(), &error), qPrintable(error));
     QVERIFY(!present(BrowserProfiles::profileDir(*folder, QStringLiteral("brave"))));
 }
 
@@ -198,7 +198,7 @@ void TestBrowserProfiles::refusesWhenTheProfileIsALink()
     QVERIFY(QDir().mkpath(outside));
     QVERIFY(writeTestFile(outside + QStringLiteral("/Cookies"), "c"));
     QVERIFY(makeDirectoryLink(outside, BrowserProfiles::profileDir(*folder, QStringLiteral("brave"))));
-    QVERIFY(!BrowserProfiles::clear(*folder, QStringLiteral("brave"), &error));
+    QVERIFY(!BrowserProfiles::clear(*folder, QStringLiteral("brave"), app::DeleteGrants::confirmedSignOut(), &error));
     QVERIFY(error.contains(QStringLiteral("link")));
     QCOMPARE(readTestFile(outside + QStringLiteral("/Cookies")), QByteArray("c"));
 }
@@ -210,8 +210,8 @@ void TestBrowserProfiles::refusesInvalidIds()
     const std::optional<WorkFolder> folder = filled(temp);
     QVERIFY(folder);
     QString error;
-    QVERIFY(!BrowserProfiles::clear(*folder, QStringLiteral(".."), &error));
-    QVERIFY(!BrowserProfiles::clear(*folder, QStringLiteral(""), &error));
+    QVERIFY(!BrowserProfiles::clear(*folder, QStringLiteral(".."), app::DeleteGrants::confirmedSignOut(), &error));
+    QVERIFY(!BrowserProfiles::clear(*folder, QStringLiteral(""), app::DeleteGrants::confirmedSignOut(), &error));
     QVERIFY(present(folder->browserProfilesDir()));
     QVERIFY(present(BrowserProfiles::profileDir(*folder, QStringLiteral("brave")) + QStringLiteral("/Default/Cookies")));
 }

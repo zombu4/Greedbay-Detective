@@ -516,7 +516,8 @@ void DevWindow::signOut()
         return;
     }
     QString error;
-    if (app::BrowserProfiles::clear(m_folder, m_browser->id, &error))
+    // The dev window's Sign out button: the sign-out grant (profiles only).
+    if (app::BrowserProfiles::clear(m_folder, m_browser->id, app::DeleteGrants::confirmedSignOut(), &error))
         append(QStringLiteral("signed out: the %1 profile folder in the work folder was deleted (no browser was "
                               "started)").arg(m_browser->name));
     else
