@@ -768,6 +768,21 @@ void TestMatching::rows_data()
                                             << "" << Bucket::PartFits;
     QTest::newRow("4 TV repair gear") << sencore << "VG91" << "Sencore VG91 video generator TV repair test equipment" << ""
                                       << Bucket::SameItem;
+    // A lead set is an accessory, also as a "complete set"; a training tape is
+    // documentation; another model joined by "and" makes two items (a lot).
+    QTest::newRow("lead set complete") << sencore << "QG70" << "New Sencore QG70 test lead set (complete set of 6)" << ""
+                                       << Bucket::Accessory;
+    QTest::newRow("leads with the item") << sencore << "QG70" << "Sencore QG70 stereo analyzer with test leads"
+                                         << "Pre-Owned" << Bucket::SameItem;
+    QTest::newRow("lead acid is no lead") << sencore << "QG70" << "Sencore QG70 analyzer, new lead acid battery inside"
+                                          << "Pre-Owned" << Bucket::SameItem;
+    QTest::newRow("training tape") << sencore << "QG70" << "Sencore QG70 stereo analyzer troubleshooting tech tape" << ""
+                                   << Bucket::Documentation;
+    QTest::newRow("two items joined") << sencore << "QG70" << "Sencore QP61 power analyzer and QG70 stereo analyzer!!"
+                                      << "For parts or not working" << Bucket::Lot;
+    QTest::newRow("two items ampersand") << sencore << "QG70" << "Sencore QG70 & QP61 analyzers" << "" << Bucket::Lot;
+    QTest::newRow("and inside the item") << sencore << "QG70" << "Sencore QG70 AM and FM stereo analyzer" << "Pre-Owned"
+                                         << Bucket::SameItem;
     QTest::newRow("4 shoe code") << sencore << "VG91" << "Running shoe VG91-5040" << "" << Bucket::NoMatch;
     QTest::newRow("4 card grade") << sencore << "VG91" << "Baseball card #91 VG" << "" << Bucket::NoMatch;
     // Case 5, Sencore PR57.

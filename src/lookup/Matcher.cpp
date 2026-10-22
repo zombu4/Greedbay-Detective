@@ -157,6 +157,27 @@ QStringList otherModelCodes(const QStringList &words, const Identity &identity, 
     return others;
 }
 
+// Another model code of the title (one of `others`) with a bundle join word
+// ("and", "&") between it and the model: two items sold together ("<other>
+// power analyzer and <model> stereo analyzer"). The code as written, or empty.
+QString joinedOtherModel(const QStringList &codeList, const QList<Span> &models, const QStringList &others,
+                         const MatchWords &matchWords)
+{
+    for (qsizetype i = 0; i < codeList.size(); ++i) {
+        if (!others.contains(normalizeCode(codeList.at(i))))
+            continue;
+        for (const Span &span : models) {
+            const qsizetype from = std::min(i, span.at);
+            const qsizetype to = std::max(i, span.at + span.length - 1);
+            for (qsizetype k = from + 1; k < to; ++k) {
+                if (matchWords.bundleJoins.contains(codeList.at(k), Qt::CaseInsensitive))
+                    return codeList.at(i);
+            }
+        }
+    }
+    return {};
+}
+
 // True when the phrase starting at `at` (of `length` words) lies inside one
 // of the notAccessory phrases ("original case").
 bool insideNotAccessory(const QStringList &list, qsizetype at, const MatchWords &matchWords)
@@ -476,6 +497,10 @@ Match matchRow(const QString &title, const Identity &identity, const MatchWords 
     if (firstNotWithItem(list, accessories, words, &word) >= 0) {
         reasons.append(QStringLiteral("accessory (\"%1\")").arg(word));
         return done(Bucket::Accessory);
+    }
+    if (const QString other = joinedOtherModel(codeList, models, others, words); !other.isEmpty()) {
+        reasons.append(QStringLiteral("two items: %1 and %2").arg(other, identity.model));
+        return done(Bucket::Lot);
     }
     if (system) {
         if (const QString reissue = reissueNextToModel(codeList, models, words); !reissue.isEmpty()) {

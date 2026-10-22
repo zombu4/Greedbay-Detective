@@ -44,6 +44,7 @@ struct MatchWords {
     QStringList withItem;     // an accessory word after one of these is part of the item
     QStringList companion;    // "for": "<other model> ... for <model>"
     QStringList withExtras;   // model codes after one of these come with the item ("with 7A26 plug-in")
+    QStringList bundleJoins;  // "<other model> ... and <model>": two items in one listing, a lot
     QStringList notTheItem;   // a key, code or firmware for the item ("license key"): not the item
 
     // Only for models of these categories (computers, consoles, handhelds):

@@ -75,6 +75,7 @@ std::optional<MatchWords> MatchWords::fromJson(const QByteArray &json, QString *
         {wordsOf("withItem"), &words.withItem, "withItem"},
         {wordsOf("companion"), &words.companion, "companion"},
         {wordsOf("withExtras"), &words.withExtras, "withExtras"},
+        {wordsOf("bundleJoins"), &words.bundleJoins, "bundleJoins"},
         {wordsOf("notTheItem"), &words.notTheItem, "notTheItem"},
         {wordsOf("merchandise"), &words.merchandise, "merchandise"},
         {wordsOf("systemCategories"), &words.systemCategories, "systemCategories"},

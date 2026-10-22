@@ -1997,7 +1997,14 @@
             "users guide",
             "service guide",
             "price guide",
-            "instruction guide"
+            "instruction guide",
+            "tech tape",
+            "training tape",
+            "training tapes",
+            "video tape",
+            "videotape",
+            "vhs tape",
+            "instructional tape"
         ]
     },
     "partFits": {
@@ -2107,6 +2114,7 @@
         "words": [
             "probe",
             "probes",
+            "lead",
             "leads",
             "case",
             "holster",
@@ -2119,7 +2127,9 @@
             "wood case",
             "wooden case",
             "metal case",
-            "factory case"
+            "factory case",
+            "lead acid",
+            "lead free"
         ]
     },
     "withItem": {
@@ -2144,6 +2154,12 @@
             "including",
             "plus",
             "+"
+        ]
+    },
+    "bundleJoins": {
+        "words": [
+            "and",
+            "&"
         ]
     },
     "notTheItem": {
