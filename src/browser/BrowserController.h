@@ -154,6 +154,8 @@ private:
     using Callback = std::function<void(const QJsonObject &result, const QJsonObject &error)>;
 
     void command(const QString &method, const QJsonObject &params, Callback callback, bool onPage = true);
+    // A command for one child frame's own session (an out-of-process iframe).
+    void commandOnFrame(const QString &frameSession, const QString &method, const QJsonObject &params, Callback callback);
     void onResponse(int id, const QJsonObject &result, const QJsonObject &error);
     void onEvent(const QString &method, const QJsonObject &params, const QString &sessionId);
     void onBrowserFinished(int exitCode, bool crashed);
@@ -174,6 +176,17 @@ private:
     void evaluateExtractor(const QUrl &pageUrl, std::function<void(const QJsonObject &)> handle);
     void rereadAfterUser();
     void onExtracted(const QJsonObject &result);
+    // An item page read as expected: its seller's description (recon
+    // 2026-10-21: iframe #desc_ifr from itm.ebaydesc.com/itmdesc/<item id>,
+    // its own frame target; loaded with the page, so no page is added) is
+    // read too, then `done` gets `data` with "description" (the text, at most
+    // kMaxDescriptionChars) or "descriptionMissing" (why not). Retries every
+    // kSettleStepMs while the frame or its text is not there yet, at most
+    // kDescriptionTries times.
+    static constexpr int kMaxDescriptionChars = 20000;
+    static constexpr int kDescriptionTries = 12;
+    void readDescription(QJsonObject data, int triesLeft, std::function<void(const QJsonObject &)> done);
+    void finishExpected(const QJsonObject &data, const QString &logPrefix);
     void checkSignedIn(bool loadOk);
     void waitForUser(const QJsonObject &reply, const QString &message);
     void finish(const QJsonObject &reply);
@@ -193,6 +206,13 @@ private:
     QString m_sessionId;
     int m_windowId = -1;
     QString m_mainFrameId;
+    // The page's child frames with their own target (auto-attached): session
+    // id -> {target id, URL}.
+    struct ChildFrame {
+        QString targetId;
+        QUrl url;
+    };
+    QHash<QString, ChildFrame> m_childFrames;
     bool m_ready = false;
     bool m_stopping = false;
     bool m_failed = false;

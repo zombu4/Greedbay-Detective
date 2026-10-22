@@ -3,7 +3,6 @@
 
 qt_add_library(sellerserver STATIC
     HttpServer.cpp HttpServer.h
-    ItemCheck.cpp ItemCheck.h
     KeyFiles.cpp KeyFiles.h
     ServerStore.cpp ServerStore.h
     Service.cpp Service.h)

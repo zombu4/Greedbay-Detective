@@ -452,10 +452,11 @@ Popup {
                     anchors.fill: parent
                     spacing: 8
                     Muted {
-                        text: "The app first looks for your purchase from this seller on your own eBay Purchases page "
-                              + "(in the app's browser, counted in the daily pages). Then it sends only the seller's "
-                              + "user id, your reason and words, and that purchase's item number and month - encrypted, "
-                              + "without your eBay name. One report per seller."
+                        text: "The app first looks for your purchase from this seller on your own eBay Purchases page, "
+                              + "then opens that item's page to check it is this seller's item (both in the app's browser, "
+                              + "counted in the daily pages). Then it sends only the seller's user id, your reason and "
+                              + "words, that purchase's item number and month, and whether the item checked out - "
+                              + "encrypted, without your eBay name. One report per seller."
                     }
                     Muted { text: "Reason" }
                     ComboBox {

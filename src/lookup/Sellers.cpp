@@ -1,5 +1,7 @@
 #include "lookup/Sellers.h"
 
+#include "lookup/MatchWords.h"
+
 #include <QJsonArray>
 #include <QLocale>
 #include <QRegularExpression>
@@ -47,20 +49,30 @@ QString markReasonLabel(const QString &id)
     return id;
 }
 
-OriginNote originNote(const QString &location)
+OriginNote originNote(const QString &location, const MatchWords &words)
 {
     const QString country = location.section(QLatin1Char(','), -1).trimmed();
     OriginNote note;
-    if (country.compare(QLatin1String("China"), Qt::CaseInsensitive) == 0) {
-        note.country = QStringLiteral("China");
+    if (country.isEmpty())
+        return note;
+    const auto find = [&country](const QStringList &list) {
+        for (const QString &entry : list) {
+            if (entry.compare(country, Qt::CaseInsensitive) == 0)
+                return entry;
+        }
+        return QString();
+    };
+    if (const QString china = find(words.chinaLocations); !china.isEmpty()) {
+        note.country = china;
+        note.china = true;
         note.badge = QStringLiteral("CHINESIUM SELLER");
-        note.text = QStringLiteral("Chinesium seller: eBay says this item is located in China (where it ships from; "
-                                   "the seller may be based elsewhere).");
-    } else if (country.compare(QLatin1String("Japan"), Qt::CaseInsensitive) == 0) {
-        note.country = QStringLiteral("Japan");
+        note.text = QStringLiteral("Chinesium seller: eBay says this item is located in %1 (where it ships from; "
+                                   "the seller may be based elsewhere).").arg(china);
+    } else if (const QString japan = find(words.japanLocations); !japan.isEmpty()) {
+        note.country = japan;
         note.badge = QStringLiteral("JAPAN: SCALPER RISK");
-        note.text = QStringLiteral("Scalper risk: eBay says this item is located in Japan. Watch for junk sold at "
-                                   "very high prices; compare with the sold prices below.");
+        note.text = QStringLiteral("Scalper risk: eBay says this item is located in %1. Watch for junk sold at "
+                                   "very high prices; compare with the sold prices below.").arg(japan);
     }
     return note;
 }

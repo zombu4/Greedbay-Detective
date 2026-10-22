@@ -45,6 +45,17 @@ struct MatchWords {
     QStringList companion;    // "for": "<other model> ... for <model>"
     QStringList withExtras;   // model codes after one of these come with the item ("with 7A26 plug-in")
     QStringList bundleJoins;  // "<other model> ... and <model>": two items in one listing, a lot
+    // eBay's "Located in" countries for the location badges (owner decisions
+    // 2026-10-21): CHINESIUM SELLER, and the Japan scalper warning.
+    QStringList chinaLocations;
+    QStringList japanLocations;
+    // The seller's description (F2/F3, owner decision f, 2026-10-21):
+    // "<noun> not included" (the item itself is missing), sold for parts,
+    // untested (a note only), a lot.
+    QStringList descriptionItemNouns;
+    QStringList descriptionParts;
+    QStringList descriptionUntested;
+    QStringList descriptionLot;
     QStringList notTheItem;   // a key, code or firmware for the item ("license key"): not the item
 
     // Only for models of these categories (computers, consoles, handhelds):

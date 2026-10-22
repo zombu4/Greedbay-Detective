@@ -74,7 +74,8 @@ struct PublishedReport {
     QString reason; // a lookup::kMarkReasons id
     QString text;   // the reporter's own words, at most kMaxReportText
     QString month;  // "2026-10": when the reporter bought
-    // The server found the item on eBay's item page, sold by this seller.
+    // The reporter's app found the item on eBay's item page, sold by this
+    // seller (owner decision a, 2026-10-21: the app checks, not the server).
     bool itemChecked = false;
     QJsonObject toJson() const;
     static std::optional<PublishedReport> fromJson(const QJsonObject &object);
@@ -111,6 +112,10 @@ struct Report {
     QDateTime createdAt;
     QByteArray installKey;       // Ed25519 public key, 32 bytes
     QByteArray installSignature; // Ed25519 over the body without "installSignature"
+    // The app's own item check, right after the purchase check (owner
+    // decision a, 2026-10-21): eBay's item page of itemId was read and names
+    // sellerId as its seller. Signed with the rest.
+    bool itemCheckedInApp = false;
     QJsonObject toJson() const;
     static std::optional<Report> fromJson(const QJsonObject &object);
     // The bytes the install key signs.

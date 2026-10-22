@@ -248,10 +248,23 @@ Item {
                 }
             }
 
+            // Whether the seller's description was read (owner decision f2).
+            Text {
+                objectName: "descriptionStatus"
+                Layout.fillWidth: true
+                visible: text.length > 0
+                text: screen.results.descriptionStatus
+                textFormat: Text.PlainText
+                wrapMode: Text.WordWrap
+                font.family: Theme.sans
+                font.pixelSize: Theme.labelSize
+                color: Theme.mutedText
+            }
             // Flag cards, only the ones that apply.
             RowLayout {
                 Layout.fillWidth: true
-                visible: screen.results.brokenFlag || screen.results.originFlag || screen.results.isAuction
+                visible: screen.results.brokenFlag || screen.results.originFlag || screen.results.descriptionFlag
+                         || screen.results.isAuction
                          || screen.results.shippingFlag
                          || screen.results.cheaperFlag || screen.results.markedFlag || screen.results.ratingFlag
                          || screen.results.sharedFlag
@@ -265,11 +278,20 @@ Item {
                     lines: screen.results.auctionLines
                 }
                 FlagCard {
+                    objectName: "descriptionFlag"
+                    Layout.fillWidth: true
+                    Layout.preferredWidth: 1
+                    visible: screen.results.descriptionFlag
+                    kind: "danger"
+                    label: "DESCRIPTION"
+                    lines: [screen.results.descriptionLine]
+                }
+                FlagCard {
                     objectName: "originFlag"
                     Layout.fillWidth: true
                     Layout.preferredWidth: 1
                     visible: screen.results.originFlag
-                    kind: screen.results.originCountry === "China" ? "danger" : "warn"
+                    kind: screen.results.originChina ? "danger" : "warn"
                     label: screen.results.originLabel
                     lines: [screen.results.originLine]
                 }

@@ -132,6 +132,10 @@ ItemRecord ItemRecord::fromJson(const QJsonObject &data)
     record.sellerName = seller.value(QStringLiteral("name")).toString();
     record.sellerId = seller.value(QStringLiteral("id")).toString();
     record.location = locationText(data.value(QStringLiteral("location")));
+    record.availability = data.value(QStringLiteral("availability")).toString();
+    record.soldNotice = data.value(QStringLiteral("soldNotice")).toBool();
+    record.description = data.value(QStringLiteral("description")).toString().left(20000);
+    record.descriptionMissing = data.value(QStringLiteral("descriptionMissing")).toString();
     record.sellerFeedbackCount = count(seller.value(QStringLiteral("feedbackCount")));
     if (const QJsonValue percent = seller.value(QStringLiteral("positivePercent")); percent.isDouble()
         && percent.toDouble() >= 0 && percent.toDouble() <= 100)

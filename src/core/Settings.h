@@ -106,6 +106,19 @@ public:
     // Returns false and stores nothing when minMs < 1000 or maxMs < minMs.
     bool setPageDelay(int minMs, int maxMs);
 
+    // Keys "lookup/deepCheck" and "lookup/deepCheckRows" (owner decision f3,
+    // 2026-10-21): after a lookup, open the item pages of up to that many
+    // counted same-item rows and read their descriptions. Off by default
+    // (anything but "true"); rows default 10, at least 1, at most
+    // kMaxDeepCheckRows.
+    static constexpr int kDefaultDeepCheckRows = 10;
+    static constexpr int kMaxDeepCheckRows = 100;
+    bool deepCheck() const;
+    void setDeepCheck(bool enabled);
+    int deepCheckRows() const;
+    // Returns false and stores nothing outside 1..kMaxDeepCheckRows.
+    bool setDeepCheckRows(int rows);
+
     // Key "pace/dailyPageCap": the most eBay pages the app loads per day
     // (core/PageBudget counts them). Default 300; a value below 1 reads as
     // the default.

@@ -285,6 +285,16 @@ void BrowserController::command(const QString &method, const QJsonObject &params
         m_callbacks.emplace(id, std::move(callback));
 }
 
+void BrowserController::commandOnFrame(const QString &frameSession, const QString &method, const QJsonObject &params,
+                                       Callback callback)
+{
+    if (!m_cdp)
+        return;
+    const int id = m_cdp->send(method, params, frameSession);
+    if (id > 0 && callback)
+        m_callbacks.emplace(id, std::move(callback));
+}
+
 void BrowserController::onResponse(int id, const QJsonObject &result, const QJsonObject &error)
 {
     const auto it = m_callbacks.find(id);
@@ -336,6 +346,12 @@ void BrowserController::attachToFirstPage(int attemptsLeft)
                 }
                 command(QStringLiteral("Page.enable"), {}, nullptr);
                 command(QStringLiteral("Network.enable"), {}, nullptr);
+                // The page's out-of-process frames (the item description)
+                // get their own sessions; nothing waits for a debugger.
+                command(QStringLiteral("Target.setAutoAttach"),
+                        {{QStringLiteral("autoAttach"), true}, {QStringLiteral("waitForDebuggerOnStart"), false},
+                         {QStringLiteral("flatten"), true}},
+                        nullptr);
                 command(QStringLiteral("Target.activateTarget"), {{QStringLiteral("targetId"), m_targetId}}, nullptr, false);
                 // Tabs that pages open later are reported (Target.targetCreated).
                 command(QStringLiteral("Target.setDiscoverTargets"), {{QStringLiteral("discover"), true}}, nullptr, false);
@@ -469,8 +485,27 @@ void BrowserController::onEvent(const QString &method, const QJsonObject &params
         }
         return;
     }
+    if (method == QLatin1String("Target.targetInfoChanged")) {
+        const QJsonObject info = params.value(QStringLiteral("targetInfo")).toObject();
+        for (ChildFrame &frame : m_childFrames) {
+            if (frame.targetId == info.value(QStringLiteral("targetId")).toString())
+                frame.url = QUrl(info.value(QStringLiteral("url")).toString());
+        }
+        return;
+    }
     if (sessionId.isEmpty() || sessionId != m_sessionId)
         return;
+    if (method == QLatin1String("Target.attachedToTarget")) {
+        const QJsonObject info = params.value(QStringLiteral("targetInfo")).toObject();
+        if (info.value(QStringLiteral("type")).toString() == QLatin1String("iframe"))
+            m_childFrames.insert(params.value(QStringLiteral("sessionId")).toString(),
+                                 {info.value(QStringLiteral("targetId")).toString(), QUrl(info.value(QStringLiteral("url")).toString())});
+        return;
+    }
+    if (method == QLatin1String("Target.detachedFromTarget")) {
+        m_childFrames.remove(params.value(QStringLiteral("sessionId")).toString());
+        return;
+    }
     if (method == QLatin1String("Page.frameNavigated")) {
         const QJsonObject frame = params.value(QStringLiteral("frame")).toObject();
         if (!frame.contains(QStringLiteral("parentId")))
@@ -811,11 +846,7 @@ void BrowserController::rereadAfterUser()
                 finish(m_replyAfterUser);
                 return;
             }
-            const QJsonObject data = result.value(QStringLiteral("data")).toObject();
-            qCInfo(lcBrowser).noquote() << "fetch" << ebay::pageKindName(m_kind) << "read after Continue:" << logSummary(data);
-            QJsonObject reply = statusReply("ok");
-            reply.insert(QStringLiteral("result"), data);
-            finish(reply);
+            finishExpected(result.value(QStringLiteral("data")).toObject(), QStringLiteral("read after Continue"));
         });
     });
 }
@@ -833,11 +864,7 @@ void BrowserController::onExtracted(const QJsonObject &result)
     }
     const qint64 ms = m_loadClock.elapsed();
     if (page == QLatin1String("expected") && loadOk) {
-        const QJsonObject data = result.value(QStringLiteral("data")).toObject();
-        qCInfo(lcBrowser).noquote() << "fetch" << ebay::pageKindName(m_kind) << "read in" << ms << "ms:" << logSummary(data);
-        QJsonObject reply = statusReply("ok");
-        reply.insert(QStringLiteral("result"), data);
-        finish(reply);
+        finishExpected(result.value(QStringLiteral("data")).toObject(), QStringLiteral("read in %1 ms").arg(ms));
         return;
     }
     if (page == QLatin1String("invalid")) {
@@ -860,6 +887,91 @@ void BrowserController::onExtracted(const QJsonObject &result)
     reply.insert(QStringLiteral("page"), shown);
     reply.insert(QStringLiteral("reason"), reason);
     waitForUser(reply, messageFor(shown, loadOk));
+}
+
+void BrowserController::finishExpected(const QJsonObject &data, const QString &logPrefix)
+{
+    auto reply = [this, logPrefix](const QJsonObject &read) {
+        QString description;
+        if (read.contains(QStringLiteral("description")))
+            description = QStringLiteral(" description=%1 chars").arg(read.value(QStringLiteral("description")).toString().size());
+        else if (read.contains(QStringLiteral("descriptionMissing")))
+            description = QStringLiteral(" description: ") + read.value(QStringLiteral("descriptionMissing")).toString();
+        qCInfo(lcBrowser).noquote() << "fetch" << ebay::pageKindName(m_kind) << logPrefix + QLatin1Char(':') << logSummary(read)
+                                    << description;
+        QJsonObject ok = statusReply("ok");
+        ok.insert(QStringLiteral("result"), read);
+        finish(ok);
+    };
+    if (m_kind != ebay::PageKind::Item) {
+        reply(data);
+        return;
+    }
+    readDescription(data, kDescriptionTries, reply);
+}
+
+void BrowserController::readDescription(QJsonObject data, int triesLeft, std::function<void(const QJsonObject &)> done)
+{
+    const quint64 serial = m_serial;
+    const QString itemId = data.value(QStringLiteral("itemId")).toString();
+    QString frameSession;
+    QString frameTarget;
+    for (auto it = m_childFrames.cbegin(); it != m_childFrames.cend(); ++it) {
+        // The description frame of this item, and nothing else (recon
+        // 2026-10-21): https://itm.ebaydesc.com/itmdesc/<item id>.
+        if (!itemId.isEmpty() && it->url.scheme() == QLatin1String("https") && it->url.host() == QLatin1String("itm.ebaydesc.com")
+            && it->url.path().startsWith(QStringLiteral("/itmdesc/") + itemId)) {
+            frameSession = it.key();
+            frameTarget = it->targetId;
+        }
+    }
+    auto again = [this, serial, data, triesLeft, done](const QString &why) {
+        if (serial != m_serial || m_op != Op::Fetch)
+            return;
+        if (triesLeft <= 1) {
+            QJsonObject without = data;
+            without.insert(QStringLiteral("descriptionMissing"), why);
+            done(without);
+            return;
+        }
+        QTimer::singleShot(kSettleStepMs, this, [this, serial, data, triesLeft, done]() {
+            if (serial == m_serial && m_op == Op::Fetch)
+                readDescription(data, triesLeft - 1, done);
+        });
+    };
+    if (frameSession.isEmpty()) {
+        again(QStringLiteral("no description frame on the page"));
+        return;
+    }
+    // In an isolated world of the app's own, as the page extractors run.
+    const QJsonObject world{{QStringLiteral("frameId"), frameTarget}, {QStringLiteral("worldName"), QStringLiteral("extractor")}};
+    commandOnFrame(frameSession, QStringLiteral("Page.createIsolatedWorld"), world,
+                   [this, serial, frameSession, data, done, again](const QJsonObject &created, const QJsonObject &error) {
+        if (serial != m_serial || m_op != Op::Fetch)
+            return;
+        if (!error.isEmpty() || !created.value(QStringLiteral("executionContextId")).isDouble()) {
+            again(QStringLiteral("the description frame cannot be read"));
+            return;
+        }
+        const QJsonObject params{{QStringLiteral("expression"),
+                                  QStringLiteral("(() => { const b = document.body; return b ? (b.innerText || '') : null; })()")},
+                                 {QStringLiteral("contextId"), created.value(QStringLiteral("executionContextId"))},
+                                 {QStringLiteral("returnByValue"), true}};
+        commandOnFrame(frameSession, QStringLiteral("Runtime.evaluate"), params,
+                       [this, serial, data, done, again](const QJsonObject &evaluated, const QJsonObject &error) {
+            if (serial != m_serial || m_op != Op::Fetch)
+                return;
+            const QJsonValue value = evaluated.value(QStringLiteral("result")).toObject().value(QStringLiteral("value"));
+            const QString text = value.toString().simplified();
+            if (!error.isEmpty() || evaluated.contains(QStringLiteral("exceptionDetails")) || !value.isString() || text.isEmpty()) {
+                again(QStringLiteral("the description frame has no text"));
+                return;
+            }
+            QJsonObject read = data;
+            read.insert(QStringLiteral("description"), text.left(kMaxDescriptionChars));
+            done(read);
+        });
+    });
 }
 
 void BrowserController::checkSignedIn(bool loadOk)

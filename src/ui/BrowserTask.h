@@ -39,6 +39,14 @@ public:
     void continueAfterUser();
     // Stops after the current page; the step is not asked again.
     void cancel();
+    // Called from the step: the next reply comes from loading `url` (a page
+    // of `kind`) in the same session instead of a read on the current page;
+    // the step then returns std::nullopt after it, as usual.
+    void fetchNext(const QUrl &url, ebay::PageKind kind)
+    {
+        m_nextUrl = url;
+        m_nextKind = kind;
+    }
 
     bool busy() const { return m_controller != nullptr; }
     bool cancelled() const { return m_cancelled; }
@@ -65,6 +73,8 @@ private:
     int m_pages = 0;
     int m_usedBefore = 0;
     bool m_answered = false;
+    QUrl m_nextUrl;
+    ebay::PageKind m_nextKind = ebay::PageKind::Item;
     bool m_cancelled = false;
 };
 

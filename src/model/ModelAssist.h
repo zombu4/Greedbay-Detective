@@ -135,6 +135,9 @@ private:
     int m_refused = 0;
     int m_cached = 0;
     QElapsedTimer m_sortTimer;
+    // The current question, for its log line (owner decision e, 2026-10-21).
+    QElapsedTimer m_callClock;
+    bool m_fromCache = false;
 };
 
 } // namespace app::model

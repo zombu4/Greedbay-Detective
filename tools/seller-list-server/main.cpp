@@ -54,16 +54,15 @@ On the server:
   server-keys --data <dir>
       new server keys in <dir> (asks for a passphrase)
   serve --data <dir> --port <n> [--tls-cert <file> --tls-key <file>]
-        [--listen <address>] [--passphrase-file <file>] [--test-item-pages <url>]
+        [--listen <address>] [--passphrase-file <file>]
       run the service. With --tls-cert (fullchain.pem) and --tls-key
       (privkey.pem) it serves HTTPS on <address>:<n>, by default every
       address (port 443 for the apps); renewed files are used without a
       restart. Without them it serves plain HTTP on 127.0.0.1:<n> or
       [::1]:<n> only, for a reverse proxy on this machine that does the HTTPS.
       No client address, header or path is ever logged: once an hour one
-      line with counts only.
-      --test-item-pages http://127.0.0.1:<port> loads item pages from a local
-      test server instead of eBay (a dry run only)
+      line with counts only. The server loads no eBay page: a report says
+      whether the reporter's app checked the item.
   queue --data <dir>            reports pending or held, open disputes
   publish --data <dir> --id <report>   publish a held report
   hold --data <dir> --id <report>      take a report off the list (held)
@@ -391,16 +390,7 @@ int serveCommand(const QMap<QString, QString> &map)
     ServerStore store;
     if (!openStore(dir.path(), &store, &error))
         return fail(error);
-    ItemPageFetcher::Settings fetcher;
-    if (!map.value(QStringLiteral("test-item-pages")).isEmpty()) {
-        const QUrl base(map.value(QStringLiteral("test-item-pages")), QUrl::StrictMode);
-        if (!base.isValid() || base.scheme() != QLatin1String("http") || base.host() != QLatin1String("127.0.0.1")
-            || base.port() <= 0 || !base.path().isEmpty())
-            return fail(QStringLiteral("--test-item-pages must be http://127.0.0.1:<port>"));
-        fetcher.base = base;
-        say(QStringLiteral("dry run: item pages come from %1, not from eBay").arg(base.toString()));
-    }
-    Service service(&store, keys, fetcher, Service::Limits{}, dir.filePath(QStringLiteral("list.json")));
+    Service service(&store, keys, Service::Limits{}, dir.filePath(QStringLiteral("list.json")));
     wipe(&keys.sign);
     wipe(&keys.box);
     QObject::connect(&service, &Service::problem, [](const QString &message) { fail(QStringLiteral("problem: %1").arg(message)); });
@@ -517,7 +507,7 @@ int main(int argc, char *argv[])
         {QStringLiteral("server-keys"), {QStringLiteral("data"), QStringLiteral("passphrase-file")}},
         {QStringLiteral("serve"),
          {QStringLiteral("data"), QStringLiteral("port"), QStringLiteral("tls-cert"), QStringLiteral("tls-key"), QStringLiteral("listen"),
-          QStringLiteral("passphrase-file"), QStringLiteral("test-item-pages")}},
+          QStringLiteral("passphrase-file")}},
         {QStringLiteral("queue"), {QStringLiteral("data")}},
         {QStringLiteral("publish"), {QStringLiteral("data"), QStringLiteral("id")}},
         {QStringLiteral("hold"), {QStringLiteral("data"), QStringLiteral("id")}},

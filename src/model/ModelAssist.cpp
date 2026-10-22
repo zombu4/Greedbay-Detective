@@ -3,11 +3,18 @@
 #include "model/ModelDownload.h"
 
 #include <QDebug>
+#include <QLoggingCategory>
 #include <QTimer>
 
 namespace app::model {
 
 namespace {
+
+// One line per question to the model in the work folder's log (owner
+// decision e, 2026-10-21): the prompt version, the listing's or the row's
+// item number (never title text), the answer's fields, the guard that
+// refused it and why, what the app did with it, and the time taken.
+Q_STATIC_LOGGING_CATEGORY(lcModel, "model")
 
 QList<QPair<QString, QString>> specificsOf(const lookup::ItemRecord &item)
 {
@@ -91,7 +98,10 @@ void ModelAssist::ask(const Prompt &prompt, Grammar grammar, const QString &vers
     m_grammar = grammar;
     m_version = version;
     m_key = ModelStore::questionKey(m_info->id, version, prompt);
+    m_callClock.start();
+    m_fromCache = false;
     if (const std::optional<QString> cached = m_store.answer(m_key)) {
+        m_fromCache = true;
         // From the event loop, as an answer from the runner would come.
         QTimer::singleShot(0, this, [this, text = *cached] {
             if (m_step == Step::Sort)
@@ -166,7 +176,15 @@ void ModelAssist::identityAnswer(const std::optional<QString> &text, const QStri
     m_step = Step::Idle;
     setProgress(QString());
     IdentityOutcome outcome;
+    const auto logLine = [this](const QString &answer, const QString &guard, const QString &result) {
+        qCInfo(lcModel).noquote() << QStringLiteral("%1 listing %2: %3; %4; result: %5; %6 ms%7")
+                                         .arg(m_version, m_item.itemId.isEmpty() ? QStringLiteral("-") : m_item.itemId, answer,
+                                              guard.isEmpty() ? QStringLiteral("no guard refused it") : guard, result)
+                                         .arg(m_callClock.elapsed())
+                                         .arg(m_fromCache ? QStringLiteral(" (saved answer)") : QString());
+    };
     if (!text) {
+        logLine(QStringLiteral("no answer (%1)").arg(error), {}, QStringLiteral("the rules' answer is used"));
         outcome.kind = IdentityOutcome::Kind::NoAnswer;
         outcome.note = QStringLiteral("Local model: no identity answer (%1); the rules' answer is used.").arg(error);
         emit identityDone(outcome);
@@ -174,6 +192,8 @@ void ModelAssist::identityAnswer(const std::optional<QString> &text, const QStri
     }
     const std::optional<IdentityAnswer> answer = parseIdentity(*text);
     if (!answer) {
+        logLine(QStringLiteral("answer not readable"), QStringLiteral("G1: not the answer format"),
+                QStringLiteral("refused, the rules' answer is used"));
         outcome.kind = IdentityOutcome::Kind::Refused;
         outcome.note = QStringLiteral("Local model: its identity answer was not readable (G1); the rules' answer is used.");
         emit identityDone(outcome);
@@ -198,6 +218,13 @@ void ModelAssist::identityAnswer(const std::optional<QString> &text, const QStri
         outcome.note = QStringLiteral("Local model read \"%1 %2\", the rules \"%3 %4\"; you were asked to choose.")
                            .arg(answer->brand, answer->model, m_rules.brandName, m_rules.model);
     }
+    static const QHash<IdentityOutcome::Kind, QString> results{
+        {IdentityOutcome::Kind::Refused, QStringLiteral("refused, the rules' answer is used")},
+        {IdentityOutcome::Kind::Suggests, QStringLiteral("shown as a suggestion (you were asked)")},
+        {IdentityOutcome::Kind::Agrees, QStringLiteral("accepted: agrees with the rules")},
+        {IdentityOutcome::Kind::Disagrees, QStringLiteral("asked: you choose between the two")}};
+    logLine(QStringLiteral("brand \"%1\", model \"%2\", product \"%3\"").arg(answer->brand, answer->model, answer->product),
+            verdict.accepted ? QString() : QStringLiteral("%1: %2").arg(verdict.guard, verdict.why), results.value(outcome.kind));
     emit identityDone(outcome);
 }
 
@@ -304,8 +331,19 @@ void ModelAssist::sortAnswer(const std::optional<QString> &text, const QString &
         return;
     }
     lookup::Row &row = m_rows[index];
+    const auto logLine = [this, &row](const QString &answer, const QString &guard, const QString &result) {
+        const QString id = itemIdOf(row);
+        qCInfo(lcModel).noquote() << QStringLiteral("%1 row %2 (%3): %4; %5; result: %6; %7 ms%8")
+                                         .arg(m_version, id.isEmpty() ? QStringLiteral("-") : id, lookup::rowSourceName(row.source),
+                                              answer, guard.isEmpty() ? QStringLiteral("no guard refused it") : guard, result)
+                                         .arg(m_callClock.elapsed())
+                                         .arg(m_fromCache ? QStringLiteral(" (saved answer)") : QString());
+    };
     // G1: an unreadable answer changes nothing.
-    if (const std::optional<QString> category = parseSort(*text)) {
+    const std::optional<QString> parsed = parseSort(*text);
+    if (!parsed)
+        logLine(QStringLiteral("answer not readable"), QStringLiteral("G1: not the answer format"), QStringLiteral("unchanged"));
+    if (const std::optional<QString> category = parsed) {
         const bool own = !m_result.item.itemId.isEmpty() && itemIdOf(row) == m_result.item.itemId;
         const SortEffect effect = sortEffect(row.match.bucket, own, *category, titleOf(row), m_result.identity, *m_words);
         switch (effect.kind) {
@@ -326,6 +364,13 @@ void ModelAssist::sortAnswer(const std::optional<QString> &text, const QString &
         case SortEffect::Kind::None:
             break;
         }
+        static const QHash<SortEffect::Kind, QString> results{
+            {SortEffect::Kind::ToCheck, QStringLiteral("moved to \"to check\" (not counted)")},
+            {SortEffect::Kind::Suggest, QStringLiteral("suggestion added to the row")},
+            {SortEffect::Kind::Refused, QStringLiteral("refused, the row is unchanged")},
+            {SortEffect::Kind::None, QStringLiteral("unchanged (agrees, or nothing to do)")}};
+        logLine(QStringLiteral("category \"%1\"").arg(*category),
+                effect.kind == SortEffect::Kind::Refused || !effect.guard.isEmpty() ? effect.guard : QString(), results.value(effect.kind));
     }
     sortNext();
 }

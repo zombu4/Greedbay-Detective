@@ -211,6 +211,24 @@ qsizetype firstNotWithItem(const QStringList &words, const QStringList &phrases,
     return -1;
 }
 
+// The phrases of `phrases` that stand right after a with-item word ("with
+// leads", "w/ manual"): they come with the item. For the reason text.
+QStringList withItemPhrases(const QStringList &words, const QStringList &phrases, const MatchWords &matchWords)
+{
+    QStringList found;
+    for (const QString &phrase : phrases) {
+        for (const qsizetype at : phrasePositions(words, phrase)) {
+            for (qsizetype k = std::max<qsizetype>(0, at - 3); k < at; ++k) {
+                if (matchWords.withItem.contains(words.at(k), Qt::CaseInsensitive)) {
+                    found.append(QStringLiteral("\"%1\" after \"%2\"").arg(phrase, words.at(k)));
+                    break;
+                }
+            }
+        }
+    }
+    return found;
+}
+
 // True when the identity is a computer, console or handheld (the lists
 // that apply only to those).
 bool isSystem(const Identity &identity, const MatchWords &matchWords)
@@ -368,23 +386,23 @@ Match matchRow(const QString &title, const Identity &identity, const MatchWords 
         return done(Bucket::NoMatch);
     }
     if (firstPhrase(list, words.lot, &word) >= 0) {
-        reasons.append(QStringLiteral("lot (\"%1\")").arg(word));
+        reasons.append(QStringLiteral("\"%1\" = lot word -> lot").arg(word));
         return done(Bucket::Lot);
     }
     if (firstNotWithItem(list, words.documentation, words, &word) >= 0) {
-        reasons.append(QStringLiteral("documentation (\"%1\")").arg(word));
+        reasons.append(QStringLiteral("\"%1\" = documentation word, not after a with-word -> documentation").arg(word));
         return done(Bucket::Documentation);
     }
     // Parts before kits: "compatible ... feet set" is a part (S11).
     if (firstPhrase(list, words.partFits, &word) >= 0) {
-        reasons.append(QStringLiteral("part or fits (\"%1\")").arg(word));
+        reasons.append(QStringLiteral("\"%1\" = part/fits word -> part or fits").arg(word));
         return done(Bucket::PartFits);
     }
     // Part-only words, chips, revisions and board locations: a part, unless
     // a system title names the system itself (R10: "computer, new SID chip").
     const bool named = system && itemNamed(list, words);
     if (!named && firstNotWithItem(list, words.partOnly, words, &word) >= 0) {
-        reasons.append(QStringLiteral("part (\"%1\")").arg(word));
+        reasons.append(QStringLiteral("\"%1\" = part word, not after a with-word -> part").arg(word));
         return done(Bucket::PartFits);
     }
     if (!named) {
@@ -495,7 +513,7 @@ Match matchRow(const QString &title, const Identity &identity, const MatchWords 
     if (system && !named)
         accessories.append(words.systemAccessory);
     if (firstNotWithItem(list, accessories, words, &word) >= 0) {
-        reasons.append(QStringLiteral("accessory (\"%1\")").arg(word));
+        reasons.append(QStringLiteral("\"%1\" = accessory word, not after a with-word -> accessory").arg(word));
         return done(Bucket::Accessory);
     }
     if (const QString other = joinedOtherModel(codeList, models, others, words); !other.isEmpty()) {
@@ -512,8 +530,90 @@ Match matchRow(const QString &title, const Identity &identity, const MatchWords 
             return done(Bucket::NoMatch);
         }
     }
-    reasons.append(QStringLiteral("same item"));
+    // Every word was looked at: say what came with the item.
+    QStringList withWords = withItemPhrases(list, accessories, words);
+    withWords.append(withItemPhrases(list, words.documentation, words));
+    withWords.append(withItemPhrases(list, words.partOnly, words));
+    if (!withWords.isEmpty())
+        reasons.append(QStringLiteral("%1: comes with the item").arg(withWords.join(QStringLiteral(", "))));
+    reasons.append(QStringLiteral("no lot, documentation, part, accessory or other-model word for something else -> same item"));
     return done(Bucket::SameItem);
+}
+
+DescriptionFinding descriptionFinding(const QString &description, const Identity &identity, const MatchWords &words)
+{
+    DescriptionFinding finding;
+    const QStringList list = listWords(description);
+    if (list.isEmpty())
+        return finding;
+    auto found = [&finding](Bucket bucket, const QString &phrase, const QString &what) {
+        finding.bucket = bucket;
+        finding.reason = QStringLiteral("description: \"%1\" - %2").arg(phrase, what);
+    };
+    // "<word> only" ("leads only"). Not "only the <word>": "only the case is
+    // scratched" is about the item.
+    const auto onlyPhrase = [&list](const QStringList &phrases, QString *which) {
+        for (const QString &phrase : phrases) {
+            const qsizetype length = listWords(phrase).size();
+            for (const qsizetype at : phrasePositions(list, phrase)) {
+                const qsizetype after = at + length;
+                if (after < list.size() && list.at(after) == QLatin1String("only")) {
+                    *which = phrase + QStringLiteral(" only");
+                    return true;
+                }
+            }
+        }
+        return false;
+    };
+    QString which;
+    QStringList accessories = words.accessory;
+    accessories.append(words.systemAccessory);
+    if (onlyPhrase(accessories, &which)) {
+        found(Bucket::Accessory, which, QStringLiteral("accessory"));
+        return finding;
+    }
+    if (onlyPhrase(words.documentation, &which)) {
+        found(Bucket::Documentation, which, QStringLiteral("documentation"));
+        return finding;
+    }
+    QStringList parts = words.partOnly;
+    parts.append(words.partWords);
+    if (onlyPhrase(parts, &which)) {
+        found(Bucket::PartFits, which, QStringLiteral("part"));
+        return finding;
+    }
+    // The item itself is missing.
+    QStringList nouns = words.descriptionItemNouns;
+    if (!identity.model.isEmpty())
+        nouns.append(identity.model.toLower());
+    for (const QString &noun : std::as_const(nouns)) {
+        for (const QString &form : {noun + QStringLiteral(" not included"), noun + QStringLiteral(" is not included"),
+                                    QStringLiteral("does not include the ") + noun, QStringLiteral("without the ") + noun}) {
+            if (!phrasePositions(list, form).isEmpty()) {
+                found(Bucket::Accessory, form, QStringLiteral("the item itself is not included"));
+                return finding;
+            }
+        }
+    }
+    for (const QString &phrase : words.descriptionLot) {
+        if (!phrasePositions(list, phrase).isEmpty()) {
+            found(Bucket::Lot, phrase, QStringLiteral("lot"));
+            return finding;
+        }
+    }
+    for (const QString &phrase : words.descriptionParts) {
+        if (!phrasePositions(list, phrase).isEmpty() || !phrasePositions(titleWords(description.toLower()), phrase).isEmpty()) {
+            found(Bucket::PartFits, phrase, QStringLiteral("sold for parts"));
+            return finding;
+        }
+    }
+    for (const QString &phrase : words.descriptionUntested) {
+        if (!phrasePositions(list, phrase).isEmpty() || !phrasePositions(titleWords(description.toLower()), phrase).isEmpty()) {
+            finding.note = QStringLiteral("description: \"%1\"").arg(phrase);
+            break;
+        }
+    }
+    return finding;
 }
 
 QString likelyBrokenReason(const QString &title, const QString &ebayCondition, const MatchWords &words)

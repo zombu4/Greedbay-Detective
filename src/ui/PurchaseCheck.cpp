@@ -1,5 +1,7 @@
 #include "ui/PurchaseCheck.h"
 
+#include "lookup/Records.h"
+
 #include "lookup/Sellers.h"
 
 #include <QJsonArray>
@@ -36,6 +38,7 @@ bool PurchaseCheck::check(const QString &sellerId)
     m_found.reset();
     m_page = 0;
     m_orders = 0;
+    m_checkingItem = false;
     if (!lookup::isSellerId(sellerId)) {
         m_error = QStringLiteral("There is no eBay user id of this seller to look for.");
         emit changed();
@@ -56,6 +59,32 @@ bool PurchaseCheck::check(const QString &sellerId)
 std::optional<QString> PurchaseCheck::onReply(const QJsonObject &reply)
 {
     const QString status = reply.value(QStringLiteral("status")).toString();
+    if (m_checkingItem) {
+        // The item page (found() stays set: the purchase was found either way).
+        m_checkingItem = false;
+        if (status != QLatin1String("ok")) {
+            m_found->itemNote = status == QLatin1String("limit_reached")
+                                    ? QStringLiteral("today's eBay page limit is reached; the item was not checked")
+                                    : QStringLiteral("eBay did not show the item's page; the item was not checked");
+            return std::nullopt;
+        }
+        const lookup::ItemRecord item = lookup::ItemRecord::fromJson(reply.value(QStringLiteral("result")).toObject());
+        if (item.itemId != m_found->itemId) {
+            m_found->itemNote = QStringLiteral("the page shown is not this item's; the item was not checked");
+            return std::nullopt;
+        }
+        m_found->itemState = item.sold() ? QStringLiteral("sold")
+                             : item.availability == QLatin1String("InStock") ? QStringLiteral("for sale")
+                                                                              : QStringLiteral("unknown");
+        if (item.sellerId.compare(m_sellerId, Qt::CaseInsensitive) != 0) {
+            m_found->itemNote = item.sellerId.isEmpty() ? QStringLiteral("the item's page names no seller; the item was not checked")
+                                                        : QStringLiteral("the item's page names another seller");
+            return std::nullopt;
+        }
+        m_found->itemChecked = true;
+        m_found->itemNote = QStringLiteral("item checked: this seller's item, %1 on eBay").arg(m_found->itemState);
+        return std::nullopt;
+    }
     if (status != QLatin1String("ok")) {
         m_error = status == QLatin1String("limit_reached")
                       ? QStringLiteral("Today's eBay page limit is reached; your purchases were not read.")
@@ -77,7 +106,10 @@ std::optional<QString> PurchaseCheck::onReply(const QJsonObject &reply)
         // An order without a readable item number or month proves nothing.
         if (!itemPattern.match(itemId).hasMatch() || !monthPattern.match(month).hasMatch())
             continue;
-        m_found = Found{itemId, month};
+        m_found = Found{itemId, month, false, QStringLiteral("unknown"), QString()};
+        // The item check: its page, one more page in this session.
+        m_checkingItem = true;
+        m_task.fetchNext(QUrl(QStringLiteral("https://www.ebay.com/itm/") + itemId), ebay::PageKind::Item);
         return std::nullopt;
     }
     m_page = data.value(QStringLiteral("page")).toInt(m_page + 1);

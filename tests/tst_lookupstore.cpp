@@ -752,13 +752,18 @@ void TestLookupStore::sellerRules()
     QVERIFY(ratingNote(std::nullopt, 500, 96.0, 20).text.isEmpty());
     // Where eBay says the item is (owner decision 2026-10-21): China and Japan
     // only, by the last part of the location, without case.
-    QCOMPARE(originNote(QStringLiteral("China")).badge, QStringLiteral("CHINESIUM SELLER"));
-    QCOMPARE(originNote(QStringLiteral("Exampletown, Guangdong, China")).country, QStringLiteral("China"));
-    QCOMPARE(originNote(QStringLiteral("china")).country, QStringLiteral("China"));
-    QCOMPARE(originNote(QStringLiteral("Exampletown, Japan")).badge, QStringLiteral("JAPAN: SCALPER RISK"));
-    QVERIFY(originNote(QStringLiteral("Exampletown, Japan")).text.contains(QStringLiteral("located in Japan")));
-    for (const char *other : {"", "United States", "Hong Kong", "Taiwan", "China Grove, United States", "Japanese Garden, Canada"})
-        QVERIFY2(originNote(QString::fromLatin1(other)).country.isEmpty(), other);
+    QCOMPARE(originNote(QStringLiteral("China"), m_words).badge, QStringLiteral("CHINESIUM SELLER"));
+    QVERIFY(originNote(QStringLiteral("China"), m_words).china);
+    QCOMPARE(originNote(QStringLiteral("Exampletown, Guangdong, China"), m_words).country, QStringLiteral("China"));
+    QCOMPARE(originNote(QStringLiteral("china"), m_words).country, QStringLiteral("China"));
+    // Hong Kong and Taiwan count as China (owner decision c, 2026-10-21).
+    for (const char *china : {"Hong Kong", "Exampletown, Taiwan"})
+        QCOMPARE(originNote(QString::fromLatin1(china), m_words).badge, QStringLiteral("CHINESIUM SELLER"));
+    QCOMPARE(originNote(QStringLiteral("Exampletown, Japan"), m_words).badge, QStringLiteral("JAPAN: SCALPER RISK"));
+    QVERIFY(!originNote(QStringLiteral("Exampletown, Japan"), m_words).china);
+    QVERIFY(originNote(QStringLiteral("Exampletown, Japan"), m_words).text.contains(QStringLiteral("located in Japan")));
+    for (const char *other : {"", "United States", "China Grove, United States", "Japanese Garden, Canada"})
+        QVERIFY2(originNote(QString::fromLatin1(other), m_words).country.isEmpty(), other);
     // Shown without a count: judged on the percentage alone.
     QVERIFY(ratingNote(90.0, std::nullopt, 96.0, 20).flagged);
     // Seller ids and the classic feedback address with the kind as fragment.

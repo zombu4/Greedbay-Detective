@@ -155,10 +155,12 @@ list the list owner runs. Reading and reporting are separate switches.
   first on your own eBay Purchases page, in the app's browser. Your eBay name
   is never sent; the item number stays on the server (the list shows only the
   month), so the seller cannot look you up in their orders. The report is encrypted to the server's key (X25519 and
-  ML-KEM-768), inside HTTPS. One report per seller; a report goes live once
-  the server has confirmed the item on eBay's public item page, and any
-  report it cannot confirm waits for the list owner; anyone can dispute a
-  report, and the list owner removes reports on request.
+  ML-KEM-768), inside HTTPS. Before it is sent, the app opens that item's
+  eBay page (one more page) and checks it is this seller's item; the list
+  then shows the report as "item checked". One report per seller; a report
+  goes live at once (many reports for one seller in a day wait for the list
+  owner); anyone can dispute a report, and the list owner removes reports on
+  request.
 
 The server is a separate program: [tools/seller-list-server](tools/seller-list-server/README.md).
 Builds without the list owner's keys (`src/sellerlist/data/master.json`) say

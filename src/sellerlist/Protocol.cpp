@@ -228,7 +228,8 @@ QJsonObject Report::toJson() const
                        {QStringLiteral("itemId"), itemId},
                        {QStringLiteral("month"), month},
                        {QStringLiteral("createdAt"), timeText(createdAt)},
-                       {QStringLiteral("installKey"), QString::fromLatin1(installKey.toBase64())}};
+                       {QStringLiteral("installKey"), QString::fromLatin1(installKey.toBase64())},
+                       {QStringLiteral("itemCheckedInApp"), itemCheckedInApp}};
     if (!installSignature.isEmpty())
         object.insert(QStringLiteral("installSignature"), QString::fromLatin1(installSignature.toBase64()));
     return object;
@@ -243,9 +244,9 @@ std::optional<Report> Report::fromJson(const QJsonObject &object)
         object.value(QStringLiteral("installKey")).toString().toLatin1(), QByteArray::AbortOnBase64DecodingErrors);
     const QByteArray::FromBase64Result signature = QByteArray::fromBase64Encoding(
         object.value(QStringLiteral("installSignature")).toString().toLatin1(), QByteArray::AbortOnBase64DecodingErrors);
-    if (!created || !key || !signature)
+    if (!created || !key || !signature || !object.value(QStringLiteral("itemCheckedInApp")).isBool())
         return std::nullopt;
-    return Report{object.value(QStringLiteral("sellerId")).toString(),
+    Report report{object.value(QStringLiteral("sellerId")).toString(),
                   object.value(QStringLiteral("reason")).toString(),
                   object.value(QStringLiteral("text")).toString(),
                   object.value(QStringLiteral("itemId")).toString(),
@@ -253,6 +254,8 @@ std::optional<Report> Report::fromJson(const QJsonObject &object)
                   *created,
                   key.decoded,
                   signature.decoded};
+    report.itemCheckedInApp = object.value(QStringLiteral("itemCheckedInApp")).toBool();
+    return report;
 }
 
 QByteArray Report::signedBytes() const

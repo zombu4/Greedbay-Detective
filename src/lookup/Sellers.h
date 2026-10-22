@@ -65,19 +65,23 @@ struct RatingNote {
 // the app says "only N ratings" instead of judging (default 20).
 RatingNote ratingNote(std::optional<double> percent, std::optional<int> count, double threshold, int fewRatings);
 
-// Where the item is (owner decision 2026-10-21): eBay's "Located in" text
+struct MatchWords;
+
+// Where the item is (owner decisions 2026-10-21): eBay's "Located in" text
 // names where the item ships from - not where the seller is from. Items eBay
-// says are in China get the CHINESIUM SELLER badge; in Japan, the scalper
-// warning (junk at very high prices). Information only: no number changes.
+// says are in one of the chinaLocations (China, Hong Kong, Taiwan) get the
+// CHINESIUM SELLER badge; in one of the japanLocations, the scalper warning
+// (junk at very high prices). Information only: no number changes.
 struct OriginNote {
-    QString country; // "China" or "Japan" as eBay writes it; empty: no note
-    QString badge;   // short row badge
-    QString text;    // the sentence for the listing's warning card
+    QString country; // the country as listed (match-words.json); empty: no note
+    bool china = false;
+    QString badge; // short row badge
+    QString text;  // the sentence for the listing's warning card
 };
 // `location`: a search card's text after "Located in " ("China") or the item
 // page's line ("Shenzhen, China"). The country is its last comma-separated
 // part, compared without case; empty or any other country: no note.
-OriginNote originNote(const QString &location);
+OriginNote originNote(const QString &location, const MatchWords &words);
 
 // One review from the classic feedback page.
 struct FeedbackReview {

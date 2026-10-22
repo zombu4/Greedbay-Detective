@@ -259,6 +259,21 @@ void TestLookup::recordsFromJson()
     QJsonObject locatedItem = itemData();
     locatedItem.insert("location", "Exampletown, Guangdong, China");
     QCOMPARE(ItemRecord::fromJson(locatedItem).location, QStringLiteral("Exampletown, Guangdong, China"));
+    // Sold: the notice and OutOfStock together (recon 2026-10-21); either alone
+    // is not "sold". The description and why it is missing are kept.
+    QVERIFY(!item.sold());
+    QJsonObject soldItem = itemData();
+    soldItem.insert("availability", "OutOfStock");
+    QVERIFY(!ItemRecord::fromJson(soldItem).sold());
+    soldItem.insert("soldNotice", true);
+    QVERIFY(ItemRecord::fromJson(soldItem).sold());
+    soldItem.insert("availability", "InStock");
+    QVERIFY(!ItemRecord::fromJson(soldItem).sold());
+    soldItem.insert("description", QString(25000, QLatin1Char('a')));
+    QCOMPARE(ItemRecord::fromJson(soldItem).description.size(), 20000);
+    soldItem.remove("description");
+    soldItem.insert("descriptionMissing", "no description frame on the page");
+    QCOMPARE(ItemRecord::fromJson(soldItem).descriptionMissing, QStringLiteral("no description frame on the page"));
     QJsonObject euro = itemData();
     euro.insert("currency", "EUR");
     QCOMPARE(ItemRecord::fromJson(euro).priceCents, std::nullopt);

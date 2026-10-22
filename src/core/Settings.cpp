@@ -17,6 +17,8 @@ const QString kSharedReportKey = QStringLiteral("sharedlist/report");
 const QString kPageDelayMinKey = QStringLiteral("pace/pageDelayMinMs");
 const QString kPageDelayMaxKey = QStringLiteral("pace/pageDelayMaxMs");
 const QString kDailyPageCapKey = QStringLiteral("pace/dailyPageCap");
+const QString kDeepCheckKey = QStringLiteral("lookup/deepCheck");
+const QString kDeepCheckRowsKey = QStringLiteral("lookup/deepCheckRows");
 const QString kSoldDepthKey = QStringLiteral("lookup/soldDepth");
 const QString kActiveDepthKey = QStringLiteral("lookup/activeDepth");
 const QString kResearchDepthKey = QStringLiteral("lookup/researchDepth");
@@ -189,6 +191,27 @@ bool Settings::setPluginCallTimeLimitMs(int ms)
     if (ms < kMinPluginCallTimeLimitMs || ms > kMaxPluginCallTimeLimitMs)
         return false;
     m_settings.setValue(kPluginTimeLimitKey, ms);
+    return true;
+}
+
+bool Settings::deepCheck() const { return m_settings.value(kDeepCheckKey).toString() == QLatin1String("true"); }
+
+void Settings::setDeepCheck(bool enabled)
+{
+    m_settings.setValue(kDeepCheckKey, enabled ? QStringLiteral("true") : QStringLiteral("false"));
+}
+
+int Settings::deepCheckRows() const
+{
+    const int rows = storedInt(m_settings, kDeepCheckRowsKey);
+    return rows >= 1 && rows <= kMaxDeepCheckRows ? rows : kDefaultDeepCheckRows;
+}
+
+bool Settings::setDeepCheckRows(int rows)
+{
+    if (rows < 1 || rows > kMaxDeepCheckRows)
+        return false;
+    m_settings.setValue(kDeepCheckRowsKey, rows);
     return true;
 }
 

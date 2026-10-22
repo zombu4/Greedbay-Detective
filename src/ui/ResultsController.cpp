@@ -436,7 +436,7 @@ QList<RowsModel::Entry> ResultsController::entries(bool sameItem) const
             entry.sellerShared = record.sellerName.isEmpty() ? 0 : static_cast<int>(m_shared.value(record.sellerName.toLower()).size());
             entry.sellerBadge = lookup::ratingNote(record.sellerPositivePercent, record.sellerFeedbackCount, rules.threshold,
                                                    rules.fewRatings).badge;
-            const lookup::OriginNote origin = lookup::originNote(record.location);
+            const lookup::OriginNote origin = m_words ? lookup::originNote(record.location, *m_words) : lookup::OriginNote();
             entry.origin = origin.badge;
             entry.originText = origin.text;
             entry.where = soldRow ? (record.confirmed ? QStringLiteral("sold") : QStringLiteral("sold, price not confirmed"))
@@ -575,7 +575,36 @@ QString ResultsController::brokenReason() const
     if (!m_words || !hasLookup())
         return {};
     const lookup::ItemRecord &item = m_saved.result.item;
-    return lookup::likelyBrokenReason(item.title, item.condition, *m_words);
+    const QString reason = lookup::likelyBrokenReason(item.title, item.condition, *m_words);
+    if (!reason.isEmpty())
+        return reason;
+    // Then the seller's description: sold for parts, or untested.
+    const lookup::DescriptionFinding finding = listingDescription();
+    if (finding.bucket == Bucket::PartFits && finding.reason.contains(QLatin1String("sold for parts")))
+        return finding.reason;
+    return finding.note;
+}
+
+QString ResultsController::descriptionLine() const
+{
+    const lookup::DescriptionFinding finding = listingDescription();
+    if (finding.bucket == Bucket::SameItem)
+        return {};
+    return QStringLiteral("The seller's %1. This listing may not be the item itself - read the description before you buy.")
+        .arg(finding.reason);
+}
+
+QString ResultsController::descriptionStatus() const
+{
+    if (!hasLookup())
+        return {};
+    const lookup::ItemRecord &item = m_saved.result.item;
+    if (!item.description.isEmpty())
+        return QStringLiteral("Seller's description read (%1 characters).")
+            .arg(QLocale(QLocale::English, QLocale::UnitedStates).toString(item.description.size()));
+    if (!item.descriptionMissing.isEmpty())
+        return QStringLiteral("Seller's description not read: %1.").arg(item.descriptionMissing);
+    return {};
 }
 
 QString ResultsController::brokenLine() const

@@ -43,6 +43,8 @@ struct LookupResult {
     bool researchUnavailable = false;
     // Pages the browser loaded and answered for (expected or not).
     int pagesLoaded = 0;
+    // Item pages the Deep check loaded after the searches (0: it did not run).
+    int deepCheckPages = 0;
     QStringList notes;
     qint64 elapsedMs = 0;
 };

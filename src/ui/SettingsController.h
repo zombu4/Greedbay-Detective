@@ -33,6 +33,9 @@ class SettingsController : public QObject {
     Q_PROPERTY(int pageDelayMinSeconds READ pageDelayMinSeconds NOTIFY changed)
     Q_PROPERTY(int pageDelayMaxSeconds READ pageDelayMaxSeconds NOTIFY changed)
     Q_PROPERTY(int dailyPageCap READ dailyPageCap NOTIFY changed)
+    Q_PROPERTY(bool deepCheck READ deepCheck NOTIFY changed)
+    Q_PROPERTY(int deepCheckRows READ deepCheckRows NOTIFY changed)
+    Q_PROPERTY(int maxDeepCheckRows READ maxDeepCheckRows CONSTANT)
     // Sellers (owner decisions 2026-10-20).
     Q_PROPERTY(double sellerRatingThreshold READ sellerRatingThreshold NOTIFY changed)
     Q_PROPERTY(int sellerFewRatings READ sellerFewRatings NOTIFY changed)
@@ -67,6 +70,9 @@ public:
     int pageDelayMinSeconds() const;
     int pageDelayMaxSeconds() const;
     int dailyPageCap() const;
+    bool deepCheck() const;
+    int deepCheckRows() const;
+    int maxDeepCheckRows() const;
     double sellerRatingThreshold() const;
     int sellerFewRatings() const;
     int sellerFeedbackCacheDays() const;
@@ -90,6 +96,8 @@ public:
     Q_INVOKABLE QString setPreferredBrowser(const QString &browserId);
     Q_INVOKABLE QString setPageDelaySeconds(int minSeconds, int maxSeconds);
     Q_INVOKABLE QString setDailyPageCap(int cap);
+    // Deep check on/off and its row cap; "" or why not.
+    Q_INVOKABLE QString setDeepCheck(bool enabled, int rows);
     // An empty answer: stored (and sellerRulesChanged); else why not.
     Q_INVOKABLE QString setSellerRules(double threshold, int fewRatings, int cacheDays);
     Q_INVOKABLE QString useStandardDepths();

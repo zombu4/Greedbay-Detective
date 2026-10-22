@@ -215,6 +215,12 @@ private:
     void finishSave(lookup::LookupResult result, QList<lookup::Row> rows);
     void onModelIdentity(const model::ModelAssist::IdentityOutcome &outcome);
     void onModelSorted(const QList<lookup::Row> &rows, const QString &note);
+    // The rows are final: the Deep check when it is on (Settings), then
+    // finishSave() and the browser's close.
+    void proceedToSave(lookup::LookupResult result, QList<lookup::Row> rows);
+    void deepCheckNext();
+    void onDeepReply(const QJsonObject &reply);
+    void endDeepCheck(const QString &stopNote);
     void fetchPhoto(const lookup::ItemRecord &item);
     void onPhotoReply(QNetworkReply *reply, const QString &itemId, const QString &url);
 
@@ -253,6 +259,18 @@ private:
     QStringList m_modelNotes;
     std::optional<model::ModelAssist::IdentityOutcome> m_modelIdentity;
     lookup::LookupResult m_sortingResult;
+
+    // The Deep check (owner decision f3, 2026-10-21): the rows being checked,
+    // the row indexes still to open, the one open now, and what it did.
+    bool m_deepChecking = false;
+    lookup::LookupResult m_deepResult;
+    QList<lookup::Row> m_deepRows;
+    QList<qsizetype> m_deepQueue;
+    qsizetype m_deepCurrent = -1;
+    int m_deepTotal = 0;
+    int m_deepMoved = 0;
+    int m_deepNoted = 0;
+    int m_deepUnread = 0;
 };
 
 } // namespace app::ui

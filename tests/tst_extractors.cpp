@@ -89,6 +89,7 @@ private slots:
     void itemFromJsonLd();
     void itemFromDom();
     void itemShippingBlockOnOneLine();
+    void itemSold();
     void itemAuction();
     void research();
     void stopsAtFewerWordsDivider();
@@ -380,6 +381,7 @@ void TestExtractors::itemFromJsonLd()
     // What eBay shows, not the schema.org code.
     QCOMPARE(data.value("conditionText").toString(), QStringLiteral("Used"));
     QCOMPARE(data.value("availability").toString(), QStringLiteral("InStock"));
+    QCOMPARE(data.value("soldNotice").toBool(), false);
     QCOMPARE(data.value("listingStartedAt").toString(), QStringLiteral("2026-10-01T12:00:00.000Z"));
     const QJsonArray options = data.value("shippingOptions").toArray();
     QCOMPARE(options.size(), 1);
@@ -443,6 +445,19 @@ void TestExtractors::itemFromDom()
     QVERIFY(data.value("watchers").isNull());
     QCOMPARE(names(data.value("missing")),
              set({"itemId", "imageUrl", "availability", "listingStartedAt", "returnsText", "seller"}));
+}
+
+// A sold listing's page (structure seen 2026-10-21): availability OutOfStock
+// and eBay's notice "This listing sold on ...".
+void TestExtractors::itemSold()
+{
+    QString error;
+    const std::optional<QJsonObject> result = extract("item_sold.html", kItemUrl, PageKind::Item, &error);
+    QVERIFY2(result, qPrintable(error));
+    QCOMPARE(result->value("page").toString(), QStringLiteral("expected"));
+    const QJsonObject data = result->value("data").toObject();
+    QCOMPARE(data.value("availability").toString(), QStringLiteral("OutOfStock"));
+    QCOMPARE(data.value("soldNotice").toBool(), true);
 }
 
 // An auction item page (structure seen 2026-10-19): the auction, its bids

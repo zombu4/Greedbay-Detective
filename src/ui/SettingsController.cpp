@@ -64,6 +64,9 @@ QString SettingsController::workFolder() const { return QDir::toNativeSeparators
 int SettingsController::pageDelayMinSeconds() const { return Settings(m_folder.settingsPath()).pageDelayMinMs() / kMsPerSecond; }
 int SettingsController::pageDelayMaxSeconds() const { return Settings(m_folder.settingsPath()).pageDelayMaxMs() / kMsPerSecond; }
 int SettingsController::dailyPageCap() const { return Settings(m_folder.settingsPath()).dailyPageCap(); }
+bool SettingsController::deepCheck() const { return Settings(m_folder.settingsPath()).deepCheck(); }
+int SettingsController::deepCheckRows() const { return Settings(m_folder.settingsPath()).deepCheckRows(); }
+int SettingsController::maxDeepCheckRows() const { return Settings::kMaxDeepCheckRows; }
 double SettingsController::sellerRatingThreshold() const { return Settings(m_folder.settingsPath()).sellerRatingThreshold(); }
 int SettingsController::sellerFewRatings() const { return Settings(m_folder.settingsPath()).sellerFewRatings(); }
 int SettingsController::sellerFeedbackCacheDays() const { return Settings(m_folder.settingsPath()).sellerFeedbackCacheDays(); }
@@ -151,6 +154,15 @@ QString SettingsController::setDailyPageCap(int cap)
 {
     Settings settings(m_folder.settingsPath());
     return stored(settings, settings.setDailyPageCap(cap), QStringLiteral("The daily cap must be at least 1 page."));
+}
+
+QString SettingsController::setDeepCheck(bool enabled, int rows)
+{
+    Settings settings(m_folder.settingsPath());
+    if (!settings.setDeepCheckRows(rows))
+        return QStringLiteral("Deep check: from 1 to %1 rows.").arg(Settings::kMaxDeepCheckRows);
+    settings.setDeepCheck(enabled);
+    return stored(settings, true, QString());
 }
 
 QString SettingsController::useStandardDepths()

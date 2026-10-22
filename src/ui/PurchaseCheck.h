@@ -18,6 +18,11 @@ namespace app::ui {
 // session, page by page (paced, counted in the daily cap), until it finds an
 // order from the seller. Only that order's item number and month are kept;
 // nothing else of the page is read (purchases.js) or leaves this object.
+// Then the item check (owner decision a, 2026-10-21): that item's eBay page,
+// one more page in the same session - the item page of that number, and its
+// seller (the page's seller feedback links) is the reported seller; its sold
+// state is read too (recon 2026-10-21: availability OutOfStock and "This
+// listing sold on").
 class PurchaseCheck : public QObject {
     Q_OBJECT
 
@@ -28,6 +33,12 @@ public:
     struct Found {
         QString itemId;
         QString month; // "2026-10"
+        // The item check: the page of this item names the seller.
+        bool itemChecked = false;
+        // "sold", "for sale" (still listed, e.g. more than one available) or
+        // "unknown"; and what the check found, in words.
+        QString itemState = QStringLiteral("unknown");
+        QString itemNote;
     };
 
     explicit PurchaseCheck(WorkFolder folder, QObject *parent = nullptr);
@@ -60,6 +71,7 @@ private:
     std::optional<Found> m_found;
     int m_page = 0;
     int m_orders = 0;
+    bool m_checkingItem = false;
 };
 
 } // namespace app::ui

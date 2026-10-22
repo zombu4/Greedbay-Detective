@@ -342,7 +342,13 @@ void TestModel::prompts()
     QCOMPARE(cleanInput(QStringLiteral("a\x01\x02 b​ c\n d"), 100), QStringLiteral("a b c d"));
     QCOMPARE(cleanInput(QString(300, QLatin1Char('x')), 200).size(), 200);
 
-    QVERIFY(grammarText(Grammar::Identity).startsWith(QStringLiteral("root ::= \"{\\\"brand\\\":\\\"\"")));
+    // The grammars allow white space between the JSON tokens (measured
+    // 2026-10-21: without it the model was forced off its own tokens).
+    QVERIFY(grammarText(Grammar::Identity).startsWith(QStringLiteral("root ::= \"{\" ws \"\\\"brand\\\"\" ws")));
+    QVERIFY(grammarText(Grammar::Identity).contains(QStringLiteral("ws ::= [ \\t\\n]{0,20}")));
+    QVERIFY(grammarText(Grammar::Sort).contains(QStringLiteral("ws ::= [ \\t\\n]{0,20}")));
+    QCOMPARE(QString::fromLatin1(kIdentityVersion), QStringLiteral("identity-2"));
+    QCOMPARE(QString::fromLatin1(kSortVersion), QStringLiteral("sort-2"));
     for (const QString &category : sortCategories())
         QVERIFY(grammarText(Grammar::Sort).contains(QLatin1Char('"') + category + QLatin1Char('"')));
 }
@@ -423,6 +429,21 @@ void TestModel::assistIdentity_data()
                                       << "not readable";
 }
 
+namespace {
+
+// The "model" log lines (owner decision e, 2026-10-21) while a test runs.
+QStringList g_modelLines;
+QtMessageHandler g_previousHandler = nullptr;
+void captureModelLines(QtMsgType type, const QMessageLogContext &context, const QString &message)
+{
+    if (context.category && QLatin1String(context.category) == QLatin1String("model"))
+        g_modelLines.append(message);
+    else if (g_previousHandler)
+        g_previousHandler(type, context, message);
+}
+
+} // namespace
+
 void TestModel::assistIdentity()
 {
     QFETCH(QString, title);
@@ -434,11 +455,21 @@ void TestModel::assistIdentity()
     QVERIFY(mayAskIdentity(rules));
     std::unique_ptr<ModelAssist> helper = assist({{QStringLiteral("Title: ") + title, answer}});
     QSignalSpy done(helper.get(), &ModelAssist::identityDone);
+    g_modelLines.clear();
+    g_previousHandler = qInstallMessageHandler(captureModelLines);
     helper->checkIdentity(listing, rules);
-    QVERIFY(done.wait(20000));
+    const bool answered = done.wait(20000);
+    qInstallMessageHandler(g_previousHandler);
+    QVERIFY(answered);
     const auto outcome = done.first().first().value<ModelAssist::IdentityOutcome>();
     QCOMPARE(int(outcome.kind), kind);
     QVERIFY2(outcome.note.contains(noteHas), qPrintable(outcome.note));
+    // One log line: prompt version, item number, result, time; never the title.
+    QCOMPARE(g_modelLines.size(), 1);
+    QVERIFY2(g_modelLines.first().startsWith(QStringLiteral("identity-2 listing ")), qPrintable(g_modelLines.first()));
+    QVERIFY2(g_modelLines.first().contains(QStringLiteral("; result: ")) && g_modelLines.first().contains(QStringLiteral(" ms")),
+             qPrintable(g_modelLines.first()));
+    QVERIFY2(!g_modelLines.first().contains(title), qPrintable(g_modelLines.first()));
     helper->end();
 }
 

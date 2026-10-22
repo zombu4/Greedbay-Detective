@@ -6,7 +6,6 @@
 // 127.0.0.1 only.
 
 #include "HttpServer.h"
-#include "ItemCheck.h"
 #include "KeyFiles.h"
 #include "ServerStore.h"
 #include "Service.h"
@@ -32,29 +31,12 @@
 
 using namespace app::sellerlist;
 using sellerserver::HttpServer;
-using sellerserver::ItemVerdict;
 using sellerserver::ServerStore;
 using sellerserver::Service;
 
 namespace {
 
 const QString kHost = QStringLiteral("list.example.org");
-
-// A synthetic item page with what the server reads: the JSON-LD ItemPage and
-// the seller's feedback links of the item.
-QByteArray itemPage(const QString &itemId, const QStringList &sellers, bool jsonLd = true)
-{
-    QByteArray html = "<html><head>";
-    if (jsonLd)
-        html += R"(<script type="application/ld+json">{"@context":"https://schema.org","@type":"ItemPage","name":"x"}</script>)";
-    html += "</head><body>";
-    for (const QString &seller : sellers) {
-        html += "<a href=\"https://www.example.test/fdbk/mweb_profile?fdbkType=FeedbackReceivedAsSeller&amp;item_id="
-            + itemId.toLatin1() + "&amp;username=" + seller.toLatin1() + "&amp;sort=RELEVANCE\">ratings</a>";
-    }
-    html += "</body></html>";
-    return html;
-}
 
 struct Chain {
     SignKeys master;
@@ -117,7 +99,6 @@ private slots:
     void secretAtRest();
     void trustChain();
     void reportChecks();
-    void itemPageReader();
     void httpLimits();
     void serverHostNames();
     void clientNotSetUp();
@@ -332,29 +313,6 @@ void TestSellerList::reportChecks()
     QVERIFY(!tooLongDispute.problem().isEmpty());
 }
 
-void TestSellerList::itemPageReader()
-{
-    const QString item = QStringLiteral("123456789012");
-    QCOMPARE(sellerserver::readItemPage(itemPage(item, {QStringLiteral("Made_Up_Seller")}), item, QStringLiteral("made_up_seller")).verdict,
-             ItemVerdict::Confirmed);
-    QCOMPARE(sellerserver::readItemPage(itemPage(item, {QStringLiteral("someone_else")}), item, QStringLiteral("made_up_seller")).verdict,
-             ItemVerdict::OtherSeller);
-    QCOMPARE(sellerserver::readItemPage(itemPage(item, {QStringLiteral("made_up_seller")}, false), item, QStringLiteral("made_up_seller")).verdict,
-             ItemVerdict::NotReadable);
-    QCOMPARE(sellerserver::readItemPage(itemPage(item, {}), item, QStringLiteral("made_up_seller")).verdict, ItemVerdict::NotReadable);
-    QCOMPARE(sellerserver::readItemPage(itemPage(item, {QStringLiteral("made_up_seller"), QStringLiteral("someone_else")}), item,
-                                        QStringLiteral("made_up_seller"))
-                 .verdict,
-             ItemVerdict::NotReadable);
-    // Links of another item do not count.
-    QCOMPARE(sellerserver::readItemPage(itemPage(QStringLiteral("999999999999"), {QStringLiteral("made_up_seller")}), item,
-                                        QStringLiteral("made_up_seller"))
-                 .verdict,
-             ItemVerdict::NotReadable);
-    QCOMPARE(sellerserver::readItemPage("<html>a sign-in page</html>", item, QStringLiteral("made_up_seller")).verdict,
-             ItemVerdict::NotReadable);
-}
-
 void TestSellerList::httpLimits()
 {
     HttpServer::Limits limits;
@@ -428,35 +386,21 @@ void TestSellerList::clientNotSetUp()
 
 namespace {
 
-// A server data set as the owner's commands would make it, plus a fake item
-// page site.
+// A server data set as the owner's commands would make it.
 struct LocalServer {
     QTemporaryDir dir;
     Chain chain;
     ServerStore store;
     std::unique_ptr<Service> service;
     std::unique_ptr<HttpServer> http;
-    std::unique_ptr<HttpServer> pages;
-    QHash<QString, QByteArray> pageByItem;
 
     bool start(const Service::Limits &limits, QString *error, const HttpServer::Tls *tls = nullptr)
     {
         chain = makeChain(QDateTime::currentDateTimeUtc());
-        pages = std::make_unique<HttpServer>([this](const HttpServer::Request &request) {
-            const QString item = QString::fromLatin1(request.path.mid(5));
-            if (!request.path.startsWith("/itm/") || !pageByItem.contains(item))
-                return HttpServer::Response{404, "text/plain", "no"};
-            return HttpServer::Response{200, "text/html", pageByItem.value(item)};
-        });
-        if (!pages->listen(QHostAddress::LocalHost, 0, error))
-            return false;
         if (!store.open(dir.filePath(QStringLiteral("store.sqlite")), QStringLiteral("test-%1").arg(quintptr(this)), error))
             return false;
-        sellerserver::ItemPageFetcher::Settings fetcher;
-        fetcher.base = QUrl(QStringLiteral("http://127.0.0.1:%1").arg(pages->port()));
-        fetcher.gapMs = 10;
         Service::Keys keys{chain.serverSign, chain.serverBox, chain.master.pub, chain.authorizationDoc, {}};
-        service = std::make_unique<Service>(&store, keys, fetcher, limits, dir.filePath(QStringLiteral("list.json")));
+        service = std::make_unique<Service>(&store, keys, limits, dir.filePath(QStringLiteral("list.json")));
         if (!service->start(error))
             return false;
         http = std::make_unique<HttpServer>([this](const HttpServer::Request &request) { return service->handle(request); });
@@ -480,7 +424,6 @@ void TestSellerList::serviceEndToEnd()
     QString error;
     QVERIFY2(server.start(Service::Limits{}, &error), qPrintable(error));
     const QString item = QStringLiteral("123456789012");
-    server.pageByItem.insert(item, itemPage(item, {QStringLiteral("made_up_seller")}));
 
     QTemporaryDir appDir;
     QNetworkAccessManager network;
@@ -498,16 +441,18 @@ void TestSellerList::serviceEndToEnd()
     // still signs lists the apps accept as newer.
     QVERIFY(firstSequence >= QDateTime::currentSecsSinceEpoch() - 60);
 
-    // A report goes live after the item check.
+    // A report goes live at once, "item checked" as the reporter's app found
+    // it (owner decision a, 2026-10-21: the server loads no eBay page).
     QSignalSpy settled(server.service.get(), &Service::reportSettled);
     QSignalSpy sent(&client, &ListClient::reportSent);
     Report report{QStringLiteral("made_up_seller"), QStringLiteral("not_as_described"), QStringLiteral("  Arrived broken.  "),
                   item, QStringLiteral("2026-09"), {}, {}, {}};
+    report.itemCheckedInApp = true;
     client.sendReport(report);
     QVERIFY(sent.wait(10000));
     QVERIFY2(sent.last().at(0).toBool(), qPrintable(sent.last().at(2).toString()));
     QCOMPARE(sent.last().at(1).toString(), QStringLiteral("received"));
-    QVERIFY(settled.wait(10000));
+    QCOMPARE(settled.size(), 1);
     QCOMPARE(settled.last().at(1).value<ServerStore::Status>(), ServerStore::Status::Published);
     // The installation key file is owner-only (Unix permissions).
     QVERIFY(QFile::exists(appDir.filePath(QStringLiteral("install.json"))));
@@ -558,22 +503,25 @@ void TestSellerList::serviceEndToEnd()
     QVERIFY(fetched.last().at(0).toBool());
     QVERIFY(!client.list()->list.find(QStringLiteral("made_up_seller")));
 
-    // An item page naming another seller holds the report.
+    // A report whose item the app could not check goes live too, without
+    // "item checked".
     const QString other = QStringLiteral("223456789012");
-    server.pageByItem.insert(other, itemPage(other, {QStringLiteral("someone_else")}));
     client.sendReport(Report{QStringLiteral("second_made_up"), QStringLiteral("scam"), QStringLiteral("No item."), other,
                              QStringLiteral("2026-09"), {}, {}, {}});
     QVERIFY(sent.wait(10000));
     QVERIFY(sent.last().at(0).toBool());
-    QVERIFY(settled.wait(10000));
-    QCOMPARE(settled.last().at(1).value<ServerStore::Status>(), ServerStore::Status::Held);
-    // A missing page holds it too.
-    client.sendReport(Report{QStringLiteral("third_made_up"), QStringLiteral("scam"), QStringLiteral("No item."),
-                             QStringLiteral("323456789012"), QStringLiteral("2026-09"), {}, {}, {}});
-    QVERIFY(sent.wait(10000));
-    QVERIFY(settled.wait(10000));
-    QCOMPARE(settled.last().at(1).value<ServerStore::Status>(), ServerStore::Status::Held);
-    QCOMPARE(server.store.reports(ServerStore::Status::Held, &error)->size(), 2);
+    QCOMPARE(settled.last().at(1).value<ServerStore::Status>(), ServerStore::Status::Published);
+    client.fetchList();
+    QVERIFY(fetched.wait(10000));
+    QVERIFY(fetched.last().at(0).toBool());
+    const ListedSeller *unchecked = client.list()->list.find(QStringLiteral("second_made_up"));
+    QVERIFY(unchecked);
+    QVERIFY(!unchecked->reports.first().itemChecked);
+    // A report without the app's flag is not a report of this version.
+    QJsonObject old = report.toJson();
+    old.remove(QStringLiteral("itemCheckedInApp"));
+    QVERIFY(!Report::fromJson(old));
+    QCOMPARE(server.store.reports(ServerStore::Status::Held, &error)->size(), 0);
 }
 
 void TestSellerList::serviceLimits()
@@ -649,13 +597,13 @@ void TestSellerList::serviceLimits()
     mismatched.chain = makeChain(now);
     QVERIFY(mismatched.store.open(mismatched.dir.filePath(QStringLiteral("s.sqlite")), QStringLiteral("mismatch"), &error));
     Service::Keys keys{*newSignKeys(), mismatched.chain.serverBox, mismatched.chain.master.pub, mismatched.chain.authorizationDoc, {}};
-    Service refused(&mismatched.store, keys, {}, {}, mismatched.dir.filePath(QStringLiteral("list.json")));
+    Service refused(&mismatched.store, keys, {}, mismatched.dir.filePath(QStringLiteral("list.json")));
     QVERIFY(!refused.start(&error));
     // Nor one whose key the master revoked.
     const Revocation revocation{mismatched.chain.serverSign.pub, 1, now};
     Service::Keys revokedKeys{mismatched.chain.serverSign, mismatched.chain.serverBox, mismatched.chain.master.pub,
                               mismatched.chain.authorizationDoc, {*signDocument(revocation.toBody(), mismatched.chain.master)}};
-    Service revoked(&mismatched.store, revokedKeys, {}, {}, mismatched.dir.filePath(QStringLiteral("list.json")));
+    Service revoked(&mismatched.store, revokedKeys, {}, mismatched.dir.filePath(QStringLiteral("list.json")));
     QVERIFY(!revoked.start(&error));
     QVERIFY(error.contains(QStringLiteral("revoked")));
 }

@@ -2012,7 +2012,9 @@
             "fits",
             "replacement",
             "compatible",
-            "p/n"
+            "p/n",
+            "to connect",
+            "connects to"
         ]
     },
     "partWords": {
@@ -2118,7 +2120,9 @@
             "leads",
             "case",
             "holster",
-            "holsters"
+            "holsters",
+            "cable",
+            "cables"
         ]
     },
     "notAccessory": {
@@ -2160,6 +2164,55 @@
         "words": [
             "and",
             "&"
+        ]
+    },
+    "chinaLocations": {
+        "words": [
+            "China",
+            "Hong Kong",
+            "Taiwan"
+        ]
+    },
+    "japanLocations": {
+        "words": [
+            "Japan"
+        ]
+    },
+    "descriptionItemNouns": {
+        "words": [
+            "unit",
+            "main unit",
+            "device",
+            "instrument",
+            "machine",
+            "item itself"
+        ]
+    },
+    "descriptionParts": {
+        "words": [
+            "for parts",
+            "parts only",
+            "parts or repair",
+            "parts/repair",
+            "not working",
+            "does not work",
+            "for repair"
+        ]
+    },
+    "descriptionUntested": {
+        "words": [
+            "untested",
+            "not tested",
+            "no way of testing",
+            "unable to test",
+            "as is",
+            "as-is"
+        ]
+    },
+    "descriptionLot": {
+        "words": [
+            "lot of",
+            "job lot"
         ]
     },
     "notTheItem": {

@@ -28,18 +28,15 @@ HttpServer::Response answer(int status, const QString &result, const QString &wh
 
 } // namespace
 
-Service::Service(ServerStore *store, Keys keys, ItemPageFetcher::Settings fetcher, Limits limits, QString listFile,
-                 QObject *parent)
+Service::Service(ServerStore *store, Keys keys, Limits limits, QString listFile, QObject *parent)
     : QObject(parent),
       m_store(store),
       m_keys(std::move(keys)),
       m_limits(limits),
       m_listFile(std::move(listFile)),
-      m_fetcher(new ItemPageFetcher(std::move(fetcher), this)),
       m_listTimer(new QTimer(this)),
       m_clock([] { return QDateTime::currentDateTimeUtc(); })
 {
-    connect(m_fetcher, &ItemPageFetcher::finished, this, &Service::onItemChecked);
     connect(m_listTimer, &QTimer::timeout, this, [this] {
         QString error;
         if (!publish(false, &error))
@@ -86,8 +83,14 @@ bool Service::start(QString *error)
     const std::optional<QList<ServerStore::StoredReport>> pending = m_store->reports(ServerStore::Status::Pending, error);
     if (!pending)
         return false;
-    for (const ServerStore::StoredReport &stored : *pending)
-        m_fetcher->check(stored.report.id, stored.itemId, stored.sellerId);
+    // The server no longer loads eBay pages (owner decision a, 2026-10-21):
+    // a report an older version left waiting for that check goes to the
+    // owner's queue.
+    for (const ServerStore::StoredReport &stored : *pending) {
+        if (!m_store->setStatus(stored.report.id, ServerStore::Status::Held,
+                                QStringLiteral("received before the app's own item check; look at it"), error))
+            return false;
+    }
     if (!publish(true, error))
         return false;
     m_listTimer->start(m_limits.listCheckMs);
@@ -142,25 +145,28 @@ HttpServer::Response Service::receiveReport(const QByteArray &envelope)
     if (*byInstall >= m_limits.perInstallPerDay)
         return answer(429, QStringLiteral("refused"), QStringLiteral("too many reports from this installation today"));
 
+    // Published at once (owner decision a, 2026-10-21), with the reporter's
+    // app's item check as "item checked"; only a burst for one seller is held.
     ServerStore::StoredReport stored;
-    stored.report = {sl::fingerprint(report->signedBytes()), report->reason, report->text.trimmed(), report->month, false};
+    stored.report = {sl::fingerprint(report->signedBytes()), report->reason, report->text.trimmed(), report->month,
+                     report->itemCheckedInApp};
     stored.itemId = report->itemId;
     stored.sellerId = report->sellerId;
     stored.installKey = report->installKey;
     stored.receivedAt = time;
     const bool burst = *forSeller >= m_limits.sellerBurst;
-    stored.status = burst ? ServerStore::Status::Held : ServerStore::Status::Pending;
+    stored.status = burst ? ServerStore::Status::Held : ServerStore::Status::Published;
     if (burst)
         stored.holdReason = QStringLiteral("many reports for this seller in 24 hours");
     if (!m_store->addReport(stored, &error)) {
         emit problem(error);
         return answer(500, QStringLiteral("busy"), QStringLiteral("the server could not store the report"));
     }
-    if (burst) {
-        emit reportSettled(stored.report.id, ServerStore::Status::Held);
+    emit reportSettled(stored.report.id, stored.status);
+    if (burst)
         return answer(202, QStringLiteral("held"), QStringLiteral("held for the list owner to look at"));
-    }
-    m_fetcher->check(stored.report.id, stored.itemId, stored.sellerId);
+    if (!publish(false, &error))
+        emit problem(error);
     return answer(202, QStringLiteral("received"));
 }
 
@@ -193,24 +199,6 @@ HttpServer::Response Service::receiveDispute(const QByteArray &envelope)
         return answer(500, QStringLiteral("busy"), QStringLiteral("the server could not store the dispute"));
     }
     return answer(202, QStringLiteral("received"));
-}
-
-void Service::onItemChecked(const QString &reportId, const ItemReading &reading)
-{
-    QString error;
-    const std::optional<ServerStore::StoredReport> stored = m_store->report(reportId, &error);
-    if (!stored || stored->status != ServerStore::Status::Pending)
-        return; // removed or decided by the owner meanwhile
-    const bool confirmed = reading.verdict == ItemVerdict::Confirmed;
-    const ServerStore::Status status = confirmed ? ServerStore::Status::Published : ServerStore::Status::Held;
-    const QString why = confirmed ? QString() : QStringLiteral("item check: %1").arg(reading.why);
-    if (!m_store->setStatus(reportId, status, why, &error, confirmed)) {
-        emit problem(error);
-        return;
-    }
-    emit reportSettled(reportId, status);
-    if (confirmed && !publish(false, &error))
-        emit problem(error);
 }
 
 bool Service::publish(bool force, QString *error)

@@ -7,13 +7,17 @@ namespace app::model {
 
 namespace {
 
-// Measured 2026-10-20 (identity run, 19 titles), verbatim.
+// Measured 2026-10-20 (identity run, 19 titles); the model line changed
+// 2026-10-21 (case 11: the title's model number before the seller's MPN;
+// the 6 saved owner listings with their specifics: 6 of 6 brands and models
+// right, the SG80 listing whose MPN says "PA-81" now "SG80").
 const char kIdentitySystem[] =
     "You read one eBay listing title, and its item specifics if given, and name the item for sale.\n"
     "Answer with JSON only.\n"
     "- brand: the maker as the title or the specifics name it; \"\" if none is named.\n"
-    "- model: the maker's model number exactly as the maker writes it (for example IM-13, 8904A, 2022, DSO2C10); \"\" if "
-    "the listing names none.\n"
+    "- model: the maker's model number exactly as the maker writes it (for example IM-13, 8904A, 2022, DSO2C10). When "
+    "the title names a model number, take it from the title: item specifics such as MPN are typed by the seller and "
+    "can be wrong. \"\" if the listing names none.\n"
     "- product: what the item is, in 1 to 4 words (for example \"signal generator\", \"tube amplifier\", \"radio\").\n"
     "- confident: true only if the model number appears in the title itself.\n"
     "Never use as brand or model: a specification (100MHz, 2CH, 10kHz-1000MHz, 7\", 500 V/div, 1500V), a seller's stock "
@@ -30,17 +34,29 @@ const char kSortSystem[] =
     "\"unknown\" = not enough information.\n"
     "Reply with JSON only.";
 
+// The grammars fix the answer's keys and their order, and allow white space
+// between the JSON tokens (ws, as llama.cpp's grammars/json.gbnf does).
+// Measured 2026-10-21 (Qwen3-4B Q4_K_M, the pinned engine): the model writes
+// its JSON spaced over several lines; a grammar without white space forced
+// it off its own tokens - after `":` only tokens starting with a quote were
+// allowed, and the brand came out "People's Republic of China" for 5 of 6
+// listings it names right without a grammar, and 14 of 456 sort answers
+// changed (9 of them to "same item"). With ws: 6 of 6 brands as without a
+// grammar, 312 of 312 sort answers the same.
 // A string the grammar allows: no quote, no backslash, no control character
 // (the character class of llama.cpp's grammars/json.gbnf without escapes),
-// at most 80 characters.
+// at most 80 characters. ws: at most 20 spaces, tabs or line breaks.
 const char kIdentityGrammar[] =
-    "root ::= \"{\\\"brand\\\":\\\"\" text \"\\\",\\\"model\\\":\\\"\" text \"\\\",\\\"product\\\":\\\"\" text "
-    "\"\\\",\\\"confident\\\":\" (\"true\" | \"false\") \"}\"\n"
-    "text ::= [^\"\\\\\\x7F\\x00-\\x1F]{0,80}\n";
+    "root ::= \"{\" ws \"\\\"brand\\\"\" ws \":\" ws \"\\\"\" text \"\\\"\" ws \",\" ws \"\\\"model\\\"\" ws \":\" ws "
+    "\"\\\"\" text \"\\\"\" ws \",\" ws \"\\\"product\\\"\" ws \":\" ws \"\\\"\" text \"\\\"\" ws \",\" ws "
+    "\"\\\"confident\\\"\" ws \":\" ws (\"true\" | \"false\") ws \"}\"\n"
+    "text ::= [^\"\\\\\\x7F\\x00-\\x1F]{0,80}\n"
+    "ws ::= [ \\t\\n]{0,20}\n";
 
 const char kSortGrammar[] =
-    "root ::= \"{\\\"category\\\":\\\"\" (\"same item\" | \"documentation\" | \"part-fits\" | \"companion\" | "
-    "\"accessory\" | \"lot\" | \"other model\" | \"unknown\") \"\\\"}\"\n";
+    "root ::= \"{\" ws \"\\\"category\\\"\" ws \":\" ws \"\\\"\" (\"same item\" | \"documentation\" | \"part-fits\" | "
+    "\"companion\" | \"accessory\" | \"lot\" | \"other model\" | \"unknown\") \"\\\"\" ws \"}\"\n"
+    "ws ::= [ \\t\\n]{0,20}\n";
 
 constexpr int kMaxTitle = 200;
 constexpr int kMaxSpecificValue = 80;

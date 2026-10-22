@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<!-- Synthetic test page shaped after an item page (/itm/<id>) with JSON-LD.
+     Every item, seller and number is invented; "00000" stands in for the
+     viewer's delivery ZIP code, which the extractor must never return. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Acme Model 7 Digital Multimeter | eBay</title>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"ItemPage","name":"Acme Model 7 Digital Multimeter"}</script>
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"Product","name":"Acme Model 7 Digital Multimeter &amp; Case &#39;Pro&#x27; &amp;lt; (JSON-LD title)",
+ "image":["https://images.example.com/acme-model-7-front.jpg","https://images.example.com/acme-model-7-back.jpg"],
+ "offers":{"@type":"Offer","price":"249.95","priceCurrency":"USD",
+   "itemCondition":"https://schema.org/UsedCondition","availability":"https://schema.org/OutOfStock",
+   "availabilityStarts":"2026-10-01T12:00:00.000Z","url":"https://www.ebay.com/itm/100000000010",
+   "shippingDetails":[{"@type":"OfferShippingDetails","shippingRate":{"@type":"MonetaryAmount","value":"12.50","currency":"USD"},
+     "shippingDestination":{"@type":"DefinedRegion","addressCountry":"US"}}]}}
+</script>
+<script type="application/ld+json">{ not valid json </script>
+</head>
+<body>
+<!-- A sold listing (structure seen 2026-10-21): the status notice. -->
+<div class="d-statusmessage__notice-live-region"><span class="ux-textspans">This listing sold on Wed, Oct 21 at 3:15 PM.</span></div>
+<h1 class="x-item-title"><span class="x-item-title__mainTitle">Acme Model 7 Digital Multimeter (DOM title)</span></h1>
+<div class="x-price-primary"><span>US $249.95</span> <span>or Best Offer</span></div>
+<div data-testid="x-offer-action"><button class="x-offer-action">Make offer</button></div>
+<div data-testid="x-bin-action"><a href="https://www.ebay.com/itm/100000000010">Buy It Now</a></div>
+<div class="x-quantity__availability"><span>3 available</span></div>
+<div class="x-item-condition-text"><span>Used</span> <span>An item that has been used previously.</span></div>
+<div class="ux-labels-values--shipping">
+  <div>US $12.50 Standard Shipping.</div>
+  <div>Delivery: Get it between Tue, Oct 21 and Fri, Oct 24 to 00000</div>
+  <div>Located in: Springfield, Illinois, United States</div>
+</div>
+<div class="ux-labels-values--returns">30 days returns. Buyer pays for return shipping.</div>
+<div data-testid="x-sellercard-atf"><a href="https://www.ebay.com/str/examplestore"><span class="avatar">E</span></a> <a href="https://www.ebay.com/str/examplestore"><span class="ux-textspans ux-textspans--BOLD">examplestore</span></a> <span>(4,321)</span> <span>99.1% positive</span></div>
+<div class="fake-menu"><a href="https://www.ebay.com/fdbk/mweb_profile?fdbkType=FeedbackReceivedAsSeller&item_id=100000000001&username=examplestore&tab=ALL&commentType=NEGATIVE">Negative</a> <a href="https://www.ebay.com/fdbk/mweb_profile?fdbkType=FeedbackReceivedAsSeller&item_id=100000000001&username=examplestore&tab=ALL&commentType=NEUTRAL">Neutral</a></div>
+<dl class="ux-layout-section-evo__item--table-view">
+  <dt class="ux-labels-values__labels">Brand</dt><dd>Acme</dd>
+  <dt class="ux-labels-values__labels">MPN:</dt><dd>meter</dd>
+</dl>
+<div><span>17 watchers</span></div>
+<div><span>3 sold</span></div>
+</body>
+</html>

@@ -259,7 +259,8 @@ std::optional<qint64> LookupStore::save(const QString &input, const LookupResult
     format.prepare(QStringLiteral("UPDATE lookups SET auction = :auction, bids = :bids, buy_it_now = :buy_it_now, "
                                   "best_offer = :best_offer, ends_in = :ends_in, ends_at = :ends_at, auction_end = :auction_end, "
                                   "auction_end_seconds = :auction_end_seconds, seller_feedback_count = :feedback, "
-                                  "seller_positive_percent = :positive, seller_id = :seller_id, location = :location WHERE id = :id"));
+                                  "seller_positive_percent = :positive, seller_id = :seller_id, location = :location, description = :description, "
+                                  "description_missing = :description_missing, deep_check_pages = :deep_check_pages WHERE id = :id"));
     format.bindValue(QStringLiteral(":auction"), item.auction ? 1 : 0);
     format.bindValue(QStringLiteral(":bids"), optionalInt(item.bids));
     format.bindValue(QStringLiteral(":buy_it_now"), item.buyItNow ? 1 : 0);
@@ -273,6 +274,9 @@ std::optional<qint64> LookupStore::save(const QString &input, const LookupResult
                                                                              : QVariant(QMetaType::fromType<double>()));
     format.bindValue(QStringLiteral(":seller_id"), textOrNull(item.sellerId));
     format.bindValue(QStringLiteral(":location"), notNullText(item.location));
+    format.bindValue(QStringLiteral(":description"), notNullText(item.description.left(20000)));
+    format.bindValue(QStringLiteral(":description_missing"), notNullText(item.descriptionMissing));
+    format.bindValue(QStringLiteral(":deep_check_pages"), std::max(0, result.deepCheckPages));
     format.bindValue(QStringLiteral(":id"), lookupId);
     if (!run(format, error))
         return fail();
@@ -407,7 +411,7 @@ std::optional<SavedLookup> LookupStore::load(qint64 lookupId, QString *error) co
         "identity_confident, identity_reason, family, known_issues, queries, sold_depth, active_depth, research_depth, "
         "history_days, research_unavailable, research_summary, notes, pages_loaded, elapsed_ms, auction, bids, buy_it_now, "
         "best_offer, ends_in, ends_at, auction_end, auction_end_seconds, seller_feedback_count, seller_positive_percent, "
-        "seller_id, location FROM lookups WHERE id = ?"));
+        "seller_id, location, description, description_missing, deep_check_pages FROM lookups WHERE id = ?"));
     query.addBindValue(lookupId);
     if (!run(query, error))
         return std::nullopt;
@@ -465,6 +469,9 @@ std::optional<SavedLookup> LookupStore::load(qint64 lookupId, QString *error) co
         item.sellerPositivePercent = query.value(40).toDouble();
     item.sellerId = query.value(41).toString();
     item.location = query.value(42).toString();
+    item.description = query.value(43).toString();
+    item.descriptionMissing = query.value(44).toString();
+    result.deepCheckPages = query.value(45).toInt();
 
     QSqlQuery rowsQuery(db);
     rowsQuery.prepare(QStringLiteral(

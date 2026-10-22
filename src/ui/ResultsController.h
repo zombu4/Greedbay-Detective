@@ -163,9 +163,14 @@ class ResultsController : public QObject {
     // Where eBay says the listing is (owner decision 2026-10-21): China or
     // Japan get a warning card.
     Q_PROPERTY(bool originFlag READ originFlag NOTIFY changed)
-    Q_PROPERTY(QString originCountry READ originCountry NOTIFY changed)
+    Q_PROPERTY(bool originChina READ originChina NOTIFY changed)
     Q_PROPERTY(QString originLabel READ originLabel NOTIFY changed)
     Q_PROPERTY(QString originLine READ originLine NOTIFY changed)
+    // What the listing's own description says (owner decision f2,
+    // 2026-10-21): a DESCRIPTION card.
+    Q_PROPERTY(bool descriptionFlag READ descriptionFlag NOTIFY changed)
+    Q_PROPERTY(QString descriptionLine READ descriptionLine NOTIFY changed)
+    Q_PROPERTY(QString descriptionStatus READ descriptionStatus NOTIFY changed)
     Q_PROPERTY(bool brokenFlag READ brokenFlag NOTIFY changed)
     Q_PROPERTY(QString brokenLine READ brokenLine NOTIFY changed)
     // Format (owner decision 2026-10-19 "Buy It Now vs auction").
@@ -311,10 +316,14 @@ public:
     QString ratingLine() const;
     // The user marked or unmarked a seller: the flags and badges again.
     Q_INVOKABLE void refreshSellerMarks();
-    bool originFlag() const { return !originCountry().isEmpty(); }
-    QString originCountry() const { return hasLookup() ? lookup::originNote(m_saved.result.item.location).country : QString(); }
-    QString originLabel() const { return hasLookup() ? lookup::originNote(m_saved.result.item.location).badge : QString(); }
-    QString originLine() const { return hasLookup() ? lookup::originNote(m_saved.result.item.location).text : QString(); }
+    bool originFlag() const { return !listingOrigin().country.isEmpty(); }
+    bool originChina() const { return listingOrigin().china; }
+    QString originLabel() const { return listingOrigin().badge; }
+    QString originLine() const { return listingOrigin().text; }
+    bool descriptionFlag() const { return !descriptionLine().isEmpty(); }
+    QString descriptionLine() const;
+    // "Description read (2,407 characters)." / "Description not read: why." / ""
+    QString descriptionStatus() const;
     bool brokenFlag() const { return !brokenReason().isEmpty(); }
     QString brokenLine() const;
     QString formatText() const;
@@ -432,6 +441,17 @@ private:
     // counted none, or fewer than the "Low" confidence count while Product
     // Research counted more.
     bool m_barFromResearch = false;
+    lookup::DescriptionFinding listingDescription() const
+    {
+        return hasLookup() && m_words
+                   ? lookup::descriptionFinding(m_saved.result.item.description, m_saved.result.identity, *m_words)
+                   : lookup::DescriptionFinding();
+    }
+    // The listing's own location note (none without a lookup or word lists).
+    lookup::OriginNote listingOrigin() const
+    {
+        return hasLookup() && m_words ? lookup::originNote(m_saved.result.item.location, *m_words) : lookup::OriginNote();
+    }
     // The numbers the bar shows (m_valuation.sold or .research).
     const lookup::ValueNumbers &barNumbers() const { return m_barFromResearch ? m_valuation.research : m_valuation.sold; }
     RowsModel *m_sameItem;

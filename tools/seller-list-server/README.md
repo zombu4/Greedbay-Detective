@@ -12,19 +12,15 @@ signatures are what the apps trust. It
   a day, at most 500 a day in all; a seller with 3 or more reports in 24 hours
   has new ones held for the owner. These limits use the installation's
   anonymous report key, never an IP address;
-- checks the reported item once on eBay's public item page (one page per
-  report, at least 10 seconds apart; after HTTP 403 or 429 it loads nothing
-  for an hour): a page whose seller links name the reported seller makes the
-  report go live; anything else holds it for the owner;
+- publishes a report at once when it passes those checks, with "item checked"
+  when the reporter's app found the item: right after its purchase check the
+  app opens the item's eBay page in its own browser session and checks that
+  the page is that item and names the reported seller (the report says yes or
+  no). The server itself loads no eBay page;
 - signs the list of live reports (Ed25519 + ML-DSA-65) and serves it.
 
 The owner's master key never comes to the server. It signs an authorization of
 the server's keys (which the apps check) and, if ever needed, a revocation.
-
-**The item check today.** When the server's request for a sold item's page was
-tried (2026-10-20, one request), eBay answered HTTP 403 with its error page.
-Until that changes, no report is confirmed automatically: every report waits in
-the owner's queue (`queue`, then `publish` or `remove`).
 
 ## What it records about the people who use it
 

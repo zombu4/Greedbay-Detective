@@ -15,8 +15,8 @@ namespace app::model {
 // sorting: prompt B of the 500-row run), with their output grammars (GBNF,
 // llama.cpp grammars/README.md). The version strings key the answer cache:
 // a changed prompt or grammar gets a new version.
-inline constexpr char kIdentityVersion[] = "identity-1";
-inline constexpr char kSortVersion[] = "sort-1";
+inline constexpr char kIdentityVersion[] = "identity-2";
+inline constexpr char kSortVersion[] = "sort-2";
 
 // A piece of the prompt: `special` pieces are the chat format's own markers
 // (tokenized with special tokens recognized); everything else - above all the

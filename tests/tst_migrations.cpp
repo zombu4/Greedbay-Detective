@@ -59,10 +59,11 @@ void TestMigrations::shippedMigrationsLoad()
     const Migration &locations = migrations->at(6);
     QCOMPARE(locations.version, 7);
     QCOMPARE(locations.name, QStringLiteral("locations"));
-    // One column of lookups, one of lookup_rows.
-    QCOMPARE(locations.statements.size(), 2);
+    // Four columns of lookups, one of lookup_rows.
+    QCOMPARE(locations.statements.size(), 5);
     QVERIFY(locations.statements.at(0).startsWith(QStringLiteral("ALTER TABLE lookups ADD COLUMN location")));
-    QVERIFY(locations.statements.at(1).startsWith(QStringLiteral("ALTER TABLE lookup_rows ADD COLUMN location")));
+    QVERIFY(locations.statements.at(1).startsWith(QStringLiteral("ALTER TABLE lookups ADD COLUMN description")));
+    QVERIFY(locations.statements.at(4).startsWith(QStringLiteral("ALTER TABLE lookup_rows ADD COLUMN location")));
 }
 
 void TestMigrations::contiguityCheck()

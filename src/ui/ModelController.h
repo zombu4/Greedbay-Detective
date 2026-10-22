@@ -64,6 +64,12 @@ public:
     Q_INVOKABLE void setGpu(bool enabled);
     // The license text as the model's repository has it.
     Q_INVOKABLE QString licenseText(const QString &id) const;
+    // The local model's lines of the work folder's log (one per question:
+    // prompt version, item number, answer, guard, result, time), oldest
+    // first, at most the last kMaxLogLines, from the current log file and the
+    // one before it; a sentence when there are none.
+    static constexpr int kMaxLogLines = 300;
+    Q_INVOKABLE QString modelLog() const;
     Q_INVOKABLE void download(const QString &id);
     Q_INVOKABLE void cancelDownload() { m_download.cancel(); }
     Q_INVOKABLE bool remove(const QString &id);

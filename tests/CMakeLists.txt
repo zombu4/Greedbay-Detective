@@ -104,6 +104,7 @@ set(app_test_fixtures
     fixtures/item_dom.html
     fixtures/item_inline.html
     fixtures/item_jsonld.html
+    fixtures/item_sold.html
     fixtures/late_page.html
     fixtures/research.html
     fixtures/research_empty.html

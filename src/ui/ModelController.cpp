@@ -1,7 +1,9 @@
 #include "ui/ModelController.h"
 
+#include "core/Logging.h"
 #include "core/Settings.h"
 
+#include <QDir>
 #include <QFile>
 #include <QFileInfo>
 #include <QLocale>
@@ -158,6 +160,26 @@ QString ModelController::licenseText(const QString &id) const
         return {};
     QFile file(info->licenseResource);
     return file.open(QIODevice::ReadOnly) ? QString::fromUtf8(file.readAll()) : QString();
+}
+
+QString ModelController::modelLog() const
+{
+    QStringList lines;
+    const QDir logs(m_folder.logsDir());
+    for (const QString &name : {Logging::rotatedFileName(m_folder.appIdentifier(), 1), Logging::currentFileName(m_folder.appIdentifier())}) {
+        QFile file(logs.filePath(name));
+        if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
+            continue;
+        while (!file.atEnd()) {
+            const QString line = QString::fromUtf8(file.readLine()).trimmed();
+            if (line.contains(QLatin1String(" [model] ")))
+                lines.append(line);
+        }
+    }
+    if (lines.isEmpty())
+        return tr("No local model lines in the log yet: the model writes one line per question once it is on and a "
+                  "lookup uses it.");
+    return lines.mid(std::max<qsizetype>(0, lines.size() - kMaxLogLines)).join(QLatin1Char('\n'));
 }
 
 void ModelController::download(const QString &id)

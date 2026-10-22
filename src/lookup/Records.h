@@ -83,6 +83,15 @@ struct ItemRecord {
     // The shipping block's "Located in:" line as eBay shows it ("Shenzhen,
     // China"); empty when the page has none.
     QString location;
+    // JSON-LD offer availability ("InStock", "OutOfStock") and eBay's notice
+    // "This listing sold on ..." (recon 2026-10-21): sold() needs both.
+    QString availability;
+    bool soldNotice = false;
+    bool sold() const { return soldNotice && availability == QLatin1String("OutOfStock"); }
+    // The seller's description (the item page's description frame), as text,
+    // at most 20000 characters; descriptionMissing says why there is none.
+    QString description;
+    QString descriptionMissing;
     // The seller card's feedback score and positive percentage, when the
     // page showed them.
     std::optional<int> sellerFeedbackCount;

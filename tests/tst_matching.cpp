@@ -65,6 +65,8 @@ private slots:
     void ownListingIsNeverNotThisItem();
     void rows_data();
     void rows();
+    void decisionPath();
+    void descriptionFindings();
     void productNameWords();
     void valueOverAllRows();
     void partsKitIsNotCheapest();
@@ -783,6 +785,16 @@ void TestMatching::rows_data()
     QTest::newRow("two items ampersand") << sencore << "QG70" << "Sencore QG70 & QP61 analyzers" << "" << Bucket::Lot;
     QTest::newRow("and inside the item") << sencore << "QG70" << "Sencore QG70 AM and FM stereo analyzer" << "Pre-Owned"
                                          << Bucket::SameItem;
+    // Every word of the title counts (owner decision f1, 2026-10-21):
+    // cables wherever they stand, unless a with-word puts them with the item;
+    // "to connect" / "connects to" make a part. Not "cord" or "adapter" on
+    // their own: owner cases 1 ("IM-13 VTVM 120VAC power cord") and the wave
+    // guide adapter are the item.
+    QTest::newRow("cable set") << sencore << "QG70" << "Sencore QG70 RF output cable set" << "" << Bucket::Accessory;
+    QTest::newRow("cable with the item") << sencore << "QG70" << "Sencore QG70 stereo analyzer with RF cable"
+                                         << "Pre-Owned" << Bucket::SameItem;
+    QTest::newRow("connects to") << sencore << "QG70" << "Sencore probe tip connects to QG70 input" << ""
+                                 << Bucket::PartFits;
     QTest::newRow("4 shoe code") << sencore << "VG91" << "Running shoe VG91-5040" << "" << Bucket::NoMatch;
     QTest::newRow("4 card grade") << sencore << "VG91" << "Baseball card #91 VG" << "" << Bucket::NoMatch;
     // Case 5, Sencore PR57.
@@ -978,6 +990,49 @@ void TestMatching::rows()
     const Match match = matchRow(title, identity, m_words);
     QVERIFY2(match.bucket == bucket, qPrintable(bucketName(match.bucket) + QStringLiteral(": ") + match.reasons.join(QStringLiteral("; "))));
     QVERIFY(!match.reasons.isEmpty());
+}
+
+void TestMatching::decisionPath()
+{
+    // The reasons say how the row was decided (owner decision f1).
+    const Identity identity = identityFromUser({QStringLiteral("Sencore"), QStringLiteral("QG70"), QString()}, m_known,
+                                               QStringLiteral("user"));
+    const Match leads = matchRow(QStringLiteral("Sencore QG70 test leads"), identity, m_words);
+    QCOMPARE(leads.bucket, Bucket::Accessory);
+    QVERIFY2(leads.reasons.last().contains(QStringLiteral("\"leads\" = accessory word, not after a with-word")),
+             qPrintable(leads.reasons.join(QStringLiteral("; "))));
+    const Match withLeads = matchRow(QStringLiteral("Sencore QG70 stereo analyzer with leads"), identity, m_words);
+    QCOMPARE(withLeads.bucket, Bucket::SameItem);
+    QVERIFY2(withLeads.reasons.join(QStringLiteral("; ")).contains(QStringLiteral("\"leads\" after \"with\": comes with the item")),
+             qPrintable(withLeads.reasons.join(QStringLiteral("; "))));
+    QVERIFY(withLeads.reasons.last().endsWith(QStringLiteral("-> same item")));
+}
+
+void TestMatching::descriptionFindings()
+{
+    // The seller's description (owner decision f2/f3): only clear phrases
+    // move a row; ordinary item text does not.
+    const Identity identity = identityFromUser({QStringLiteral("Sencore"), QStringLiteral("QG70"), QString()}, m_known,
+                                               QStringLiteral("user"));
+    auto finding = [&](const char *text) { return descriptionFinding(QString::fromLatin1(text), identity, m_words); };
+    QCOMPARE(finding("New in bag. Leads only, the analyzer is not part of this sale.").bucket, Bucket::Accessory);
+    QVERIFY(finding("Leads only.").reason.contains(QStringLiteral("\"leads only\"")));
+    QCOMPARE(finding("Manual only, 40 pages.").bucket, Bucket::Documentation);
+    QCOMPARE(finding("You get the case and leads. Unit not included.").bucket, Bucket::Accessory);
+    QCOMPARE(finding("The QG70 is not included, sorry.").bucket, Bucket::Accessory);
+    QCOMPARE(finding("A job lot from an estate.").bucket, Bucket::Lot);
+    QCOMPARE(finding("Sold for parts, it does not power up.").bucket, Bucket::PartFits);
+    QCOMPARE(finding("Not working, no display.").bucket, Bucket::PartFits);
+    // Untested: a note, the row stays.
+    const DescriptionFinding untested = finding("Powers on, I have no way of testing it. Sold as-is.");
+    QCOMPARE(untested.bucket, Bucket::SameItem);
+    QVERIFY(untested.note.contains(QStringLiteral("no way of testing")) || untested.note.contains(QStringLiteral("as-is")));
+    // Ordinary text about the item itself: nothing.
+    for (const char *plain : {"Works great, comes with leads and the manual.", "Only the case is scratched.",
+                              "Tested on 120V, all functions work.", "The leads are included with the unit.", ""}) {
+        const DescriptionFinding nothing = finding(plain);
+        QVERIFY2(nothing.bucket == Bucket::SameItem && nothing.note.isEmpty(), plain);
+    }
 }
 
 void TestMatching::productNameWords()

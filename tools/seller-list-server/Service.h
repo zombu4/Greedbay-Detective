@@ -1,7 +1,6 @@
 #pragma once
 
 #include "HttpServer.h"
-#include "ItemCheck.h"
 #include "ServerStore.h"
 #include "sellerlist/Protocol.h"
 
@@ -18,7 +17,8 @@ class QTimer;
 namespace sellerserver {
 
 // The seller list service (DESIGN 3.7): report and dispute intake, the abuse
-// limits, the item check, and the signed list.
+// limits, and the signed list. It loads no eBay page (owner decision a,
+// 2026-10-21): the reporter's app checks the item and says so in the report.
 //
 // GET  /v1/list    {"authorization", "revocations", "list"} (app::sellerlist::checkBundle)
 // GET  /v1/keys    {"authorization", "revocations"}         (app::sellerlist::checkKeys)
@@ -33,8 +33,9 @@ namespace sellerserver {
 //     (else "busy", nothing stored);
 //   - this installation has not reported this seller before (refused);
 //   - this installation sent fewer than perInstallPerDay in 24 hours (refused);
-//   - fewer than sellerBurst reports for this seller in 24 hours, else HELD;
-//   - the item check confirms the item page and the seller, else HELD.
+//   - fewer than sellerBurst reports for this seller in 24 hours, else HELD.
+// Published with "item checked" as the reporter's app found it
+// (Report::itemCheckedInApp).
 // The owner publishes or removes held reports, and removes any report on
 // request (moderation commands); the next list follows within listCheckMs.
 class Service : public QObject {
@@ -60,14 +61,13 @@ public:
     using Clock = std::function<QDateTime()>;
 
     // `store` must be open; `listFile` is where the signed bundle is kept.
-    Service(ServerStore *store, Keys keys, ItemPageFetcher::Settings fetcher, Limits limits, QString listFile,
-            QObject *parent = nullptr);
+    Service(ServerStore *store, Keys keys, Limits limits, QString listFile, QObject *parent = nullptr);
     ~Service() override;
 
     // Checks the authorization as the app does (master-signed, valid now, not
-    // revoked) and that it names this server's keys,
-    // queues the item check of every pending report and publishes the first
-    // list. False and *error when the service must not start.
+    // revoked) and that it names this server's keys, holds any report an
+    // older version left waiting for its own item check, and publishes the
+    // first list. False and *error when the service must not start.
     bool start(QString *error);
 
     HttpServer::Response handle(const HttpServer::Request &request);
@@ -90,7 +90,6 @@ signals:
 private:
     HttpServer::Response receiveReport(const QByteArray &envelope);
     HttpServer::Response receiveDispute(const QByteArray &envelope);
-    void onItemChecked(const QString &reportId, const sellerserver::ItemReading &reading);
     QDateTime now() const;
 
     ServerStore *m_store;
@@ -98,7 +97,6 @@ private:
     app::sellerlist::Authorization m_authorization;
     Limits m_limits;
     QString m_listFile;
-    ItemPageFetcher *m_fetcher;
     QTimer *m_listTimer;
     QJsonArray m_listedSellers;
     QByteArray m_bundle;

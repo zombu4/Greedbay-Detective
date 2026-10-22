@@ -217,7 +217,8 @@ void SharedListController::onPurchaseFinished()
     }
     m_report->itemId = found->itemId;
     m_report->month = found->month;
-    setReport(true, tr("Purchase found (item %1, %2). Sending...").arg(found->itemId, found->month), false);
+    m_report->itemCheckedInApp = found->itemChecked;
+    setReport(true, tr("Purchase found (item %1, %2); %3. Sending...").arg(found->itemId, found->month, found->itemNote), false);
     run(Job::Report);
 }
 

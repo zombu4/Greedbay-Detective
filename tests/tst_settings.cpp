@@ -27,6 +27,7 @@ private slots:
     void preferredBrowser();
     void pageDelay();
     void dailyPageCap();
+    void deepCheck();
     void sellerSettings();
     void searchDepths();
     void valueSettings();
@@ -203,6 +204,31 @@ void TestSettings::pageDelay()
     const Settings edited(edit);
     QCOMPARE(edited.pageDelayMinMs(), 3000);
     QCOMPARE(edited.pageDelayMaxMs(), 6000);
+}
+
+void TestSettings::deepCheck()
+{
+    // Off by default, 10 rows; rows outside 1..100 are refused and read as the
+    // default (owner decision f3, 2026-10-21).
+    QTemporaryDir tmp;
+    QVERIFY(tmp.isValid());
+    const QString path = tmp.path() + QStringLiteral("/settings.ini");
+    {
+        Settings settings(path);
+        QVERIFY(!settings.deepCheck());
+        QCOMPARE(settings.deepCheckRows(), Settings::kDefaultDeepCheckRows);
+        QVERIFY(!settings.setDeepCheckRows(0));
+        QVERIFY(!settings.setDeepCheckRows(Settings::kMaxDeepCheckRows + 1));
+        QVERIFY(settings.setDeepCheckRows(4));
+        settings.setDeepCheck(true);
+        QVERIFY(settings.sync());
+    }
+    QVERIFY(Settings(path).deepCheck());
+    QCOMPARE(Settings(path).deepCheckRows(), 4);
+    const QString odd = tmp.path() + QStringLiteral("/odd.ini");
+    QVERIFY(writeTestFile(odd, "[lookup]\ndeepCheck=yes\ndeepCheckRows=500\n"));
+    QVERIFY(!Settings(odd).deepCheck());
+    QCOMPARE(Settings(odd).deepCheckRows(), Settings::kDefaultDeepCheckRows);
 }
 
 void TestSettings::sellerSettings()

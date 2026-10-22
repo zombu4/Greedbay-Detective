@@ -82,6 +82,14 @@ function schemaEnum(value) {
     return match ? match[1] : null;
 }
 
+function soldNoticeShown() {
+    for (const notice of document.querySelectorAll('.d-statusmessage__notice-live-region')) {
+        if (/^This listing sold on /.test(norm(notice.innerText || '')))
+            return true;
+    }
+    return false;
+}
+
 function stringOrNull(value) {
     return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
 }
@@ -288,6 +296,11 @@ function extract(input) {
         condition: null,
         conditionSource: null,
         availability: offer ? schemaEnum(offer.availability) : null,
+        // A sold listing (recon 2026-10-21): the status notice "This listing
+        // sold on <Ddd, Mon dd> at <h:mm> PM." in
+        // div.d-statusmessage__notice-live-region, with availability
+        // OutOfStock. False when the notice is not shown.
+        soldNotice: soldNoticeShown(),
         listingStartedAt: offer ? stringOrNull(offer.availabilityStarts) : null,
         shippingOptions: offer ? shippingOptions(offer) : [],
         shippingCents: null,

@@ -21,8 +21,18 @@ Not released yet.
   with the time left.
 - Flags: shipping far above normal, cheaper listings of the same item for
   sale right now, "likely broken" when eBay or the title says so.
-- Where eBay says an item is: listings located in China carry a CHINESIUM
-  SELLER badge, listings located in Japan a scalper warning (junk at very
+- Whole-listing reading: every word of a title is weighed (leads, cables,
+  cords, adapters and other accessories count wherever they stand, unless
+  "with" or "includes" puts them with the item), and each row says how it
+  was decided. The pasted listing's seller description is read too ("leads
+  only", "not included", "for parts", "untested"). Deep check (off by
+  default): after a lookup, the descriptions of up to 10 counted rows are
+  read and rows that turn out to be accessories, parts or lots move out of
+  the numbers.
+- Local model: one log line per question (Settings > Local model > Show
+  model log).
+- Where eBay says an item is: listings located in China, Hong Kong or
+  Taiwan carry a CHINESIUM SELLER badge, listings located in Japan a scalper warning (junk at very
   high prices). eBay's "Located in" is where the item ships from; the
   seller may be based elsewhere. Warnings only: the numbers stay as they are.
 - Sellers: mark a seller you had trouble with (got junk, not as described,
@@ -52,8 +62,8 @@ Not released yet.
   days set in Settings); a read that stops early says how far it got.
 - Shared seller list (off until you turn it on): reports by other users,
   signed by the list owner's keys and fetched over HTTPS; report a
-  seller you bought from (checked first on your own Purchases page; your eBay
-  name is never sent) or dispute a report. The server is a separate program
+  seller you bought from (checked first on your own Purchases page, then on
+  the item's own page; your eBay name is never sent) or dispute a report. The server is a separate program
   in tools/seller-list-server.
 - Local model (off until you turn it on, a one-time download): double-checks
   a listing's identity and the counted results; it can only make the app ask

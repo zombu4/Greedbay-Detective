@@ -102,4 +102,24 @@ QString bucketName(Bucket bucket);
 // otherwise. Nothing else is guessed (no flag from returns or a low price).
 QString likelyBrokenReason(const QString &title, const QString &ebayCondition, const MatchWords &words);
 
+// What a seller's description says about the listing (owner decision f,
+// 2026-10-21; DESIGN 3.8). Narrow on purpose - a description is long and
+// mostly about the item itself; only these count:
+//   - "<accessory, part or documentation word> only" ("leads only",
+//     "manual only"): that bucket;
+//   - "<descriptionItemNouns word or the model> not included" / "is not
+//     included" / "does not include the <...>" / "without the <...>": the item
+//     itself is missing - accessory;
+//   - a descriptionLot phrase: lot;
+//   - a descriptionParts phrase ("for parts", "not working"): part/fits;
+//   - a descriptionUntested phrase ("untested", "as is"): a note only, the
+//     bucket stays.
+// bucket is SameItem when nothing moves it; reason/note quote the phrase.
+struct DescriptionFinding {
+    Bucket bucket = Bucket::SameItem;
+    QString reason; // "description: \"leads only\" - accessory"
+    QString note;   // "description: \"untested\""
+};
+DescriptionFinding descriptionFinding(const QString &description, const Identity &identity, const MatchWords &words);
+
 } // namespace app::lookup

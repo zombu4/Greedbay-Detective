@@ -176,6 +176,37 @@ Item {
             }
 
             Section {
+                heading: "Deep check"
+                note: "After a lookup, open the eBay page of the counted same-item rows - sold ones first, then the "
+                      + "cheapest for sale - and read the seller's description. Rows whose description shows they are "
+                      + "only leads or other accessories, parts, a lot, or sold for parts move out of the numbers, with "
+                      + "the reason. One eBay page per row, paced and counted in the daily cap. Off by default."
+                CheckBox {
+                    id: deepCheckOn
+                    objectName: "deepCheck"
+                    text: "Deep check after each lookup"
+                    checked: screen.settings.deepCheck
+                }
+                GridLayout {
+                    columns: 2
+                    columnSpacing: 12
+                    FieldLabel { text: "Rows at most" }
+                    NumberBox {
+                        id: deepRows
+                        from: 1
+                        to: screen.settings.maxDeepCheckRows
+                        value: screen.settings.deepCheckRows
+                        Accessible.name: "Deep check rows at most"
+                    }
+                }
+                AppButton {
+                    text: "Save"
+                    onClicked: screen.report(screen.settings.setDeepCheck(deepCheckOn.checked, deepRows.value), deepResult)
+                }
+                Result { id: deepResult }
+            }
+
+            Section {
                 heading: "Search depth"
                 note: "How many rows a lookup reads at most from each source. 0 skips a source. To change it for one "
                       + "lookup, tick \"Let me check the searches\" on the Lookups screen."
@@ -523,6 +554,7 @@ Item {
                 readonly property var localModel: screen.backend.localModel
                 // The model whose license is shown before its download.
                 property string licenseFor: ""
+                property bool showLog: false
                 heading: "Local model (identity and sorting help)"
                 note: "A small language model that runs on this computer only - nothing is sent anywhere. In a lookup "
                       + "it double-checks the listing's identity (when it reads it differently, the app asks you) and "
@@ -541,6 +573,43 @@ Item {
                         modelSection.localModel.setEnabled(checked)
                         // Back to the setting (the toggle broke the binding).
                         checked = Qt.binding(() => modelSection.localModel.enabled)
+                    }
+                }
+                AppButton {
+                    objectName: "showModelLog"
+                    text: modelSection.showLog ? "Hide model log" : "Show model log"
+                    Accessible.name: text
+                    onClicked: modelSection.showLog = !modelSection.showLog
+                }
+                Card {
+                    visible: modelSection.showLog
+                    Layout.fillWidth: true
+                    fill: Theme.raised
+                    ColumnLayout {
+                        anchors.fill: parent
+                        spacing: 8
+                        FieldLabel {
+                            Layout.fillWidth: true
+                            wrapMode: Text.WordWrap
+                            text: "One line per question to the local model: prompt version, item number, its answer, "
+                                  + "the guard that refused it, what the app did, and the time it took."
+                        }
+                        ScrollView {
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: 260
+                            clip: true
+                            TextArea {
+                                objectName: "modelLogText"
+                                readOnly: true
+                                text: modelSection.showLog ? modelSection.localModel.modelLog() : ""
+                                textFormat: TextEdit.PlainText
+                                wrapMode: TextEdit.Wrap
+                                font.family: Theme.mono
+                                font.pixelSize: Theme.labelSize
+                                color: Theme.text
+                                Accessible.name: "Local model log"
+                            }
+                        }
                     }
                 }
                 CheckBox {

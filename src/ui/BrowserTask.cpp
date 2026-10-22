@@ -76,9 +76,12 @@ void BrowserTask::onDone(const QJsonObject &reply)
         return;
     }
     m_answered = true;
+    m_nextUrl.clear();
     const std::optional<QString> next = m_step(reply);
     emit changed();
-    if (next && m_controller && !m_cancelled)
+    if (!m_nextUrl.isEmpty() && m_controller && !m_cancelled)
+        m_controller->fetch(m_nextUrl, m_nextKind);
+    else if (next && m_controller && !m_cancelled)
         m_controller->readOnPage(*next);
     else if (m_controller)
         m_controller->stop();
