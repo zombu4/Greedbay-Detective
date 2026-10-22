@@ -811,6 +811,10 @@ void TestMatching::rows_data()
                                              << "Pre-Owned" << Bucket::SameItem;
     QTest::newRow("manual before with") << "B&K Precision" << "467" << "B&K 467 manual with schematics" << ""
                                         << Bucket::Documentation;
+    // A plate taken from the model is a part (lookup 20, 2026-10-22).
+    QTest::newRow("faceplate from") << sencore << "QG70" << "FACEPLATE - SENCORE - LABELED FACEPLATE FROM SENCORE QG70 ANALYZER"
+                                    << "" << Bucket::PartFits;
+    QTest::newRow("back plate") << sencore << "QG70" << "Sencore QG70 back plate" << "" << Bucket::PartFits;
     QTest::newRow("connects to") << sencore << "QG70" << "Sencore probe tip connects to QG70 input" << ""
                                  << Bucket::PartFits;
     QTest::newRow("4 shoe code") << sencore << "VG91" << "Running shoe VG91-5040" << "" << Bucket::NoMatch;

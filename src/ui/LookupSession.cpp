@@ -15,6 +15,7 @@
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QNetworkRequest>
+#include <QSet>
 
 #include <utility>
 
@@ -503,18 +504,21 @@ void LookupSession::proceedToSave(lookup::LookupResult result, QList<lookup::Row
     const Settings settings(m_folder.settingsPath());
     if (settings.deepCheck() && result.status == QLatin1String("complete") && !m_cancelPressed && !m_savedOnce && !m_browserEnded
         && m_controller && m_words) {
-        // The counted same-item rows of the searches (not the listing itself):
-        // sold ones first, then for sale; each group cheapest first.
+        // The counted same-item rows (not the listing itself): sold ones first
+        // (the sold search and Product Research), then for sale; each group
+        // cheapest first. One row per item number.
         QList<qsizetype> sold;
         QList<qsizetype> forSale;
+        QSet<QString> seen;
         for (qsizetype i = 0; i < rows.size(); ++i) {
             const lookup::Row &row = rows.at(i);
-            if (row.match.bucket != lookup::Bucket::SameItem || !row.included || row.source == lookup::Row::Source::Research)
+            if (row.match.bucket != lookup::Bucket::SameItem || !row.included)
                 continue;
             const QString itemId = lookup::rowItemId(result, row);
-            if (itemId.isEmpty() || itemId == result.item.itemId)
+            if (itemId.isEmpty() || itemId == result.item.itemId || seen.contains(itemId))
                 continue;
-            (row.source == lookup::Row::Source::Sold ? sold : forSale).append(i);
+            seen.insert(itemId);
+            (row.source == lookup::Row::Source::Active ? forSale : sold).append(i);
         }
         const auto cheapestFirst = [&](qsizetype a, qsizetype b) {
             const std::optional<qint64> totalA = lookup::rowTotal(result, rows.at(a));

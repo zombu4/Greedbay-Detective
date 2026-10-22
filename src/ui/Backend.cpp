@@ -10,6 +10,7 @@
 
 #include <QClipboard>
 #include <QDateTime>
+#include <QDebug>
 #include <QDesktopServices>
 #include <QDir>
 #include <QFileInfo>
@@ -236,9 +237,16 @@ bool Backend::correctIdentity(const QString &brand, const QString &model, const 
 void Backend::openOnEbay(const QString &itemId) const
 {
     // Only an item number (digits) becomes an address, and only eBay's.
-    if (ebay::itemIdFromInput(itemId) != itemId)
+    if (ebay::itemIdFromInput(itemId) != itemId) {
+        qWarning().noquote() << "open on eBay: refused, not an item number:" << (itemId.isEmpty() ? QStringLiteral("(empty)") : itemId);
         return;
-    QDesktopServices::openUrl(ebay::itemUrl(itemId));
+    }
+    // The system's default browser opens it (macOS: Launch Services).
+    const bool opened = QDesktopServices::openUrl(ebay::itemUrl(itemId));
+    if (opened)
+        qInfo().noquote() << "open on eBay: item" << itemId << "handed to the default browser";
+    else
+        qWarning().noquote() << "open on eBay: the system did not open item" << itemId;
 }
 
 QString Backend::listingFromText(const QString &text) const

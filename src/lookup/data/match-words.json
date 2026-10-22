@@ -2058,7 +2058,15 @@
             "chips",
             "eprom",
             "to connect",
-            "connects to"
+            "connects to",
+            "faceplate",
+            "faceplates",
+            "face plate",
+            "front plate",
+            "back plate",
+            "rear plate",
+            "back panel",
+            "rear panel"
         ]
     },
     "partPatterns": {
@@ -2150,7 +2158,8 @@
     },
     "companion": {
         "words": [
-            "for"
+            "for",
+            "from"
         ]
     },
     "withExtras": {
