@@ -206,6 +206,8 @@ class ResultsController : public QObject {
     // Product Research's when the sold search counted none), the median, and
     // the scale's ends.
     Q_PROPERTY(QString bandLegend READ bandLegend NOTIFY changed)
+    // Under the bar when its sales are too few to place the listing.
+    Q_PROPERTY(QString barNote READ barNote NOTIFY changed)
     Q_PROPERTY(QString medianLegend READ medianLegend NOTIFY changed)
     Q_PROPERTY(QString scaleLowText READ scaleLowText NOTIFY changed)
     Q_PROPERTY(QString scaleHighText READ scaleHighText NOTIFY changed)
@@ -336,6 +338,7 @@ public:
     QString forSaleFootnote() const;
     QString bandLegend() const;
     QString medianLegend() const;
+    QString barNote() const;
     QString scaleLowText() const;
     QString scaleHighText() const;
     double barMin() const { return m_bar.min; }
@@ -411,6 +414,12 @@ private:
         double thisTotal = -1;
         double cheapest = -1;
     } m_bar;
+    // The bar shows Product Research's numbers: the 90-day sold search
+    // counted none, or fewer than the "Low" confidence count while Product
+    // Research counted more.
+    bool m_barFromResearch = false;
+    // The numbers the bar shows (m_valuation.sold or .research).
+    const lookup::ValueNumbers &barNumbers() const { return m_barFromResearch ? m_valuation.research : m_valuation.sold; }
     RowsModel *m_sameItem;
     RowsModel *m_notThisItem;
 };

@@ -352,8 +352,14 @@ void ResultsController::recompute()
     }
 
     // The sold search's numbers, or Product Research's when the sold search
-    // counted none.
-    const lookup::ValueNumbers &sold = m_valuation.sold.medianCents ? m_valuation.sold : m_valuation.research;
+    // counted none, or too few for the "Low" confidence while Product
+    // Research counted more (one sale is no range).
+    const int enough = m_valueSettings().confidenceLow;
+    const lookup::ValueNumbers &soldSearch = m_valuation.sold;
+    const lookup::ValueNumbers &research = m_valuation.research;
+    m_barFromResearch = research.medianCents
+        && (!soldSearch.medianCents || (soldSearch.included < enough && research.included > soldSearch.included));
+    const lookup::ValueNumbers &sold = barNumbers();
     m_bar = Bar();
     QList<double> values;
     auto add = [&values](double value) {
@@ -737,7 +743,11 @@ QString ResultsController::cheapestBinText() const
 
 QString ResultsController::forSaleFootnote() const
 {
-    return QStringLiteral("Shipping costs eBay shows can depend on the ship-to location eBay has for the app's browser.");
+    const QString shipping
+        = QStringLiteral("Shipping costs eBay shows can depend on the ship-to location eBay has for the app's browser.");
+    if (m_valuation.forSale.isEmpty() && runningAuctions().first == 0)
+        return QStringLiteral("No other listing of this item is for sale now (this listing itself is not counted). ") + shipping;
+    return shipping;
 }
 
 QString ResultsController::cheapestLabel() const
@@ -816,17 +826,26 @@ QString ResultsController::researchLowHighText() const
 
 QString ResultsController::bandLegend() const
 {
-    if (m_valuation.sold.medianCents)
-        return QStringLiteral("middle half of sold (last 90 days)");
-    if (m_valuation.research.medianCents)
-        return QStringLiteral("middle half of sold (Product Research, %1 - the 90-day search counted no sale)").arg(periodText());
-    return {};
+    if (!m_barFromResearch)
+        return m_valuation.sold.medianCents ? QStringLiteral("middle half of sold (last 90 days)") : QString();
+    const int counted = m_valuation.sold.included;
+    return QStringLiteral("middle half of sold (Product Research, %1 - the 90-day search counted %2)")
+        .arg(periodText(), counted == 0 ? QStringLiteral("no sale") : QStringLiteral("only ") + countText(counted, QStringLiteral("sale"), QStringLiteral("sales")));
 }
 
 QString ResultsController::medianLegend() const
 {
-    const std::optional<qint64> median = m_valuation.sold.medianCents ? m_valuation.sold.medianCents : m_valuation.research.medianCents;
+    const std::optional<qint64> median = barNumbers().medianCents;
     return median ? QStringLiteral("median %1").arg(moneyText(median)) : QString();
+}
+
+QString ResultsController::barNote() const
+{
+    const lookup::ValueNumbers &numbers = barNumbers();
+    if (!numbers.medianCents || numbers.included >= m_valueSettings().confidenceLow)
+        return {};
+    return QStringLiteral("Only %1 counted: too few to tell where this listing sits.")
+        .arg(countText(numbers.included, QStringLiteral("sale"), QStringLiteral("sales")));
 }
 
 QString ResultsController::scaleLowText() const

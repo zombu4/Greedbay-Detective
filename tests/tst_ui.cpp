@@ -157,14 +157,18 @@ void TestUi::initTestCase()
     research.avgShippingCents = 900;
     research.totalSold = 2;
     research.lastSoldDate = QStringLiteral("2026-09-30");
-    result.research = {research};
+    ResearchRecord second = research;
+    second.itemId = QStringLiteral("300000000002");
+    second.title = QStringLiteral("Acme Q9 tracer");
+    result.research = {research, second};
     result.researchSummary = QJsonObject{{"avgSoldPriceCents", 9100}, {"avgShippingCents", 1000}};
     result.pagesLoaded = 4;
     QList<Row> rows = {row(Row::Source::Sold, 0, Bucket::SameItem),     row(Row::Source::Sold, 1, Bucket::SameItem),
                        row(Row::Source::Sold, 2, Bucket::SameItem),     row(Row::Source::Sold, 3, Bucket::SameItem),
                        row(Row::Source::Sold, 4, Bucket::Documentation, QStringLiteral("documentation word \"manual\"")),
                        row(Row::Source::Active, 0, Bucket::SameItem),   row(Row::Source::Active, 1, Bucket::SameItem),
-                       row(Row::Source::Active, 2, Bucket::SameItem),   row(Row::Source::Research, 0, Bucket::SameItem)};
+                       row(Row::Source::Active, 2, Bucket::SameItem),   row(Row::Source::Research, 0, Bucket::SameItem),
+                       row(Row::Source::Research, 1, Bucket::SameItem)};
     const LookupStore store(QStringLiteral("app"));
     const Valuation valuation = valuate(result, rows, app::ValueSettings());
     const std::optional<qint64> id = store.save(QStringLiteral("100000000090"), result, rows, valuation,
@@ -285,7 +289,7 @@ void TestUi::savedLookupReopens()
     // Shipping $45 against the matched sales' $10.00 median and eBay's $10.00.
     QVERIFY(results->shippingFlag());
     QCOMPARE(results->shippingLines().first(), QStringLiteral("$45.00 is 4.5x eBay's average for this item ($10.00)"));
-    QCOMPARE(results->sameItem()->count(), 8);
+    QCOMPARE(results->sameItem()->count(), 9);
     QCOMPARE(results->notThisItem()->count(), 1);
     // The same-item table is sorted by total: $90.00 first; the listing
     // itself is marked THIS LISTING, the two cheaper ones CHEAPEST.
@@ -328,18 +332,20 @@ void TestUi::savedLookupReopens()
     results->setIncluded(saleRow, true);
     QCOMPARE(results->medianText(), QStringLiteral("$106.00"));
 
-    // Product Research with its period (3 years by default): one listing,
-    // $85.00 + $9.00.
+    // Product Research with its period (3 years by default): two listings,
+    // each $85.00 + $9.00.
     QCOMPARE(results->researchHeading(), QStringLiteral("Sold on eBay - last 3 years (Product Research)"));
     QCOMPARE(results->researchStatus(), QString());
-    QCOMPARE(results->researchCountText(), QStringLiteral("1 listing"));
-    QCOMPARE(results->researchConfidenceText(), QStringLiteral("not enough data"));
+    QCOMPARE(results->researchCountText(), QStringLiteral("2 listings"));
+    QCOMPARE(results->researchConfidenceText(), QStringLiteral("low confidence"));
     QVERIFY(results->hasResearchNumbers());
     QCOMPARE(results->researchMedianText(), QStringLiteral("$94.00"));
     QCOMPARE(results->researchMiddleText(), QStringLiteral("$94.00 - $94.00"));
     QCOMPARE(results->bandLegend(), QStringLiteral("middle half of sold (last 90 days)"));
     QCOMPARE(results->medianLegend(), QStringLiteral("median $106.00"));
-    // With no sold sale counted, the bar shows Product Research.
+    QCOMPARE(results->barNote(), QString());
+    // With only one sold sale counted (fewer than the "Low" confidence count,
+    // 2) and two in Product Research, the bar shows Product Research.
     QList<int> soldRows;
     for (int i = 0; i < results->sameItem()->count(); ++i) {
         const QModelIndex index = results->sameItem()->index(i);
@@ -347,13 +353,33 @@ void TestUi::savedLookupReopens()
             soldRows.append(index.data(app::ui::RowsModel::RowRole).toInt());
     }
     QCOMPARE(soldRows.size(), 4);
-    for (const int r : soldRows)
+    for (const int r : soldRows.mid(1))
         results->setIncluded(r, false);
+    QVERIFY(results->hasSoldNumbers());
+    QCOMPARE(results->bandLegend(),
+             QStringLiteral("middle half of sold (Product Research, last 3 years - the 90-day search counted only 1 sale)"));
+    QCOMPARE(results->medianLegend(), QStringLiteral("median $94.00"));
+    QCOMPARE(results->medianValue(), 9400.0);
+    QCOMPARE(results->barNote(), QString());
+    // With no sold sale counted, the bar shows Product Research too.
+    results->setIncluded(soldRows.first(), false);
     QVERIFY(!results->hasSoldNumbers());
     QCOMPARE(results->bandLegend(),
              QStringLiteral("middle half of sold (Product Research, last 3 years - the 90-day search counted no sale)"));
     QCOMPARE(results->medianLegend(), QStringLiteral("median $94.00"));
     QCOMPARE(results->medianValue(), 9400.0);
+    // One research listing left: too few to place the listing, said so.
+    const int researchRows = results->sameItem()->count();
+    int researchRow = -1;
+    for (int i = 0; i < researchRows && researchRow < 0; ++i) {
+        const QModelIndex index = results->sameItem()->index(i);
+        if (index.data(app::ui::RowsModel::WhereRole).toString() == QLatin1String("research"))
+            researchRow = index.data(app::ui::RowsModel::RowRole).toInt();
+    }
+    QVERIFY(researchRow >= 0);
+    results->setIncluded(researchRow, false);
+    QCOMPARE(results->barNote(), QStringLiteral("Only 1 sale counted: too few to tell where this listing sits."));
+    results->setIncluded(researchRow, true);
     for (const int r : soldRows)
         results->setIncluded(r, true);
     QCOMPARE(results->medianText(), QStringLiteral("$106.00"));

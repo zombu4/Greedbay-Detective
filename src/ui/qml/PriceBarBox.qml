@@ -9,6 +9,7 @@ StatBox {
     id: box
     required property var results
     heading: "Where this listing sits"
+    footnotes: results.barNote.length > 0 ? [results.barNote] : []
 
     component Key: RowLayout {
         property string text
