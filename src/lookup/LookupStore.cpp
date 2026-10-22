@@ -274,6 +274,7 @@ std::optional<qint64> LookupStore::save(const QString &input, const LookupResult
                                                                              : QVariant(QMetaType::fromType<double>()));
     format.bindValue(QStringLiteral(":seller_id"), textOrNull(item.sellerId));
     format.bindValue(QStringLiteral(":location"), notNullText(item.location));
+    // ItemRecord keeps at most 20000 characters (whole characters).
     format.bindValue(QStringLiteral(":description"), notNullText(item.description.left(20000)));
     format.bindValue(QStringLiteral(":description_missing"), notNullText(item.descriptionMissing));
     format.bindValue(QStringLiteral(":deep_check_pages"), std::max(0, result.deepCheckPages));

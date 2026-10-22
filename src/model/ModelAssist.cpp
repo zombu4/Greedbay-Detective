@@ -131,6 +131,8 @@ void ModelAssist::onLoaded(bool ok, const QString &error)
         onFailed(error, true);
         return;
     }
+    // The question's time starts now, without the model's loading.
+    m_callClock.start();
     m_client->ask(m_prompt, m_grammar);
 }
 
@@ -319,7 +321,15 @@ void ModelAssist::sortAnswer(const std::optional<QString> &text, const QString &
 {
     if (m_step != Step::Sort || m_queue.isEmpty())
         return;
+    const auto noAnswerLine = [this](qsizetype index, const QString &why) {
+        const QString id = itemIdOf(m_rows.at(index));
+        qCInfo(lcModel).noquote() << QStringLiteral("%1 row %2 (%3): no answer (%4); no guard refused it; result: unchanged; %5 ms")
+                                         .arg(m_version, id.isEmpty() ? QStringLiteral("-") : id,
+                                              lookup::rowSourceName(m_rows.at(index).source), why)
+                                         .arg(m_callClock.elapsed());
+    };
     if (!text && runnerEnded) {
+        noAnswerLine(m_queue.first(), error);
         finishSort(QStringLiteral("the local model stopped (%1); %2 rows keep the rules' answer").arg(error).arg(m_queue.size()));
         return;
     }
@@ -327,6 +337,7 @@ void ModelAssist::sortAnswer(const std::optional<QString> &text, const QString &
     ++m_asked;
     if (!text) {
         // This row only: it keeps the rules' answer.
+        noAnswerLine(index, error);
         sortNext();
         return;
     }

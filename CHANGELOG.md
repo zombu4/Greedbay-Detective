@@ -21,14 +21,14 @@ Not released yet.
   with the time left.
 - Flags: shipping far above normal, cheaper listings of the same item for
   sale right now, "likely broken" when eBay or the title says so.
-- Whole-listing reading: every word of a title is weighed (leads, cables,
-  cords, adapters and other accessories count wherever they stand, unless
-  "with" or "includes" puts them with the item), and each row says how it
-  was decided. The pasted listing's seller description is read too ("leads
-  only", "not included", "for parts", "untested"). Deep check (off by
-  default): after a lookup, the descriptions of up to 10 counted rows are
-  read and rows that turn out to be accessories, parts or lots move out of
-  the numbers.
+- Whole-listing reading: every word of a title is weighed (probes, leads,
+  cables and cases count wherever they stand, unless "with" or "includes"
+  puts them with the item; cords and adapters count with "for <model>"),
+  and each row says how it was decided. The pasted listing's seller
+  description is read too ("leads only", "not included", "for parts",
+  "untested"). Deep check (off by default): after a lookup, the descriptions
+  of the counted rows (10 by default, up to 100) are read and rows that turn
+  out to be accessories, parts or lots move out of the numbers.
 - Local model: one log line per question (Settings > Local model > Show
   model log).
 - Where eBay says an item is: listings located in China, Hong Kong or

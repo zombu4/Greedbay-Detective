@@ -106,7 +106,7 @@ std::optional<QString> PurchaseCheck::onReply(const QJsonObject &reply)
         // An order without a readable item number or month proves nothing.
         if (!itemPattern.match(itemId).hasMatch() || !monthPattern.match(month).hasMatch())
             continue;
-        m_found = Found{itemId, month, false, QStringLiteral("unknown"), QString()};
+        m_found = Found{itemId, month, false, QStringLiteral("unknown"), QStringLiteral("the item was not checked")};
         // The item check: its page, one more page in this session.
         m_checkingItem = true;
         m_task.fetchNext(QUrl(QStringLiteral("https://www.ebay.com/itm/") + itemId), ebay::PageKind::Item);

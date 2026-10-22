@@ -134,7 +134,9 @@ ItemRecord ItemRecord::fromJson(const QJsonObject &data)
     record.location = locationText(data.value(QStringLiteral("location")));
     record.availability = data.value(QStringLiteral("availability")).toString();
     record.soldNotice = data.value(QStringLiteral("soldNotice")).toBool();
-    record.description = data.value(QStringLiteral("description")).toString().left(20000);
+    record.description = data.value(QStringLiteral("description")).toString();
+    if (record.description.size() > 20000)
+        record.description.truncate(record.description.at(19999).isHighSurrogate() ? 19999 : 20000);
     record.descriptionMissing = data.value(QStringLiteral("descriptionMissing")).toString();
     record.sellerFeedbackCount = count(seller.value(QStringLiteral("feedbackCount")));
     if (const QJsonValue percent = seller.value(QStringLiteral("positivePercent")); percent.isDouble()

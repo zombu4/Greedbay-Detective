@@ -70,6 +70,7 @@ private slots:
     void purchaseFoundOnSecondPage();
     void purchaseNeedsItemAndMonth();
     void purchaseNotFound();
+    void purchaseItemCheck();
     void purchasePageCap();
     void purchaseLimitReached();
     void reviewsAddedUpAcrossPages();
@@ -113,6 +114,47 @@ void TestSellerPaging::purchaseFoundOnSecondPage()
     QCOMPARE(check.found()->itemId, QStringLiteral("200000000027"));
     QCOMPARE(check.found()->month, QStringLiteral("2026-04"));
     QCOMPARE(check.error(), QString());
+}
+
+void TestSellerPaging::purchaseItemCheck()
+{
+    // After the order is found, its item page (owner decision a, 2026-10-21):
+    // the page of that item, naming the reported seller, is "item checked";
+    // its sold state is read; anything else leaves the item unchecked.
+    auto itemReply = [](const QString &itemId, const QString &sellerId, const QString &availability, bool soldNotice) {
+        return QJsonObject{{"status", "ok"},
+                           {"result", QJsonObject{{"itemId", itemId}, {"seller", QJsonObject{{"id", sellerId}}},
+                                                  {"availability", availability}, {"soldNotice", soldNotice}}}};
+    };
+    struct Case {
+        QJsonObject reply;
+        bool checked;
+        QString state;
+    };
+    const QString item = QStringLiteral("200000000027");
+    const QList<Case> cases{
+        {itemReply(item, QStringLiteral("WANTED_seller"), QStringLiteral("OutOfStock"), true), true, QStringLiteral("sold")},
+        {itemReply(item, QStringLiteral("wanted_seller"), QStringLiteral("InStock"), false), true, QStringLiteral("for sale")},
+        {itemReply(item, QStringLiteral("someone_else"), QStringLiteral("OutOfStock"), true), false, QStringLiteral("sold")},
+        {itemReply(QStringLiteral("200000000099"), QStringLiteral("wanted_seller"), QStringLiteral("InStock"), false), false,
+         QStringLiteral("unknown")},
+        {QJsonObject{{"status", "unexpected_page"}, {"reason", "x"}}, false, QStringLiteral("unknown")},
+    };
+    for (const Case &c : cases) {
+        PurchaseCheck check(*m_folder);
+        check.m_sellerId = QStringLiteral("Wanted_Seller");
+        QJsonArray orders;
+        orders.append(order(QStringLiteral("wanted_seller"), item, "2026-04"));
+        QCOMPARE(check.onReply(purchasesPage(1, false, orders)), std::nullopt);
+        QVERIFY(check.m_checkingItem);
+        QVERIFY(!check.found()->itemChecked);
+        QCOMPARE(check.found()->itemNote, QStringLiteral("the item was not checked"));
+        QCOMPARE(check.onReply(c.reply), std::nullopt);
+        QVERIFY(!check.m_checkingItem);
+        QCOMPARE(check.found()->itemChecked, c.checked);
+        QCOMPARE(check.found()->itemState, c.state);
+        QVERIFY(!check.found()->itemNote.isEmpty());
+    }
 }
 
 void TestSellerPaging::purchaseNeedsItemAndMonth()

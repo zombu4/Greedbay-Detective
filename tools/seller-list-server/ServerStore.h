@@ -42,10 +42,9 @@ public:
     void close();
 
     bool addReport(const StoredReport &report, QString *error);
-    // Sets the status (and the hold reason, empty when not held);
-    // `itemChecked` is set only when given (the item check's outcome).
-    bool setStatus(const QString &reportId, Status status, const QString &holdReason, QString *error,
-                   std::optional<bool> itemChecked = std::nullopt);
+    // Sets the status (and the hold reason, empty when not held). "Item
+    // checked" is the report's own, set when it was added.
+    bool setStatus(const QString &reportId, Status status, const QString &holdReason, QString *error);
     std::optional<StoredReport> report(const QString &reportId, QString *error) const;
     // Every report of a status, oldest first.
     std::optional<QList<StoredReport>> reports(Status status, QString *error) const;

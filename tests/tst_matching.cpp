@@ -793,6 +793,15 @@ void TestMatching::rows_data()
     QTest::newRow("cable set") << sencore << "QG70" << "Sencore QG70 RF output cable set" << "" << Bucket::Accessory;
     QTest::newRow("cable with the item") << sencore << "QG70" << "Sencore QG70 stereo analyzer with RF cable"
                                          << "Pre-Owned" << Bucket::SameItem;
+    // A cable instrument is the item, a tape recorder is no tape (review
+    // 2026-10-21); "to connect" after "with" comes with the item.
+    QTest::newRow("cable tester") << sencore << "QG70" << "Sencore QG70 cable tester" << "Pre-Owned" << Bucket::SameItem;
+    QTest::newRow("cable fault locator") << sencore << "QG70" << "Sencore QG70 TDR cable fault locator" << ""
+                                         << Bucket::SameItem;
+    QTest::newRow("video tape recorder") << sencore << "QG70" << "Sencore QG70 analyzer for video tape recorder service" << ""
+                                         << Bucket::SameItem;
+    QTest::newRow("with cables to connect") << sencore << "QG70" << "Sencore QG70 analyzer with cables to connect" << ""
+                                            << Bucket::SameItem;
     QTest::newRow("connects to") << sencore << "QG70" << "Sencore probe tip connects to QG70 input" << ""
                                  << Bucket::PartFits;
     QTest::newRow("4 shoe code") << sencore << "VG91" << "Running shoe VG91-5040" << "" << Bucket::NoMatch;
@@ -1027,9 +1036,16 @@ void TestMatching::descriptionFindings()
     const DescriptionFinding untested = finding("Powers on, I have no way of testing it. Sold as-is.");
     QCOMPARE(untested.bucket, Bucket::SameItem);
     QVERIFY(untested.note.contains(QStringLiteral("no way of testing")) || untested.note.contains(QStringLiteral("as-is")));
-    // Ordinary text about the item itself: nothing.
+    QCOMPARE(finding("It doesn't work at all.").bucket, Bucket::PartFits);
+    QCOMPARE(finding("The QG70 isn't included.").bucket, Bucket::Accessory);
+    // Ordinary text about the item itself, and terms: nothing (review
+    // 2026-10-21).
     for (const char *plain : {"Works great, comes with leads and the manual.", "Only the case is scratched.",
-                              "Tested on 120V, all functions work.", "The leads are included with the unit.", ""}) {
+                              "Tested on 120V, all functions work.", "The leads are included with the unit.", "",
+                              "Comes with the original case. Only used twice.", "The case only has light scratches.",
+                              "It has seen a lot of use.", "Power supply for this unit not included.",
+                              "Shown without the unit's stand.", "This is not for parts, it works.",
+                              "Refunds if not working as described.", "Controller only works sometimes."}) {
         const DescriptionFinding nothing = finding(plain);
         QVERIFY2(nothing.bucket == Bucket::SameItem && nothing.note.isEmpty(), plain);
     }

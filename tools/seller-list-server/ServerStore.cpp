@@ -154,16 +154,12 @@ bool ServerStore::addReport(const StoredReport &stored, QString *error)
     return run(query, error);
 }
 
-bool ServerStore::setStatus(const QString &reportId, Status status, const QString &holdReason, QString *error,
-                            std::optional<bool> itemChecked)
+bool ServerStore::setStatus(const QString &reportId, Status status, const QString &holdReason, QString *error)
 {
     QSqlQuery query(QSqlDatabase::database(m_connection));
-    query.prepare(itemChecked ? QStringLiteral("UPDATE reports SET status = ?, hold_reason = ?, item_checked = ? WHERE id = ?")
-                           : QStringLiteral("UPDATE reports SET status = ?, hold_reason = ? WHERE id = ?"));
+    query.prepare(QStringLiteral("UPDATE reports SET status = ?, hold_reason = ? WHERE id = ?"));
     query.addBindValue(statusId(status));
     query.addBindValue(holdReason.isNull() ? QStringLiteral("") : holdReason);
-    if (itemChecked)
-        query.addBindValue(*itemChecked ? 1 : 0);
     query.addBindValue(reportId);
     if (!run(query, error))
         return false;

@@ -2,6 +2,7 @@
 
 #include "browser/BrowserCatalog.h"
 #include "browser/BrowserController.h"
+#include "core/PageBudget.h"
 #include "core/Settings.h"
 #include "ebay/SearchUrls.h"
 #include "lookup/LookupReport.h"
@@ -57,6 +58,9 @@ LookupSession::LookupSession(WorkFolder folder, lookup::KnownModels *known, cons
 // (the database is still open: the Backend deletes the session first).
 LookupSession::~LookupSession()
 {
+    // During the Deep check the rows are final: save them with what it read.
+    if (m_deepChecking)
+        endDeepCheck(QStringLiteral("stopped: the app was closed"));
     if (m_runner && !m_savedOnce) {
         lookup::LookupResult result = m_runner->result();
         result.status = QStringLiteral("stopped");
@@ -420,6 +424,7 @@ void LookupSession::cancel()
     if (!m_controller || m_state == State::Closing)
         return;
     qInfo().noquote() << "lookup: cancel pressed";
+    m_cancelPressed = true;
     // The Deep check: no more rows; what it read is kept and saved.
     if (m_deepChecking) {
         if (m_state == State::WaitingForUser && m_controller->isBusy()) {
@@ -427,6 +432,7 @@ void LookupSession::cancel()
             m_controller->cancel(); // its reply ends the row, then the check
         }
         m_deepQueue.clear();
+        m_deepStop = QStringLiteral("stopped by you");
         return;
     }
     // The local model's rows: stop it; what it checked is kept (sortDone).
@@ -495,8 +501,8 @@ void LookupSession::onModelSorted(const QList<lookup::Row> &rows, const QString 
 void LookupSession::proceedToSave(lookup::LookupResult result, QList<lookup::Row> rows)
 {
     const Settings settings(m_folder.settingsPath());
-    if (settings.deepCheck() && result.status == QLatin1String("complete") && !m_savedOnce && !m_browserEnded && m_controller
-        && m_words) {
+    if (settings.deepCheck() && result.status == QLatin1String("complete") && !m_cancelPressed && !m_savedOnce && !m_browserEnded
+        && m_controller && m_words) {
         // The counted same-item rows of the searches (not the listing itself):
         // sold ones first, then for sale; each group cheapest first.
         QList<qsizetype> sold;
@@ -527,8 +533,10 @@ void LookupSession::proceedToSave(lookup::LookupResult result, QList<lookup::Row
             m_deepRows = std::move(rows);
             m_deepQueue = queue;
             m_deepTotal = static_cast<int>(queue.size());
-            m_deepMoved = m_deepNoted = m_deepUnread = 0;
+            m_deepMoved = m_deepNoted = m_deepUnread = m_deepOpened = 0;
+            m_deepStop.clear();
             m_deepResult.deepCheckPages = 0;
+            m_deepPagesBefore = PageBudget(m_folder.pageCountPath(), settings.dailyPageCap()).usedToday();
             qInfo().noquote() << "lookup: deep check of" << m_deepTotal << "rows";
             deepCheckNext();
             return;
@@ -565,10 +573,11 @@ void LookupSession::onDeepReply(const QJsonObject &reply)
         return;
     }
     if (status == QLatin1String("failed")) {
-        endDeepCheck(QStringLiteral("stopped: %1").arg(reply.value(QStringLiteral("error")).toString()));
+        endDeepCheck(m_deepStop.isEmpty() ? QStringLiteral("stopped: %1").arg(reply.value(QStringLiteral("error")).toString())
+                                          : m_deepStop);
         return;
     }
-    ++m_deepResult.deepCheckPages;
+    ++m_deepOpened;
     lookup::Row &row = m_deepRows[m_deepCurrent];
     const QString itemId = lookup::rowItemId(m_deepResult, row);
     if (status != QLatin1String("ok")) {
@@ -578,6 +587,13 @@ void LookupSession::onDeepReply(const QJsonObject &reply)
         return;
     }
     const lookup::ItemRecord item = lookup::ItemRecord::fromJson(reply.value(QStringLiteral("result")).toObject());
+    // Only this row's own item page counts (eBay may send another listing).
+    if (item.itemId != itemId) {
+        ++m_deepUnread;
+        qInfo().noquote() << "lookup: deep check" << itemId << "- eBay showed another item's page";
+        deepCheckNext();
+        return;
+    }
     if (item.description.isEmpty()) {
         ++m_deepUnread;
         qInfo().noquote() << "lookup: deep check" << itemId << "- no description:" << item.descriptionMissing;
@@ -604,16 +620,21 @@ void LookupSession::onDeepReply(const QJsonObject &reply)
 void LookupSession::endDeepCheck(const QString &stopNote)
 {
     m_deepChecking = false;
+    // The pages the daily cap counted for it (also one whose read failed).
+    const Settings settings(m_folder.settingsPath());
+    m_deepResult.deepCheckPages
+        = std::max(0, PageBudget(m_folder.pageCountPath(), settings.dailyPageCap()).usedToday() - m_deepPagesBefore);
+    const QString stop = !stopNote.isEmpty() ? stopNote : m_deepStop;
     QString note = QStringLiteral("Deep check: %1 of %2 rows opened (%3 eBay pages); %4 moved by their description, %5 noted, "
                                   "%6 without a readable description")
-                       .arg(m_deepTotal - static_cast<int>(m_deepQueue.size()))
+                       .arg(m_deepOpened)
                        .arg(m_deepTotal)
                        .arg(m_deepResult.deepCheckPages)
                        .arg(m_deepMoved)
                        .arg(m_deepNoted)
                        .arg(m_deepUnread);
-    if (!stopNote.isEmpty())
-        note += QStringLiteral("; ") + stopNote;
+    if (!stop.isEmpty())
+        note += QStringLiteral("; ") + stop;
     qInfo().noquote() << "lookup:" << note;
     m_deepResult.notes.append(note + QLatin1Char('.'));
     m_deepQueue.clear();

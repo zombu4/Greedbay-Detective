@@ -1,5 +1,7 @@
 #include "lookup/Matcher.h"
 
+#include <QRegularExpression>
+
 #include "lookup/Text.h"
 
 #include <algorithm>
@@ -517,7 +519,7 @@ Match matchRow(const QString &title, const Identity &identity, const MatchWords 
         return done(Bucket::Accessory);
     }
     if (const QString other = joinedOtherModel(codeList, models, others, words); !other.isEmpty()) {
-        reasons.append(QStringLiteral("two items: %1 and %2").arg(other, identity.model));
+        reasons.append(QStringLiteral("\"%1\" joined to %2 by a bundle word: two items -> lot").arg(other, identity.model));
         return done(Bucket::Lot);
     }
     if (system) {
@@ -540,24 +542,68 @@ Match matchRow(const QString &title, const Identity &identity, const MatchWords 
     return done(Bucket::SameItem);
 }
 
+namespace {
+
+// The description's sentences (split at . ! ? ; : , and line breaks), each as
+// listWords; "n't" reads as " not" and a possessive "'s" is dropped first, so
+// "doesn't work" is "does not work" and "the unit's stand" is "the unit stand".
+QList<QStringList> descriptionClauses(const QString &description)
+{
+    QString text = description;
+    text.replace(QChar(0x2019), QLatin1Char('\''));
+    static const QRegularExpression notForm(QStringLiteral("n't\\b"), QRegularExpression::CaseInsensitiveOption);
+    static const QRegularExpression possessive(QStringLiteral("'s\\b"), QRegularExpression::CaseInsensitiveOption);
+    text.replace(notForm, QStringLiteral(" not"));
+    text.replace(possessive, QString());
+    static const QRegularExpression breaks(QStringLiteral("[.!?;:,\\n\\r]+"));
+    QList<QStringList> clauses;
+    for (const QString &part : text.split(breaks, Qt::SkipEmptyParts)) {
+        const QStringList clause = listWords(part);
+        if (!clause.isEmpty())
+            clauses.append(clause);
+    }
+    return clauses;
+}
+
+// Positions of `phrase` in `clause`, the phrase split the same way as the
+// clause (a model with "/" in it matches too).
+QList<qsizetype> clausePositions(const QStringList &clause, const QString &phrase)
+{
+    return phrasePositions(clause, listWords(phrase).join(QLatin1Char(' ')));
+}
+
+// A sentence of terms and returns ("refunds if not working as described"):
+// its words say nothing about this item.
+bool policyClause(const QStringList &clause)
+{
+    static const QStringList policy{QStringLiteral("if"), QStringLiteral("unless"), QStringLiteral("return"),
+                                    QStringLiteral("returns"), QStringLiteral("refund"), QStringLiteral("refunds")};
+    return std::any_of(clause.cbegin(), clause.cend(), [](const QString &word) { return policy.contains(word); });
+}
+
+} // namespace
+
 DescriptionFinding descriptionFinding(const QString &description, const Identity &identity, const MatchWords &words)
 {
     DescriptionFinding finding;
-    const QStringList list = listWords(description);
-    if (list.isEmpty())
+    const QList<QStringList> clauses = descriptionClauses(description);
+    if (clauses.isEmpty())
         return finding;
     auto found = [&finding](Bucket bucket, const QString &phrase, const QString &what) {
         finding.bucket = bucket;
         finding.reason = QStringLiteral("description: \"%1\" - %2").arg(phrase, what);
     };
-    // "<word> only" ("leads only"). Not "only the <word>": "only the case is
-    // scratched" is about the item.
-    const auto onlyPhrase = [&list](const QStringList &phrases, QString *which) {
-        for (const QString &phrase : phrases) {
-            const qsizetype length = listWords(phrase).size();
-            for (const qsizetype at : phrasePositions(list, phrase)) {
-                const qsizetype after = at + length;
-                if (after < list.size() && list.at(after) == QLatin1String("only")) {
+    // "<word> only" ending its sentence ("Leads only."). Not "the case only
+    // has scratches", not "only the case is scratched".
+    const auto onlyPhrase = [&clauses](const QStringList &phrases, QString *which) {
+        for (const QStringList &clause : clauses) {
+            if (clause.size() < 2 || clause.last() != QLatin1String("only"))
+                continue;
+            for (const QString &phrase : phrases) {
+                const QStringList parts = listWords(phrase);
+                if (parts.isEmpty() || parts.size() + 1 > clause.size())
+                    continue;
+                if (clause.mid(clause.size() - 1 - parts.size(), parts.size()) == parts) {
                     *which = phrase + QStringLiteral(" only");
                     return true;
                 }
@@ -567,7 +613,8 @@ DescriptionFinding descriptionFinding(const QString &description, const Identity
     };
     QString which;
     QStringList accessories = words.accessory;
-    accessories.append(words.systemAccessory);
+    if (isSystem(identity, words))
+        accessories.append(words.systemAccessory);
     if (onlyPhrase(accessories, &which)) {
         found(Bucket::Accessory, which, QStringLiteral("accessory"));
         return finding;
@@ -582,35 +629,69 @@ DescriptionFinding descriptionFinding(const QString &description, const Identity
         found(Bucket::PartFits, which, QStringLiteral("part"));
         return finding;
     }
-    // The item itself is missing.
+    // The item itself is missing: "<noun> (is) not included" with the noun
+    // starting its sentence or after "the" / "main" ("The unit is not
+    // included", not "power supply for this unit not included"); "does not
+    // include the <noun>" / "without the <noun>" ending their sentence.
     QStringList nouns = words.descriptionItemNouns;
     if (!identity.model.isEmpty())
         nouns.append(identity.model.toLower());
-    for (const QString &noun : std::as_const(nouns)) {
-        for (const QString &form : {noun + QStringLiteral(" not included"), noun + QStringLiteral(" is not included"),
-                                    QStringLiteral("does not include the ") + noun, QStringLiteral("without the ") + noun}) {
-            if (!phrasePositions(list, form).isEmpty()) {
-                found(Bucket::Accessory, form, QStringLiteral("the item itself is not included"));
+    for (const QStringList &clause : clauses) {
+        if (policyClause(clause))
+            continue;
+        for (const QString &noun : std::as_const(nouns)) {
+            const qsizetype length = listWords(noun).size();
+            for (const QString &tail : {QStringLiteral(" not included"), QStringLiteral(" is not included")}) {
+                for (const qsizetype at : clausePositions(clause, noun + tail)) {
+                    const bool starts = at == 0 || clause.at(at - 1) == QLatin1String("the") || clause.at(at - 1) == QLatin1String("main");
+                    if (starts) {
+                        found(Bucket::Accessory, noun + tail, QStringLiteral("the item itself is not included"));
+                        return finding;
+                    }
+                }
+            }
+            for (const QString &head : {QStringLiteral("does not include the "), QStringLiteral("without the ")}) {
+                const qsizetype headLength = listWords(head).size();
+                for (const qsizetype at : clausePositions(clause, head + noun)) {
+                    if (at + headLength + length == clause.size()) {
+                        found(Bucket::Accessory, head + noun, QStringLiteral("the item itself is not included"));
+                        return finding;
+                    }
+                }
+            }
+        }
+    }
+    for (const QStringList &clause : clauses) {
+        for (const QString &phrase : words.descriptionLot) {
+            if (!clausePositions(clause, phrase).isEmpty()) {
+                found(Bucket::Lot, phrase, QStringLiteral("lot"));
                 return finding;
             }
         }
     }
-    for (const QString &phrase : words.descriptionLot) {
-        if (!phrasePositions(list, phrase).isEmpty()) {
-            found(Bucket::Lot, phrase, QStringLiteral("lot"));
-            return finding;
+    // Sold for parts; not after "not"/"no" ("not for parts"), not in a terms
+    // sentence.
+    for (const QStringList &clause : clauses) {
+        if (policyClause(clause))
+            continue;
+        for (const QString &phrase : words.descriptionParts) {
+            for (const qsizetype at : clausePositions(clause, phrase)) {
+                if (at > 0 && (clause.at(at - 1) == QLatin1String("not") || clause.at(at - 1) == QLatin1String("no")))
+                    continue;
+                found(Bucket::PartFits, phrase, QStringLiteral("sold for parts"));
+                finding.forParts = true;
+                return finding;
+            }
         }
     }
-    for (const QString &phrase : words.descriptionParts) {
-        if (!phrasePositions(list, phrase).isEmpty() || !phrasePositions(titleWords(description.toLower()), phrase).isEmpty()) {
-            found(Bucket::PartFits, phrase, QStringLiteral("sold for parts"));
-            return finding;
-        }
-    }
-    for (const QString &phrase : words.descriptionUntested) {
-        if (!phrasePositions(list, phrase).isEmpty() || !phrasePositions(titleWords(description.toLower()), phrase).isEmpty()) {
-            finding.note = QStringLiteral("description: \"%1\"").arg(phrase);
-            break;
+    for (const QStringList &clause : clauses) {
+        if (policyClause(clause))
+            continue;
+        for (const QString &phrase : words.descriptionUntested) {
+            if (!clausePositions(clause, phrase).isEmpty()) {
+                finding.note = QStringLiteral("description: \"%1\"").arg(phrase);
+                return finding;
+            }
         }
     }
     return finding;

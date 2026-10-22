@@ -2001,9 +2001,6 @@
             "tech tape",
             "training tape",
             "training tapes",
-            "video tape",
-            "videotape",
-            "vhs tape",
             "instructional tape"
         ]
     },
@@ -2012,9 +2009,7 @@
             "fits",
             "replacement",
             "compatible",
-            "p/n",
-            "to connect",
-            "connects to"
+            "p/n"
         ]
     },
     "partWords": {
@@ -2061,7 +2056,9 @@
             "empty box",
             "chip",
             "chips",
-            "eprom"
+            "eprom",
+            "to connect",
+            "connects to"
         ]
     },
     "partPatterns": {
@@ -2133,7 +2130,13 @@
             "metal case",
             "factory case",
             "lead acid",
-            "lead free"
+            "lead free",
+            "cable tester",
+            "cable testers",
+            "cable analyzer",
+            "cable fault",
+            "cable tv",
+            "cable locator"
         ]
     },
     "withItem": {
@@ -2211,7 +2214,6 @@
     },
     "descriptionLot": {
         "words": [
-            "lot of",
             "job lot"
         ]
     },

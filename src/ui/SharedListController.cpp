@@ -209,7 +209,7 @@ void SharedListController::onPurchaseFinished()
 {
     if (!m_report)
         return;
-    const std::optional<PurchaseCheck::Found> found = m_purchase.found();
+    const std::optional<PurchaseCheck::Found> found = m_purchase.cancelled() ? std::nullopt : m_purchase.found();
     if (!found) {
         m_report.reset();
         setReport(false, m_purchase.error().isEmpty() ? tr("Stopped.") : m_purchase.error(), false);

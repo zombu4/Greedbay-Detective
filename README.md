@@ -156,8 +156,10 @@ list the list owner runs. Reading and reporting are separate switches.
   is never sent; the item number stays on the server (the list shows only the
   month), so the seller cannot look you up in their orders. The report is encrypted to the server's key (X25519 and
   ML-KEM-768), inside HTTPS. Before it is sent, the app opens that item's
-  eBay page (one more page) and checks it is this seller's item; the list
-  then shows the report as "item checked". One report per seller; a report
+  eBay page (one more page) and checks it is this seller's item; when it is,
+  the list shows the report as "item checked" (a report whose item could not
+  be checked is sent and listed without it). "Item checked" is what the
+  reporting app found; the server does not check it again. One report per seller; a report
   goes live at once (many reports for one seller in a day wait for the list
   owner); anyone can dispute a report, and the list owner removes reports on
   request.

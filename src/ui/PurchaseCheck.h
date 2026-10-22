@@ -49,6 +49,8 @@ public:
     void cancel() { m_task.cancel(); }
 
     bool busy() const { return m_task.busy(); }
+    // The user pressed Stop: no report is sent, also when the order was found.
+    bool cancelled() const { return m_task.cancelled(); }
     QString userMessage() const { return m_task.userMessage(); }
     int pagesUsed() const { return m_task.pagesUsed(); }
     QString error() const { return m_error; }

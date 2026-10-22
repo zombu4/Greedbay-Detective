@@ -919,8 +919,10 @@ void BrowserController::readDescription(QJsonObject data, int triesLeft, std::fu
     for (auto it = m_childFrames.cbegin(); it != m_childFrames.cend(); ++it) {
         // The description frame of this item, and nothing else (recon
         // 2026-10-21): https://itm.ebaydesc.com/itmdesc/<item id>.
+        const QString path = it->url.path();
+        const QString prefix = QStringLiteral("/itmdesc/") + itemId;
         if (!itemId.isEmpty() && it->url.scheme() == QLatin1String("https") && it->url.host() == QLatin1String("itm.ebaydesc.com")
-            && it->url.path().startsWith(QStringLiteral("/itmdesc/") + itemId)) {
+            && path.startsWith(prefix) && (path.size() == prefix.size() || !path.at(prefix.size()).isDigit())) {
             frameSession = it.key();
             frameTarget = it->targetId;
         }
@@ -943,13 +945,23 @@ void BrowserController::readDescription(QJsonObject data, int triesLeft, std::fu
         again(QStringLiteral("no description frame on the page"));
         return;
     }
+    // Each try ends within kScriptTimeoutMs: a frame that never answers (it
+    // went away mid-command) counts as not there.
+    auto answered = std::make_shared<bool>(false);
+    QTimer::singleShot(kScriptTimeoutMs, this, [serial, answered, again, this]() {
+        if (*answered || serial != m_serial || m_op != Op::Fetch)
+            return;
+        *answered = true;
+        again(QStringLiteral("the description frame did not answer"));
+    });
     // In an isolated world of the app's own, as the page extractors run.
     const QJsonObject world{{QStringLiteral("frameId"), frameTarget}, {QStringLiteral("worldName"), QStringLiteral("extractor")}};
     commandOnFrame(frameSession, QStringLiteral("Page.createIsolatedWorld"), world,
-                   [this, serial, frameSession, data, done, again](const QJsonObject &created, const QJsonObject &error) {
-        if (serial != m_serial || m_op != Op::Fetch)
+                   [this, serial, frameSession, data, done, again, answered](const QJsonObject &created, const QJsonObject &error) {
+        if (*answered || serial != m_serial || m_op != Op::Fetch)
             return;
         if (!error.isEmpty() || !created.value(QStringLiteral("executionContextId")).isDouble()) {
+            *answered = true;
             again(QStringLiteral("the description frame cannot be read"));
             return;
         }
@@ -958,9 +970,10 @@ void BrowserController::readDescription(QJsonObject data, int triesLeft, std::fu
                                  {QStringLiteral("contextId"), created.value(QStringLiteral("executionContextId"))},
                                  {QStringLiteral("returnByValue"), true}};
         commandOnFrame(frameSession, QStringLiteral("Runtime.evaluate"), params,
-                       [this, serial, data, done, again](const QJsonObject &evaluated, const QJsonObject &error) {
-            if (serial != m_serial || m_op != Op::Fetch)
+                       [this, serial, data, done, again, answered](const QJsonObject &evaluated, const QJsonObject &error) {
+            if (*answered || serial != m_serial || m_op != Op::Fetch)
                 return;
+            *answered = true;
             const QJsonValue value = evaluated.value(QStringLiteral("result")).toObject().value(QStringLiteral("value"));
             const QString text = value.toString().simplified();
             if (!error.isEmpty() || evaluated.contains(QStringLiteral("exceptionDetails")) || !value.isString() || text.isEmpty()) {
@@ -968,7 +981,11 @@ void BrowserController::readDescription(QJsonObject data, int triesLeft, std::fu
                 return;
             }
             QJsonObject read = data;
-            read.insert(QStringLiteral("description"), text.left(kMaxDescriptionChars));
+            // Not in the middle of a two-part (surrogate) character.
+            qsizetype cut = std::min<qsizetype>(text.size(), kMaxDescriptionChars);
+            if (cut < text.size() && text.at(cut - 1).isHighSurrogate())
+                --cut;
+            read.insert(QStringLiteral("description"), text.left(cut));
             done(read);
         });
     });

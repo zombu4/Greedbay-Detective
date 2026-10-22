@@ -580,7 +580,7 @@ QString ResultsController::brokenReason() const
         return reason;
     // Then the seller's description: sold for parts, or untested.
     const lookup::DescriptionFinding finding = listingDescription();
-    if (finding.bucket == Bucket::PartFits && finding.reason.contains(QLatin1String("sold for parts")))
+    if (finding.forParts)
         return finding.reason;
     return finding.note;
 }
@@ -588,7 +588,8 @@ QString ResultsController::brokenReason() const
 QString ResultsController::descriptionLine() const
 {
     const lookup::DescriptionFinding finding = listingDescription();
-    if (finding.bucket == Bucket::SameItem)
+    // Sold for parts is the item (the LIKELY BROKEN card says it).
+    if (finding.bucket == Bucket::SameItem || finding.forParts)
         return {};
     return QStringLiteral("The seller's %1. This listing may not be the item itself - read the description before you buy.")
         .arg(finding.reason);
@@ -656,7 +657,8 @@ QString ResultsController::auctionLabel() const
     if (!isAuction())
         return {};
     const lookup::ItemRecord &item = m_saved.result.item;
-    const lookup::ValueNumbers &sold = m_valuation.sold.medianCents ? m_valuation.sold : m_valuation.research;
+    // The numbers the bar shows, so the card and the bar agree.
+    const lookup::ValueNumbers &sold = barNumbers();
     if (item.bids && *item.bids == 0 && item.priceCents && sold.p75Cents && *item.priceCents > *sold.p75Cents)
         return QStringLiteral("AUCTION STARTS HIGH");
     return QStringLiteral("AUCTION");
@@ -667,7 +669,8 @@ QStringList ResultsController::auctionLines() const
     if (!isAuction())
         return {};
     const lookup::ItemRecord &item = m_saved.result.item;
-    const lookup::ValueNumbers &sold = m_valuation.sold.medianCents ? m_valuation.sold : m_valuation.research;
+    // The numbers the bar shows, so the card and the bar agree.
+    const lookup::ValueNumbers &sold = barNumbers();
     if (item.bids && *item.bids > 0)
         return {QStringLiteral("The current bid %1 is not the final price - it will likely go higher. Compare the sold "
                                "numbers, not the current bid.")

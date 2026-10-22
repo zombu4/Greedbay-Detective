@@ -263,6 +263,9 @@ private:
     // The Deep check (owner decision f3, 2026-10-21): the rows being checked,
     // the row indexes still to open, the one open now, and what it did.
     bool m_deepChecking = false;
+    bool m_cancelPressed = false; // no Deep check after Cancel
+    int m_deepOpened = 0;
+    int m_deepPagesBefore = 0; // the day's page count when the check began
     lookup::LookupResult m_deepResult;
     QList<lookup::Row> m_deepRows;
     QList<qsizetype> m_deepQueue;
@@ -271,6 +274,7 @@ private:
     int m_deepMoved = 0;
     int m_deepNoted = 0;
     int m_deepUnread = 0;
+    QString m_deepStop; // why the check ended early, or empty
 };
 
 } // namespace app::ui
