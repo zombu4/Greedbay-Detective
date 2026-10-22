@@ -251,7 +251,8 @@ Item {
             // Flag cards, only the ones that apply.
             RowLayout {
                 Layout.fillWidth: true
-                visible: screen.results.brokenFlag || screen.results.isAuction || screen.results.shippingFlag
+                visible: screen.results.brokenFlag || screen.results.originFlag || screen.results.isAuction
+                         || screen.results.shippingFlag
                          || screen.results.cheaperFlag || screen.results.markedFlag || screen.results.ratingFlag
                          || screen.results.sharedFlag
                 spacing: Theme.gap
@@ -262,6 +263,15 @@ Item {
                     kind: "warn"
                     label: screen.results.auctionLabel
                     lines: screen.results.auctionLines
+                }
+                FlagCard {
+                    objectName: "originFlag"
+                    Layout.fillWidth: true
+                    Layout.preferredWidth: 1
+                    visible: screen.results.originFlag
+                    kind: screen.results.originCountry === "China" ? "danger" : "warn"
+                    label: screen.results.originLabel
+                    lines: [screen.results.originLine]
                 }
                 FlagCard {
                     Layout.fillWidth: true

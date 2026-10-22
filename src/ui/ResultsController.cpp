@@ -130,6 +130,10 @@ QVariant RowsModel::data(const QModelIndex &index, int role) const
         return entry.sellerPercent;
     case SellerCountRole:
         return entry.sellerCount;
+    case OriginRole:
+        return entry.origin;
+    case OriginTextRole:
+        return entry.originText;
     default:
         return {};
     }
@@ -143,7 +147,8 @@ QHash<int, QByteArray> RowsModel::roleNames() const
             {FormatRole, "format"}, {TimeLeftRole, "timeLeft"}, {ViewRole, "view"},   {ViewNoteRole, "viewNote"},
             {SellerRole, "seller"}, {SellerBadgeRole, "sellerBadge"}, {SellerMarkedRole, "sellerMarked"},
             {SellerSharedRole, "sellerShared"},
-            {SellerPercentRole, "sellerPercent"}, {SellerCountRole, "sellerCount"}};
+            {SellerPercentRole, "sellerPercent"}, {SellerCountRole, "sellerCount"},
+            {OriginRole, "origin"}, {OriginTextRole, "originText"}};
 }
 
 ResultsController::ResultsController(lookup::LookupStore store, lookup::SellerStore sellers, const lookup::MatchWords *words,
@@ -431,6 +436,9 @@ QList<RowsModel::Entry> ResultsController::entries(bool sameItem) const
             entry.sellerShared = record.sellerName.isEmpty() ? 0 : static_cast<int>(m_shared.value(record.sellerName.toLower()).size());
             entry.sellerBadge = lookup::ratingNote(record.sellerPositivePercent, record.sellerFeedbackCount, rules.threshold,
                                                    rules.fewRatings).badge;
+            const lookup::OriginNote origin = lookup::originNote(record.location);
+            entry.origin = origin.badge;
+            entry.originText = origin.text;
             entry.where = soldRow ? (record.confirmed ? QStringLiteral("sold") : QStringLiteral("sold, price not confirmed"))
                                   : QStringLiteral("for sale");
             entry.date = soldRow && !record.soldDate.isEmpty() ? record.soldDate : QStringLiteral("-");

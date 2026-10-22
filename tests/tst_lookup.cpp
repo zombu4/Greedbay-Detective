@@ -231,6 +231,14 @@ void TestLookup::recordsFromJson()
     const SearchRecord active = SearchRecord::fromJson(card(1, 10000, 500), false);
     QVERIFY(!active.confirmed);
     QVERIFY(active.soldDate.isEmpty());
+    // The card's "Located in" text, kept as given; none shown: empty; an
+    // overlong text is not kept.
+    QVERIFY(active.location.isEmpty());
+    QJsonObject located = card(3, 10000, 500);
+    located.insert("location", "  China ");
+    QCOMPARE(SearchRecord::fromJson(located, false).location, QStringLiteral("China"));
+    located.insert("location", QString(101, QLatin1Char('a')));
+    QVERIFY(SearchRecord::fromJson(located, false).location.isEmpty());
 
     QJsonObject range = card(2, 0, 500);
     range.insert("price", QJsonObject{{"minCents", 1000}, {"maxCents", 2000}, {"currency", "USD"}});
@@ -247,6 +255,10 @@ void TestLookup::recordsFromJson()
     const ItemRecord item = ItemRecord::fromJson(itemData());
     QCOMPARE(item.totalCents(), std::optional<qint64>(26500));
     QCOMPARE(item.specific(QStringLiteral("mpn")), QStringLiteral("M7X/B2"));
+    QVERIFY(item.location.isEmpty());
+    QJsonObject locatedItem = itemData();
+    locatedItem.insert("location", "Exampletown, Guangdong, China");
+    QCOMPARE(ItemRecord::fromJson(locatedItem).location, QStringLiteral("Exampletown, Guangdong, China"));
     QJsonObject euro = itemData();
     euro.insert("currency", "EUR");
     QCOMPARE(ItemRecord::fromJson(euro).priceCents, std::nullopt);

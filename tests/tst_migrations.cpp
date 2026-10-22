@@ -21,7 +21,7 @@ void TestMigrations::shippedMigrationsLoad()
     QString error;
     const auto migrations = app::loadMigrations(QStringLiteral(":/migrations"), &error);
     QVERIFY2(migrations, qPrintable(error));
-    QCOMPARE(migrations->size(), 6);
+    QCOMPARE(migrations->size(), 7);
     const Migration &init = migrations->first();
     QCOMPARE(init.version, 1);
     QCOMPARE(init.name, QStringLiteral("init"));
@@ -56,6 +56,13 @@ void TestMigrations::shippedMigrationsLoad()
     // One table.
     QCOMPARE(answers.statements.size(), 1);
     QVERIFY(answers.statements.first().startsWith(QStringLiteral("CREATE TABLE model_answers")));
+    const Migration &locations = migrations->at(6);
+    QCOMPARE(locations.version, 7);
+    QCOMPARE(locations.name, QStringLiteral("locations"));
+    // One column of lookups, one of lookup_rows.
+    QCOMPARE(locations.statements.size(), 2);
+    QVERIFY(locations.statements.at(0).startsWith(QStringLiteral("ALTER TABLE lookups ADD COLUMN location")));
+    QVERIFY(locations.statements.at(1).startsWith(QStringLiteral("ALTER TABLE lookup_rows ADD COLUMN location")));
 }
 
 void TestMigrations::contiguityCheck()

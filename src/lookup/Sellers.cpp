@@ -47,6 +47,24 @@ QString markReasonLabel(const QString &id)
     return id;
 }
 
+OriginNote originNote(const QString &location)
+{
+    const QString country = location.section(QLatin1Char(','), -1).trimmed();
+    OriginNote note;
+    if (country.compare(QLatin1String("China"), Qt::CaseInsensitive) == 0) {
+        note.country = QStringLiteral("China");
+        note.badge = QStringLiteral("CHINESIUM SELLER");
+        note.text = QStringLiteral("Chinesium seller: eBay says this item is located in China (where it ships from; "
+                                   "the seller may be based elsewhere).");
+    } else if (country.compare(QLatin1String("Japan"), Qt::CaseInsensitive) == 0) {
+        note.country = QStringLiteral("Japan");
+        note.badge = QStringLiteral("JAPAN: SCALPER RISK");
+        note.text = QStringLiteral("Scalper risk: eBay says this item is located in Japan. Watch for junk sold at "
+                                   "very high prices; compare with the sold prices below.");
+    }
+    return note;
+}
+
 bool isSellerId(const QString &id)
 {
     static const QRegularExpression pattern(QStringLiteral("^[^\\s/?#&%]{1,64}$"));

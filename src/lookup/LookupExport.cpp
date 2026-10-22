@@ -100,17 +100,21 @@ QJsonObject lookupJson(const SavedLookup &lookup)
         specifics.append(QJsonObject{{QStringLiteral("label"), specific.label}, {QStringLiteral("value"), specific.value}});
     QJsonArray rows;
     for (const Row &row : lookup.rows) {
-        // The card's seller and its rating (search rows only).
+        // The card's seller, its rating and the card's location (search rows
+        // only; Product Research shows neither).
         QJsonObject seller;
+        QJsonValue location(QJsonValue::Null);
         if (row.source != Row::Source::Research) {
             const SearchRecord &record = row.source == Row::Source::Sold ? result.sold.at(row.index) : result.active.at(row.index);
             seller = QJsonObject{{QStringLiteral("id"), record.sellerName},
                                  {QStringLiteral("positivePercent"), optionalJson(record.sellerPositivePercent)},
                                  {QStringLiteral("feedbackCount"), optionalJson(record.sellerFeedbackCount)}};
+            location = record.location.isEmpty() ? QJsonValue(QJsonValue::Null) : QJsonValue(record.location);
         }
         rows.append(QJsonObject{
             {QStringLiteral("source"), rowSourceName(row.source)},
             {QStringLiteral("seller"), seller.isEmpty() ? QJsonValue(QJsonValue::Null) : QJsonValue(seller)},
+            {QStringLiteral("location"), location},
             {QStringLiteral("itemId"), rowItemId(result, row)},
             {QStringLiteral("title"), rowTitle(result, row)},
             {QStringLiteral("totalCents"), centsJson(rowTotal(result, row))},
@@ -138,6 +142,7 @@ QJsonObject lookupJson(const SavedLookup &lookup)
                      {QStringLiteral("sellerId"), item.sellerId},
                      {QStringLiteral("sellerPositivePercent"), optionalJson(item.sellerPositivePercent)},
                      {QStringLiteral("sellerFeedbackCount"), optionalJson(item.sellerFeedbackCount)},
+                     {QStringLiteral("location"), item.location.isEmpty() ? QJsonValue(QJsonValue::Null) : QJsonValue(item.location)},
                      {QStringLiteral("specifics"), specifics}}},
         {QStringLiteral("identity"),
          QJsonObject{{QStringLiteral("brand"), result.identity.brandName},

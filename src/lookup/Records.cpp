@@ -37,6 +37,14 @@ std::optional<qint64> sum(std::optional<qint64> a, std::optional<qint64> b)
     return *a + *b;
 }
 
+// eBay's location text, one line, at most 100 characters; anything else
+// (not a string, longer) is not kept.
+QString locationText(const QJsonValue &value)
+{
+    const QString text = value.toString().simplified();
+    return text.size() <= 100 ? text : QString();
+}
+
 } // namespace
 
 std::optional<qint64> SearchRecord::totalCents() const
@@ -61,6 +69,7 @@ SearchRecord SearchRecord::fromJson(const QJsonObject &item, bool sold)
     record.bids = count(item.value(QStringLiteral("bids")));
     const QJsonObject seller = item.value(QStringLiteral("seller")).toObject();
     record.sellerName = seller.value(QStringLiteral("name")).toString();
+    record.location = locationText(item.value(QStringLiteral("location")));
     record.sellerFeedbackCount = count(seller.value(QStringLiteral("feedbackCount")));
     if (const QJsonValue percent = seller.value(QStringLiteral("positivePercent")); percent.isDouble()
         && percent.toDouble() >= 0 && percent.toDouble() <= 100)
@@ -122,6 +131,7 @@ ItemRecord ItemRecord::fromJson(const QJsonObject &data)
     const QJsonObject seller = data.value(QStringLiteral("seller")).toObject();
     record.sellerName = seller.value(QStringLiteral("name")).toString();
     record.sellerId = seller.value(QStringLiteral("id")).toString();
+    record.location = locationText(data.value(QStringLiteral("location")));
     record.sellerFeedbackCount = count(seller.value(QStringLiteral("feedbackCount")));
     if (const QJsonValue percent = seller.value(QStringLiteral("positivePercent")); percent.isDouble()
         && percent.toDouble() >= 0 && percent.toDouble() <= 100)

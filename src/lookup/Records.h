@@ -34,6 +34,9 @@ struct SearchRecord {
     std::optional<QDateTime> auctionEnd; // UTC
     bool auctionEndSeconds = false;
     QString sellerName; // the seller's user id as the card shows it
+    // Where eBay says the item is: the text after the card's "Located in "
+    // ("China"); empty when the card shows none.
+    QString location;
     // The card's "99.8% positive (215)", when shown.
     std::optional<int> sellerFeedbackCount;
     std::optional<double> sellerPositivePercent;
@@ -77,6 +80,9 @@ struct ItemRecord {
     // The seller's user id, from the seller card's feedback links
     // ("username="); empty when the page has none.
     QString sellerId;
+    // The shipping block's "Located in:" line as eBay shows it ("Shenzhen,
+    // China"); empty when the page has none.
+    QString location;
     // The seller card's feedback score and positive percentage, when the
     // page showed them.
     std::optional<int> sellerFeedbackCount;

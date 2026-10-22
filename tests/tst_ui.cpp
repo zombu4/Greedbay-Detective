@@ -150,6 +150,9 @@ void TestUi::initTestCase()
     result.active = {sale("100000000090", "Acme Q9 Signal Tracer", 12000, 4500, "Used"),
                      sale("200000000011", "Acme Q9", 9500, 800, "Used"),
                      sale("200000000012", "Acme Q9 tracer", 11000, 0, "Used")};
+    // Where eBay says two of them are (owner decision 2026-10-21).
+    result.sold[1].location = QStringLiteral("China");
+    result.active[1].location = QStringLiteral("Japan");
     ResearchRecord research;
     research.itemId = QStringLiteral("300000000001");
     research.title = QStringLiteral("Acme Q9");
@@ -316,6 +319,22 @@ void TestUi::savedLookupReopens()
         }
     }
     QCOMPARE(broken, 1);
+    // The location badges: one CHINESIUM SELLER, one scalper warning; the
+    // listing itself has no location, so no warning card; both stay counted.
+    QStringList origins;
+    for (int i = 0; i < results->sameItem()->count(); ++i) {
+        const QModelIndex index = results->sameItem()->index(i);
+        const QString origin = index.data(app::ui::RowsModel::OriginRole).toString();
+        if (origin.isEmpty())
+            continue;
+        origins.append(origin);
+        QVERIFY(index.data(app::ui::RowsModel::IncludedRole).toBool());
+        QVERIFY(!index.data(app::ui::RowsModel::OriginTextRole).toString().isEmpty());
+    }
+    origins.sort();
+    QCOMPARE(origins, (QStringList{QStringLiteral("CHINESIUM SELLER"), QStringLiteral("JAPAN: SCALPER RISK")}));
+    QVERIFY(!results->originFlag());
+    QVERIFY(results->originLine().isEmpty());
 
     // Unticking the $90.00 sale: median of $100, $112, $120 = $112.00, at once
     // and in the database.

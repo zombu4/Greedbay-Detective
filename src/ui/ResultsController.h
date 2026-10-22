@@ -54,6 +54,8 @@ public:
         SellerSharedRole, // the seller's reports on the shared seller list (0: none)
         SellerPercentRole, // the card's positive percentage, -1 when not shown
         SellerCountRole,   // the card's feedback count, -1 when not shown
+        OriginRole,        // "CHINESIUM SELLER" / "JAPAN: SCALPER RISK" (lookup::originNote), or ""
+        OriginTextRole,    // the sentence behind it, or ""
     };
 
     struct Entry {
@@ -68,6 +70,8 @@ public:
         QString reason;
         QString mark;
         QString broken;
+        QString origin;
+        QString originText;
         QString format;
         QString timeLeft;
         bool view = false;
@@ -156,6 +160,12 @@ class ResultsController : public QObject {
     Q_PROPERTY(QString ratingLine READ ratingLine NOTIFY changed)
     // LIKELY BROKEN (owner decision 2026-10-19): a warning about this listing,
     // the numbers do not change.
+    // Where eBay says the listing is (owner decision 2026-10-21): China or
+    // Japan get a warning card.
+    Q_PROPERTY(bool originFlag READ originFlag NOTIFY changed)
+    Q_PROPERTY(QString originCountry READ originCountry NOTIFY changed)
+    Q_PROPERTY(QString originLabel READ originLabel NOTIFY changed)
+    Q_PROPERTY(QString originLine READ originLine NOTIFY changed)
     Q_PROPERTY(bool brokenFlag READ brokenFlag NOTIFY changed)
     Q_PROPERTY(QString brokenLine READ brokenLine NOTIFY changed)
     // Format (owner decision 2026-10-19 "Buy It Now vs auction").
@@ -301,6 +311,10 @@ public:
     QString ratingLine() const;
     // The user marked or unmarked a seller: the flags and badges again.
     Q_INVOKABLE void refreshSellerMarks();
+    bool originFlag() const { return !originCountry().isEmpty(); }
+    QString originCountry() const { return hasLookup() ? lookup::originNote(m_saved.result.item.location).country : QString(); }
+    QString originLabel() const { return hasLookup() ? lookup::originNote(m_saved.result.item.location).badge : QString(); }
+    QString originLine() const { return hasLookup() ? lookup::originNote(m_saved.result.item.location).text : QString(); }
     bool brokenFlag() const { return !brokenReason().isEmpty(); }
     QString brokenLine() const;
     QString formatText() const;

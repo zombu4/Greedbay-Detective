@@ -54,6 +54,7 @@ qt_add_resources(appcore "migrations"
         db/migrations/0004_seller_ratings.sql
         db/migrations/0005_sellers.sql
         db/migrations/0006_model_answers.sql
+        db/migrations/0007_locations.sql
 )
 
 # A server-only build (APP_SERVER_ONLY, the top-level CMakeLists.txt) needs

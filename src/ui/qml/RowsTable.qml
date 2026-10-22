@@ -83,6 +83,8 @@ ColumnLayout {
             required property string reason
             required property string mark
             required property string broken
+            required property string origin
+            required property string originText
             required property string format
             required property string timeLeft
             required property string seller
@@ -189,6 +191,17 @@ ColumnLayout {
                             HoverHandler { id: brokenHover }
                             ToolTip.visible: brokenHover.hovered
                             ToolTip.text: "Likely broken: " + line.broken
+                        }
+                        Pill {
+                            id: originPill
+                            visible: line.origin.length > 0
+                            text: line.origin
+                            // China: red; Japan (scalper risk): amber.
+                            kind: line.origin.startsWith("CHINESIUM") ? "danger" : "warn"
+                            Accessible.name: line.originText
+                            HoverHandler { id: originHover }
+                            ToolTip.visible: originHover.hovered
+                            ToolTip.text: line.originText
                         }
                         LinkText {
                             Layout.fillWidth: true

@@ -21,6 +21,10 @@ Not released yet.
   with the time left.
 - Flags: shipping far above normal, cheaper listings of the same item for
   sale right now, "likely broken" when eBay or the title says so.
+- Where eBay says an item is: listings located in China carry a CHINESIUM
+  SELLER badge, listings located in Japan a scalper warning (junk at very
+  high prices). eBay's "Located in" is where the item ships from; the
+  seller may be based elsewhere. Warnings only: the numbers stay as they are.
 - Sellers: mark a seller you had trouble with (got junk, not as described,
   scam, never shipped, fake Best Offer, overpriced junk, other) with your own
   note - kept only on your computer; a marked seller is flagged on every

@@ -471,7 +471,7 @@ void TestLookupStore::priceHistory()
 void TestLookupStore::upgradesVersion1()
 {
     const QList<app::Migration> all = shippedMigrations();
-    QCOMPARE(all.size(), 6);
+    QCOMPARE(all.size(), 7);
     const Database::Result created =
         Database::open(QStringLiteral("v1"), m_db, m_backups, QStringLiteral(TEST_APP_NAME), all.mid(0, 1));
     QVERIFY2(created.ok(), qPrintable(created.error));
@@ -515,12 +515,16 @@ void TestLookupStore::upgradesVersion1()
     QVERIFY2(upgraded.ok(), qPrintable(upgraded.error));
     QCOMPARE(upgraded.outcome, Database::Outcome::Upgraded);
     QCOMPARE(upgraded.fromVersion, 1);
-    QCOMPARE(upgraded.toVersion, 6);
+    QCOMPARE(upgraded.toVersion, 7);
     // Versions 5 and 6: the seller tables and the local model's answers exist,
     // empty.
     for (const char *table : {"marked_sellers", "seller_feedback", "model_answers"}) {
         QCOMPARE(scalar(QStringLiteral("v2"), QStringLiteral("SELECT count(*) FROM %1").arg(QLatin1String(table))).toInt(), 0);
     }
+    // Version 7: older lookups and rows get an empty location, nothing guessed.
+    QCOMPARE(scalar(QStringLiteral("v2"), QStringLiteral("SELECT count(*) FROM lookups WHERE location = ''")).toInt(),
+             scalar(QStringLiteral("v2"), QStringLiteral("SELECT count(*) FROM lookups")).toInt());
+    QCOMPARE(scalar(QStringLiteral("v2"), QStringLiteral("SELECT count(*) FROM lookup_rows WHERE location <> ''")).toInt(), 0);
     QVERIFY(QFileInfo::exists(upgraded.backupPath));
     QCOMPARE(scalar(QStringLiteral("v2"), QStringLiteral("PRAGMA integrity_check")).toString(), QStringLiteral("ok"));
     for (const char *table : {"lookup", "listing", "research_summary", "valuation", "excluded_listing"}) {
@@ -695,7 +699,9 @@ void TestLookupStore::sellerFieldsAreStored()
     LookupResult result = runLookup();
     QCOMPARE(result.status, QStringLiteral("complete"));
     result.item.sellerId = QStringLiteral("examplestore");
+    result.item.location = QStringLiteral("Exampletown, Japan");
     result.sold[0].sellerName = QStringLiteral("seller-b");
+    result.sold[0].location = QStringLiteral("China");
     result.sold[0].sellerPositivePercent = 94.8;
     result.sold[0].sellerFeedbackCount = 120;
     const QList<Row> rows = classifyRows(result, m_words);
@@ -708,11 +714,16 @@ void TestLookupStore::sellerFieldsAreStored()
     const std::optional<SavedLookup> saved = store.load(*id, &error);
     QVERIFY2(saved, qPrintable(error));
     QCOMPARE(saved->result.item.sellerId, QStringLiteral("examplestore"));
+    QCOMPARE(saved->result.item.location, QStringLiteral("Exampletown, Japan"));
     const auto sold = std::find_if(saved->result.sold.cbegin(), saved->result.sold.cend(),
                                    [](const SearchRecord &record) { return record.sellerName == QLatin1String("seller-b"); });
     QVERIFY(sold != saved->result.sold.cend());
     QCOMPARE(*sold->sellerPositivePercent, 94.8);
     QCOMPARE(*sold->sellerFeedbackCount, 120);
+    QCOMPARE(sold->location, QStringLiteral("China"));
+    // A card without a location keeps an empty one.
+    QVERIFY(std::any_of(saved->result.sold.cbegin(), saved->result.sold.cend(),
+                        [](const SearchRecord &record) { return record.location.isEmpty(); }));
     // A card without a rating keeps none.
     QVERIFY(std::any_of(saved->result.sold.cbegin(), saved->result.sold.cend(),
                         [](const SearchRecord &record) { return !record.sellerPositivePercent && !record.sellerFeedbackCount; }));
@@ -739,6 +750,15 @@ void TestLookupStore::sellerRules()
     QCOMPARE(note.badge, QStringLiteral("only 1 rating"));
     // Not shown: nothing (no guessing).
     QVERIFY(ratingNote(std::nullopt, 500, 96.0, 20).text.isEmpty());
+    // Where eBay says the item is (owner decision 2026-10-21): China and Japan
+    // only, by the last part of the location, without case.
+    QCOMPARE(originNote(QStringLiteral("China")).badge, QStringLiteral("CHINESIUM SELLER"));
+    QCOMPARE(originNote(QStringLiteral("Exampletown, Guangdong, China")).country, QStringLiteral("China"));
+    QCOMPARE(originNote(QStringLiteral("china")).country, QStringLiteral("China"));
+    QCOMPARE(originNote(QStringLiteral("Exampletown, Japan")).badge, QStringLiteral("JAPAN: SCALPER RISK"));
+    QVERIFY(originNote(QStringLiteral("Exampletown, Japan")).text.contains(QStringLiteral("located in Japan")));
+    for (const char *other : {"", "United States", "Hong Kong", "Taiwan", "China Grove, United States", "Japanese Garden, Canada"})
+        QVERIFY2(originNote(QString::fromLatin1(other)).country.isEmpty(), other);
     // Shown without a count: judged on the percentage alone.
     QVERIFY(ratingNote(90.0, std::nullopt, 96.0, 20).flagged);
     // Seller ids and the classic feedback address with the kind as fragment.
