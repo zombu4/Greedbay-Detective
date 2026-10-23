@@ -50,7 +50,8 @@ QUrl researchUrl(const QString &query, int dayRange, int offset)
 
 QUrl itemUrl(const QString &itemId)
 {
-    return QUrl(QStringLiteral("https://www.ebay.com/itm/") + itemId, QUrl::StrictMode);
+    return QUrl(QStringLiteral("https://www.ebay.com/itm/") + itemId + QStringLiteral("?nordt=true&orig_cvip=true&rt=nc"),
+                QUrl::StrictMode);
 }
 
 QString itemIdFromInput(const QString &input)

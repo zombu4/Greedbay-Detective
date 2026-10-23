@@ -563,7 +563,15 @@ void BrowserController::fetch(const QUrl &url, ebay::PageKind kind)
     m_kind = kind;
     m_pageOption = url.fragment();
     m_readOnPage = false;
+    m_goneEndsFetch = false;
     scheduleLoad(url);
+}
+
+void BrowserController::fetchOrGone(const QUrl &url, ebay::PageKind kind)
+{
+    fetch(url, kind);
+    if (m_op == Op::Fetch)
+        m_goneEndsFetch = true;
 }
 
 void BrowserController::readOnPage(const QString &option)
@@ -855,7 +863,12 @@ void BrowserController::rereadAfterUser()
 void BrowserController::onExtracted(const QJsonObject &result)
 {
     const QString page = result.value(QStringLiteral("page")).toString();
-    const bool loadOk = m_lastLoadOk;
+    // fetchOrGone(): eBay answers some old listings with HTTP 404 and still
+    // shows the listing (seen 2026-10-22: the page of an ended listing, price
+    // $0); such a page is read like any other, and says so.
+    const bool notFoundButShown = m_goneEndsFetch && !m_lastLoadOk && (m_httpStatus == 404 || m_httpStatus == 410)
+                                  && m_navigationError.isEmpty();
+    const bool loadOk = m_lastLoadOk || notFoundButShown;
     // Content that is built after loading: look again until the key elements
     // appear or kSettleMs has passed.
     const bool notYet = page == QLatin1String("unexpected") || page == QLatin1String("ship_to");
@@ -865,7 +878,10 @@ void BrowserController::onExtracted(const QJsonObject &result)
     }
     const qint64 ms = m_loadClock.elapsed();
     if (page == QLatin1String("expected") && loadOk) {
-        finishExpected(result.value(QStringLiteral("data")).toObject(), QStringLiteral("read in %1 ms").arg(ms));
+        QJsonObject data = result.value(QStringLiteral("data")).toObject();
+        if (notFoundButShown)
+            data.insert(QStringLiteral("httpStatus"), m_httpStatus);
+        finishExpected(data, QStringLiteral("read in %1 ms").arg(ms) + (notFoundButShown ? QStringLiteral(" (HTTP %1)").arg(m_httpStatus) : QString()));
         return;
     }
     if (page == QLatin1String("invalid")) {
@@ -887,6 +903,11 @@ void BrowserController::onExtracted(const QJsonObject &result)
     QJsonObject reply = statusReply("unexpected_page");
     reply.insert(QStringLiteral("page"), shown);
     reply.insert(QStringLiteral("reason"), reason);
+    if (m_goneEndsFetch && !loadOk && (m_httpStatus == 404 || m_httpStatus == 410)) {
+        reply.insert(QStringLiteral("gone"), true);
+        finish(reply);
+        return;
+    }
     waitForUser(reply, messageFor(shown, loadOk));
 }
 

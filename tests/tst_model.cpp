@@ -188,6 +188,11 @@ void TestModel::identityGuards_data()
                                         << "";
     QTest::newRow("digits after brand") << "Tektronix 2445 four channel scope, works" << QStringList() << "Tektronix" << "2445"
                                         << "";
+    // A year-like model the listing's own specifics name, right after the
+    // brand (2026-10-22: "Tektronix 1910" was refused as a year).
+    QTest::newRow("year-like model named by specifics") << "Zorblax 1968 audio generator"
+                                                        << QStringList{QStringLiteral("Model"), QStringLiteral("1968")}
+                                                        << "Zorblax" << "1968" << "";
     QTest::newRow("brand alias") << "Hewlett Packard 8904A synthesizer with rack ears" << QStringList() << "Hewlett Packard"
                                  << "8904A" << "";
     QTest::newRow("unknown leading maker") << "Zorblax ZX-500 signal tracer" << QStringList() << "Zorblax" << "ZX-500" << "";

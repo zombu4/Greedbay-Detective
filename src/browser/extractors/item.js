@@ -193,8 +193,32 @@ function shippingFromBlock() {
 // username=<id>...; search cards show the same id). Without the item
 // number (a page outside www.ebay.com, such as a test page) only when every
 // feedback link names the same user. null when none.
-function sellerIdOf(itemId) {
-    const ids = new Set();
+// The seller's user id, from the seller card only (architect 2026-10-22:
+// never from other links of the page - similar items and ads link to other
+// sellers): a feedback link (username=) or a /usr/<id> link inside the card;
+// else the page's "feedback received as seller" links of this very item
+// (item_id=<this item>, fdbkType=FeedbackReceivedAsSeller), which name this
+// listing's seller. Null when neither is there.
+function sellerIdOf(card, itemId) {
+    const valid = function (id) { return id && /^[^\s\/?#&%]{1,64}$/.test(id) ? id : null; };
+    if (card) {
+        for (const link of card.querySelectorAll('a[href]')) {
+            let url;
+            try {
+                url = new URL(link.href);
+            } catch (e) {
+                continue;
+            }
+            const named = valid(url.pathname.indexOf('/fdbk/') >= 0 ? url.searchParams.get('username') : null);
+            if (named)
+                return named;
+            const user = /^\/usr\/([^\/?#]+)\/?$/.exec(url.pathname);
+            if (user && valid(decodeURIComponent(user[1])))
+                return decodeURIComponent(user[1]);
+        }
+    }
+    if (!itemId)
+        return null;
     for (const link of document.querySelectorAll('a[href*="/fdbk/"]')) {
         let url;
         try {
@@ -202,15 +226,13 @@ function sellerIdOf(itemId) {
         } catch (e) {
             continue;
         }
-        const id = url.searchParams.get('username');
-        // The app's own id check (lookup/Sellers.h isSellerId).
-        if (!id || !/^[^\s\/?#&%]{1,64}$/.test(id))
-            continue;
-        if (itemId && url.searchParams.get('item_id') === itemId)
-            return id;
-        ids.add(id);
+        if (url.searchParams.get('item_id') === itemId && url.searchParams.get('fdbkType') === 'FeedbackReceivedAsSeller') {
+            const id = valid(url.searchParams.get('username'));
+            if (id)
+                return id;
+        }
     }
-    return !itemId && ids.size === 1 ? ids.values().next().value : null;
+    return null;
 }
 
 function sellerFromCard(itemId) {
@@ -237,7 +259,7 @@ function sellerFromCard(itemId) {
     }
     return {
         name: name,
-        id: sellerIdOf(itemId),
+        id: sellerIdOf(card, itemId),
         feedbackCount: count ? intOf(count[1]) : null,
         positivePercent: percent ? parseFloat(percent[1]) : null,
     };

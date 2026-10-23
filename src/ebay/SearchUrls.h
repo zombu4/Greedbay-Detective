@@ -11,7 +11,10 @@ namespace app::ebay {
 //   sold search     the same plus LH_Sold=1&LH_Complete=1
 //   Product Research https://www.ebay.com/sh/research?marketplace=EBAY-US&keywords=<query>
 //                   &dayRange=<days>&tabName=SOLD&limit=50&offset=<N>
-//   item page       https://www.ebay.com/itm/<item number>
+//   item page       https://www.ebay.com/itm/<item number>?nordt=true&orig_cvip=true&rt=nc
+//                   (architect, 2026-10-22: an ended listing then shows itself
+//                   instead of redirecting to a similar or catalog page; every
+//                   item address the app opens or loads is this one)
 // In _nkw a space is "+", as in eBay's own pagination links; in keywords it is
 // "%20", as in the Product Research address eBay uses.
 

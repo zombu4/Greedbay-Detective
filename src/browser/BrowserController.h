@@ -113,6 +113,12 @@ public:
     bool start(QString *error);
 
     void fetch(const QUrl &url, ebay::PageKind kind);
+    // The same for the Deep check's rows: a page eBay answers with "not
+    // found" (HTTP 404 or 410) is still read when it is the item page (eBay
+    // shows some old listings that way, seen 2026-10-22: price $0; the data
+    // then has "httpStatus"); when it is not, the fetch ends at once with the
+    // unexpected_page reply ("gone": true) instead of waiting for the user.
+    void fetchOrGone(const QUrl &url, ebay::PageKind kind);
     // Reads the page loaded by the last fetch() again, without loading it,
     // with `option` for its extractor (the feedback page: "negative@3" makes
     // the list show its page 3 - a click on Next when it shows page 2 - and
@@ -209,6 +215,7 @@ private:
     QString m_sessionId;
     int m_windowId = -1;
     QString m_mainFrameId;
+    bool m_goneEndsFetch = false; // fetchOrGone()
     // The page's child frames with their own target (auto-attached): session
     // id -> {target id, URL}.
     struct ChildFrame {

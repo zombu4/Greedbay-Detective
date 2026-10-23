@@ -1,5 +1,6 @@
 #include "ui/PurchaseCheck.h"
 
+#include "ebay/SearchUrls.h"
 #include "lookup/Records.h"
 
 #include "lookup/Sellers.h"
@@ -109,7 +110,7 @@ std::optional<QString> PurchaseCheck::onReply(const QJsonObject &reply)
         m_found = Found{itemId, month, false, QStringLiteral("unknown"), QStringLiteral("the item was not checked")};
         // The item check: its page, one more page in this session.
         m_checkingItem = true;
-        m_task.fetchNext(QUrl(QStringLiteral("https://www.ebay.com/itm/") + itemId), ebay::PageKind::Item);
+        m_task.fetchNext(ebay::itemUrl(itemId), ebay::PageKind::Item);
         return std::nullopt;
     }
     m_page = data.value(QStringLiteral("page")).toInt(m_page + 1);

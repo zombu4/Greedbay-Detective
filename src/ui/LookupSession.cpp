@@ -537,7 +537,7 @@ void LookupSession::proceedToSave(lookup::LookupResult result, QList<lookup::Row
             m_deepRows = std::move(rows);
             m_deepQueue = queue;
             m_deepTotal = static_cast<int>(queue.size());
-            m_deepMoved = m_deepNoted = m_deepUnread = m_deepOpened = 0;
+            m_deepMoved = m_deepNoted = m_deepUnread = m_deepOpened = m_deepDropped = 0;
             m_deepStop.clear();
             m_deepResult.deepCheckPages = 0;
             m_deepPagesBefore = PageBudget(m_folder.pageCountPath(), settings.dailyPageCap()).usedToday();
@@ -566,7 +566,7 @@ void LookupSession::deepCheckNext()
                      .arg(m_deepTotal)
                      .arg(itemId);
     emit progressChanged();
-    m_controller->fetch(QUrl(QStringLiteral("https://www.ebay.com/itm/") + itemId), ebay::PageKind::Item);
+    m_controller->fetchOrGone(ebay::itemUrl(itemId), ebay::PageKind::Item);
 }
 
 void LookupSession::onDeepReply(const QJsonObject &reply)
@@ -584,13 +584,36 @@ void LookupSession::onDeepReply(const QJsonObject &reply)
     ++m_deepOpened;
     lookup::Row &row = m_deepRows[m_deepCurrent];
     const QString itemId = lookup::rowItemId(m_deepResult, row);
+    // Owner decision 2026-10-22 ("drop most of em where 0$ and no way to
+    // verify"): a listing eBay shows as removed without a description, or
+    // shows no page of at all, leaves the numbers ("to check", the user can
+    // tick it back in).
+    auto dropUnverifiable = [this, &row](const QString &why) {
+        row.match.bucket = lookup::Bucket::ToCheck;
+        row.included = false;
+        row.match.reasons.append(QStringLiteral("deep check: %1 - no way to verify it, not counted").arg(why));
+        ++m_deepDropped;
+    };
+    if (status != QLatin1String("ok") && reply.value(QStringLiteral("gone")).toBool()) {
+        ++m_deepUnread;
+        dropUnverifiable(QStringLiteral("eBay answers this listing with \"not found\" and shows no item page"));
+        qInfo().noquote() << "lookup: deep check" << itemId << "- not found, no item page: not counted";
+        deepCheckNext();
+        return;
+    }
     if (status != QLatin1String("ok")) {
         ++m_deepUnread;
         qInfo().noquote() << "lookup: deep check" << itemId << "- not an item page:" << reply.value(QStringLiteral("reason")).toString();
         deepCheckNext();
         return;
     }
-    const lookup::ItemRecord item = lookup::ItemRecord::fromJson(reply.value(QStringLiteral("result")).toObject());
+    const QJsonObject read = reply.value(QStringLiteral("result")).toObject();
+    const lookup::ItemRecord item = lookup::ItemRecord::fromJson(read);
+    const QString removed = read.contains(QStringLiteral("httpStatus"))
+                                ? QStringLiteral("eBay shows this listing as removed (HTTP %1, price %2)")
+                                      .arg(read.value(QStringLiteral("httpStatus")).toInt())
+                                      .arg(item.priceCents ? lookup::money(*item.priceCents) : QStringLiteral("not shown"))
+                                : QString();
     // Only this row's own item page counts (eBay may send another listing).
     if (item.itemId != itemId) {
         ++m_deepUnread;
@@ -600,10 +623,15 @@ void LookupSession::onDeepReply(const QJsonObject &reply)
     }
     if (item.description.isEmpty()) {
         ++m_deepUnread;
-        qInfo().noquote() << "lookup: deep check" << itemId << "- no description:" << item.descriptionMissing;
+        if (!removed.isEmpty())
+            dropUnverifiable(removed + QStringLiteral(", no description"));
+        qInfo().noquote() << "lookup: deep check" << itemId << "- no description:" << item.descriptionMissing
+                          << (removed.isEmpty() ? QString() : QStringLiteral("(removed listing: not counted)"));
         deepCheckNext();
         return;
     }
+    if (!removed.isEmpty())
+        row.match.reasons.append(QStringLiteral("deep check: ") + removed);
     const lookup::DescriptionFinding finding = lookup::descriptionFinding(item.description, m_deepResult.identity, *m_words);
     if (finding.bucket != lookup::Bucket::SameItem) {
         row.match.bucket = finding.bucket;
@@ -630,13 +658,14 @@ void LookupSession::endDeepCheck(const QString &stopNote)
         = std::max(0, PageBudget(m_folder.pageCountPath(), settings.dailyPageCap()).usedToday() - m_deepPagesBefore);
     const QString stop = !stopNote.isEmpty() ? stopNote : m_deepStop;
     QString note = QStringLiteral("Deep check: %1 of %2 rows opened (%3 eBay pages); %4 moved by their description, %5 noted, "
-                                  "%6 without a readable description")
+                                  "%6 without a readable description, %7 removed listings left out (no way to verify)")
                        .arg(m_deepOpened)
                        .arg(m_deepTotal)
                        .arg(m_deepResult.deepCheckPages)
                        .arg(m_deepMoved)
                        .arg(m_deepNoted)
-                       .arg(m_deepUnread);
+                       .arg(m_deepUnread)
+                       .arg(m_deepDropped);
     if (!stop.isEmpty())
         note += QStringLiteral("; ") + stop;
     qInfo().noquote() << "lookup:" << note;

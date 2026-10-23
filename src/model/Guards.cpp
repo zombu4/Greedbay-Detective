@@ -173,10 +173,14 @@ Verdict checkIdentity(const IdentityAnswer &answer, const lookup::ItemRecord &it
     }
     if (lookup::isDigitsOnly(answer.model)) {
         // A year (1900-2099) or a count (1-2 digits) is no model unless it is
-        // a known one ("Racal-Dana 1992").
+        // a known one ("Racal-Dana 1992") or the listing's own item specifics
+        // name it as the model or MPN ("Tektronix 1910", 2026-10-22); it must
+        // still follow the brand (below).
         const QString digits = lookup::normalizeCode(answer.model);
         static const QRegularExpression year(QStringLiteral("^(19|20)\\d\\d$"));
-        if (!knownModel && (digits.size() <= 2 || year.match(digits).hasMatch()))
+        const bool namedBySpecifics = lookup::normalizeCode(item.specific(QStringLiteral("Model"))) == digits
+                                      || lookup::normalizeCode(item.specific(QStringLiteral("MPN"))) == digits;
+        if (!knownModel && !namedBySpecifics && (digits.size() <= 2 || year.match(digits).hasMatch()))
             return refused(QStringLiteral("G6"), QStringLiteral("\"%1\" is a year or a count, not a model").arg(answer.model));
         const QList<qsizetype> afterBrand = lookup::positionsAfterNames(titleWords, lookup::namesBeforeModel(brandNames, words));
         if (!afterBrand.contains(at))

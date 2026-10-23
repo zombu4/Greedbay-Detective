@@ -190,7 +190,8 @@ void TestLookup::searchUrls()
     QCOMPARE(app::ebay::researchUrl(QStringLiteral("Acme M7X"), 90, 50).toString(QUrl::FullyEncoded),
              QStringLiteral("https://www.ebay.com/sh/research?marketplace=EBAY-US&keywords=Acme%20M7X&dayRange=90"
                             "&tabName=SOLD&limit=50&offset=50"));
-    QCOMPARE(app::ebay::itemUrl(QStringLiteral("100000000050")).toString(), QStringLiteral("https://www.ebay.com/itm/100000000050"));
+    QCOMPARE(app::ebay::itemUrl(QStringLiteral("100000000050")).toString(),
+             QStringLiteral("https://www.ebay.com/itm/100000000050?nordt=true&orig_cvip=true&rt=nc"));
 }
 
 void TestLookup::percentiles()

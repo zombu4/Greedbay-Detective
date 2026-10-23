@@ -274,6 +274,7 @@ private:
     int m_deepMoved = 0;
     int m_deepNoted = 0;
     int m_deepUnread = 0;
+    int m_deepDropped = 0; // removed listings without a description: not counted
     QString m_deepStop; // why the check ended early, or empty
 };
 
