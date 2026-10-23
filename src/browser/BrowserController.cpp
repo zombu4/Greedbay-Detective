@@ -866,9 +866,13 @@ void BrowserController::onExtracted(const QJsonObject &result)
     // fetchOrGone(): eBay answers some old listings with HTTP 404 and still
     // shows the listing (seen 2026-10-22: the page of an ended listing, price
     // $0); such a page is read like any other, and says so.
-    const bool notFoundButShown = m_goneEndsFetch && !m_lastLoadOk && (m_httpStatus == 404 || m_httpStatus == 410)
-                                  && m_navigationError.isEmpty();
-    const bool loadOk = m_lastLoadOk || notFoundButShown;
+    // A 404/410 page that is not the item page (seen 2026-10-22: eBay's "We
+    // looked everywhere! Looks like this page is missing") is the listing
+    // gone, not a check for the user.
+    const bool notFound = m_goneEndsFetch && !m_lastLoadOk && (m_httpStatus == 404 || m_httpStatus == 410)
+                          && m_navigationError.isEmpty();
+    const bool notFoundButShown = notFound && page == QLatin1String("expected");
+    const bool loadOk = m_lastLoadOk || notFound;
     // Content that is built after loading: look again until the key elements
     // appear or kSettleMs has passed.
     const bool notYet = page == QLatin1String("unexpected") || page == QLatin1String("ship_to");
@@ -898,12 +902,14 @@ void BrowserController::onExtracted(const QJsonObject &result)
         reason = m_httpStatus >= 400 ? QStringLiteral("the page answered with HTTP status %1").arg(m_httpStatus)
                                      : QStringLiteral("the page did not load completely");
     }
+    if (notFound)
+        reason = QStringLiteral("the page answered with HTTP status %1 and is not the item page (%2)").arg(m_httpStatus).arg(reason);
     qCInfo(lcBrowser).noquote() << "fetch" << ebay::pageKindName(m_kind) << "unexpected page:" << shown << "-" << reason
-                                << "- at" << ebay::urlForLog(m_documentUrl);
+                                << "- HTTP" << m_httpStatus << "- at" << ebay::urlForLog(m_documentUrl);
     QJsonObject reply = statusReply("unexpected_page");
     reply.insert(QStringLiteral("page"), shown);
     reply.insert(QStringLiteral("reason"), reason);
-    if (m_goneEndsFetch && !loadOk && (m_httpStatus == 404 || m_httpStatus == 410)) {
+    if (notFound) {
         reply.insert(QStringLiteral("gone"), true);
         finish(reply);
         return;
