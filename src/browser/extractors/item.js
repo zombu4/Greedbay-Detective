@@ -235,6 +235,12 @@ function sellerIdOf(card, itemId) {
     return null;
 }
 
+// The item number in the JSON-LD offer's url (https://www.ebay.com/itm/<digits>), or null.
+function offerItemId(offer) {
+    const match = offer && typeof offer.url === 'string' ? /^https:\/\/www\.ebay\.com\/itm\/(\d{9,15})(?:[\/?#]|$)/.exec(offer.url) : null;
+    return match ? match[1] : null;
+}
+
 function sellerFromCard(itemId) {
     const card = document.querySelector('[data-testid="x-sellercard-atf"]');
     if (!card)
@@ -338,7 +344,10 @@ function extract(input) {
         endsIn: endsInText(),
         endsAt: textOf(document.querySelector('[data-testid="x-end-time"] .ux-timer__time-left')),
         returnsText: textOf(document.querySelector('.ux-labels-values--returns')),
-        seller: sellerFromCard(input.itemId),
+        // The listing's own number for its seller links: the address's, else
+        // the page's own JSON-LD offer address (a page without an eBay address,
+        // as in the tests).
+        seller: sellerFromCard(input.itemId || offerItemId(offer)),
         specifics: itemSpecifics(),
         watchers: intOf(uniqueWholeTextMatch(/^(\d{1,3}(?:,\d{3})+|\d+) watchers?$/, 'watcher')),
         soldCount: intOf(uniqueWholeTextMatch(/^(\d{1,3}(?:,\d{3})+|\d+) sold$/, 'sold')),

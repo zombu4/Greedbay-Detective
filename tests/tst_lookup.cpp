@@ -288,7 +288,7 @@ void TestLookup::fullLookup()
     QString error;
     QVERIFY(runner->startItem(QStringLiteral("100000000050"), &error));
     QCOMPARE(m_requests.size(), 1);
-    QCOMPARE(m_requests.at(0).url.toString(), QStringLiteral("https://www.ebay.com/itm/100000000050"));
+    QCOMPARE(m_requests.at(0).url.toString(), QStringLiteral("https://www.ebay.com/itm/100000000050?nordt=true&orig_cvip=true&rt=nc"));
     QCOMPARE(m_requests.at(0).kind, PageKind::Item);
     runner->onReply(okReply(itemData()));
     QCOMPARE(itemReady.size(), 1);
