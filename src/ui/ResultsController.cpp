@@ -134,6 +134,10 @@ QVariant RowsModel::data(const QModelIndex &index, int role) const
         return entry.origin;
     case OriginTextRole:
         return entry.originText;
+    case ShippingRole:
+        return entry.shipping;
+    case ShippingTextRole:
+        return entry.shippingText;
     default:
         return {};
     }
@@ -148,7 +152,8 @@ QHash<int, QByteArray> RowsModel::roleNames() const
             {SellerRole, "seller"}, {SellerBadgeRole, "sellerBadge"}, {SellerMarkedRole, "sellerMarked"},
             {SellerSharedRole, "sellerShared"},
             {SellerPercentRole, "sellerPercent"}, {SellerCountRole, "sellerCount"},
-            {OriginRole, "origin"}, {OriginTextRole, "originText"}};
+            {OriginRole, "origin"}, {OriginTextRole, "originText"},
+            {ShippingRole, "shipping"}, {ShippingTextRole, "shippingText"}};
 }
 
 ResultsController::ResultsController(lookup::LookupStore store, lookup::SellerStore sellers, const lookup::MatchWords *words,
@@ -410,6 +415,7 @@ QList<RowsModel::Entry> ResultsController::entries(bool sameItem) const
     });
     // The settings once per table (they are read from the settings file).
     const lookup::SellerRules rules = m_sellerRules();
+    const ValueSettings values = m_valueSettings();
     QList<RowsModel::Entry> list;
     for (const int i : order) {
         const Row &row = m_saved.rows.at(i);
@@ -439,6 +445,9 @@ QList<RowsModel::Entry> ResultsController::entries(bool sameItem) const
             const lookup::OriginNote origin = m_words ? lookup::originNote(record.location, *m_words) : lookup::OriginNote();
             entry.origin = origin.badge;
             entry.originText = origin.text;
+            const lookup::RowShippingNote shipping = lookup::rowShippingNote(result, row, m_valuation.shipping, values);
+            entry.shipping = shipping.badge;
+            entry.shippingText = shipping.text;
             entry.where = soldRow ? (record.confirmed ? QStringLiteral("sold") : QStringLiteral("sold, price not confirmed"))
                                   : QStringLiteral("for sale");
             entry.date = soldRow && !record.soldDate.isEmpty() ? record.soldDate : QStringLiteral("-");

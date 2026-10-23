@@ -60,4 +60,9 @@ struct ShippingCheck {
 ShippingCheck checkShipping(std::optional<qint64> listingCents, const QList<Comp> &comps,
                             std::optional<qint64> ebayAverageCents, const ValueSettings &settings);
 
+// Rule 16 for one amount: `shippingCents` > ratio x `referenceCents` AND
+// more than the minimum above it. False when either is missing.
+bool shippingTooHigh(std::optional<qint64> shippingCents, std::optional<qint64> referenceCents,
+                     const ValueSettings &settings);
+
 } // namespace app::lookup

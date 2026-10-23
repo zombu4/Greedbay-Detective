@@ -46,6 +46,14 @@ ValueNumbers valueOf(const QList<Comp> &comps, const ValueSettings &settings)
     return numbers;
 }
 
+bool shippingTooHigh(std::optional<qint64> shippingCents, std::optional<qint64> referenceCents,
+                     const ValueSettings &settings)
+{
+    return shippingCents && referenceCents
+           && static_cast<double>(*shippingCents) > settings.shippingFlagRatio * static_cast<double>(*referenceCents)
+           && *shippingCents - *referenceCents > settings.shippingFlagMinAboveCents;
+}
+
 ShippingCheck checkShipping(std::optional<qint64> listingCents, const QList<Comp> &comps,
                             std::optional<qint64> ebayAverageCents, const ValueSettings &settings)
 {
@@ -59,13 +67,8 @@ ShippingCheck checkShipping(std::optional<qint64> listingCents, const QList<Comp
     }
     check.compsWithShipping = static_cast<int>(shipping.size());
     check.compMedianCents = percentile(shipping, 50);
-    auto tooHigh = [&](std::optional<qint64> reference) {
-        return listingCents && reference
-               && static_cast<double>(*listingCents) > settings.shippingFlagRatio * static_cast<double>(*reference)
-               && *listingCents - *reference > settings.shippingFlagMinAboveCents;
-    };
-    check.flaggedVsComps = tooHigh(check.compMedianCents);
-    check.flaggedVsEbay = tooHigh(ebayAverageCents);
+    check.flaggedVsComps = shippingTooHigh(listingCents, check.compMedianCents, settings);
+    check.flaggedVsEbay = shippingTooHigh(listingCents, ebayAverageCents, settings);
     check.flagged = check.flaggedVsComps || check.flaggedVsEbay;
     return check;
 }

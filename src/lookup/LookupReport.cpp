@@ -155,6 +155,38 @@ QString rowSeller(const LookupResult &result, const Row &row)
     return {};
 }
 
+RowShippingNote rowShippingNote(const LookupResult &result, const Row &row, const ShippingCheck &reference,
+                                const ValueSettings &settings)
+{
+    if (row.source == Row::Source::Research)
+        return {};
+    const SearchRecord &record = row.source == Row::Source::Sold ? result.sold.at(row.index) : result.active.at(row.index);
+    const std::optional<qint64> shipping = record.shippingCents;
+    QStringList against;
+    auto compare = [&](const QString &what, std::optional<qint64> referenceCents) {
+        if (!shippingTooHigh(shipping, referenceCents, settings))
+            return;
+        against.append(*referenceCents > 0
+                           ? QStringLiteral("%1x %2 (%3)")
+                                 .arg(QString::number(static_cast<double>(*shipping) / static_cast<double>(*referenceCents), 'f', 1),
+                                      what, money(*referenceCents))
+                           : QStringLiteral("far above %1 (%2)").arg(what, money(*referenceCents)));
+    };
+    compare(QStringLiteral("the median shipping of the matched sales"), reference.compMedianCents);
+    compare(QStringLiteral("eBay's average shipping for this item"), reference.ebayAverageCents);
+    if (against.isEmpty())
+        return {};
+    RowShippingNote note;
+    note.badge = QStringLiteral("SHIPPING %1").arg(money(*shipping));
+    note.text = QStringLiteral("Shipping %1 is %2").arg(money(*shipping), against.join(QStringLiteral(" and ")));
+    if (record.priceCents && *record.priceCents > 0)
+        note.text += QStringLiteral("; the item itself is %1 (shipping %2x the price)")
+                         .arg(money(*record.priceCents),
+                              QString::number(static_cast<double>(*shipping) / static_cast<double>(*record.priceCents), 'f', 1));
+    note.text += QStringLiteral(". A low price with high shipping is a common trap: check the total before buying.");
+    return note;
+}
+
 QString rowSourceName(Row::Source source)
 {
     switch (source) {

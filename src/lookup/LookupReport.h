@@ -83,6 +83,19 @@ QString rowDate(const LookupResult &result, const Row &row);
 QString rowSeller(const LookupResult &result, const Row &row);
 QString rowSourceName(Row::Source source);
 
+// A sold or for-sale row whose shipping is too high (rule 16, the same test
+// as the listing's own shipping) against the references in `reference`: the
+// median shipping of the matched sales and eBay's average. badge
+// "SHIPPING $86.00"; text the sentence behind it, with the item price for
+// comparison. Both empty when it is not too high, and for Product Research
+// rows (eBay's averages, not one listing).
+struct RowShippingNote {
+    QString badge;
+    QString text;
+};
+RowShippingNote rowShippingNote(const LookupResult &result, const Row &row, const ShippingCheck &reference,
+                                const ValueSettings &settings);
+
 // The rows in report order: by bucket (same item first), then by total,
 // lowest first; rows without a total last.
 QList<qsizetype> rowOrder(const LookupResult &result, const QList<Row> &rows);

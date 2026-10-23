@@ -85,6 +85,8 @@ ColumnLayout {
             required property string broken
             required property string origin
             required property string originText
+            required property string shipping
+            required property string shippingText
             required property string format
             required property string timeLeft
             required property string seller
@@ -202,6 +204,15 @@ ColumnLayout {
                             HoverHandler { id: originHover }
                             ToolTip.visible: originHover.hovered
                             ToolTip.text: line.originText
+                        }
+                        Pill {
+                            visible: line.shipping.length > 0
+                            text: line.shipping
+                            kind: "danger"
+                            Accessible.name: line.shippingText
+                            HoverHandler { id: shippingHover }
+                            ToolTip.visible: shippingHover.hovered
+                            ToolTip.text: line.shippingText
                         }
                         LinkText {
                             Layout.fillWidth: true

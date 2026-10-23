@@ -1228,6 +1228,34 @@ void TestMatching::shippingCheck()
     // Unconfirmed sales do not count for the median shipping.
     heavy.append({50000, 100, false});
     QCOMPARE(checkShipping(5800, heavy, std::nullopt, settings).compsWithShipping, 3);
+
+    // One row (owner, lookup 20): $21.00 + $86.00 shipping against a median
+    // shipping of $20.00 gets the badge; $18.00 shipping does not; a Product
+    // Research row never does.
+    LookupResult result;
+    SearchRecord trap;
+    trap.priceCents = 2100;
+    trap.shippingCents = 8600;
+    SearchRecord normal;
+    normal.priceCents = 9000;
+    normal.shippingCents = 1800;
+    result.active = {trap, normal};
+    result.research.append(ResearchRecord());
+    QList<Comp> sales;
+    for (const qint64 shipping : {1500, 2000, 2500})
+        sales.append({10000, shipping, true});
+    const ShippingCheck reference = checkShipping(std::nullopt, sales, std::nullopt, settings);
+    Row row;
+    row.source = Row::Source::Active;
+    const RowShippingNote note = rowShippingNote(result, row, reference, settings);
+    QCOMPARE(note.badge, QStringLiteral("SHIPPING $86.00"));
+    QVERIFY2(note.text.contains(QStringLiteral("4.3x the median shipping of the matched sales ($20.00)")), qPrintable(note.text));
+    QVERIFY2(note.text.contains(QStringLiteral("the item itself is $21.00 (shipping 4.1x the price)")), qPrintable(note.text));
+    row.index = 1;
+    QVERIFY(rowShippingNote(result, row, reference, settings).badge.isEmpty());
+    row.source = Row::Source::Research;
+    row.index = 0;
+    QVERIFY(rowShippingNote(result, row, reference, settings).badge.isEmpty());
 }
 
 QTEST_GUILESS_MAIN(TestMatching)

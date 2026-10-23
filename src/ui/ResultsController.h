@@ -56,6 +56,8 @@ public:
         SellerCountRole,   // the card's feedback count, -1 when not shown
         OriginRole,        // "CHINESIUM SELLER" / "JAPAN: SCALPER RISK" (lookup::originNote), or ""
         OriginTextRole,    // the sentence behind it, or ""
+        ShippingRole,      // "SHIPPING $86.00" when the row's shipping is too high (lookup::rowShippingNote), or ""
+        ShippingTextRole,  // the sentence behind it, or ""
     };
 
     struct Entry {
@@ -72,6 +74,8 @@ public:
         QString broken;
         QString origin;
         QString originText;
+        QString shipping;
+        QString shippingText;
         QString format;
         QString timeLeft;
         bool view = false;
