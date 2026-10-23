@@ -1,0 +1,113 @@
+#!/bin/sh
+# affected-tests - runs only the tests that cover the files changed here.
+#
+# Changed files: the working tree and the index against HEAD, files not yet
+# added, and the commits not yet pushed (HEAD against its upstream). Each
+# file is matched against tools/test-map.txt (the longest matching path
+# wins; tests/tst_<name>.cpp is covered by tst_<name>). Tests labelled
+# "browser" start a real browser; they run only when a file under
+# src/browser/ changed, or with --with-browser. The full suite runs in CI on
+# every push.
+#
+#   tools/affected-tests            run the affected tests (ctest, all cores)
+#   tools/affected-tests --list     print them, with what was left out and why
+#   tools/affected-tests --changed  print the changed files
+#   --with-browser                  also run affected browser tests
+#   --preset <name>                 ctest preset (default macos-release)
+set -eu
+
+root=$(git -C "$(dirname "$0")/.." rev-parse --show-toplevel)
+cd "$root"
+map=tools/test-map.txt
+preset=macos-release
+mode=run
+withBrowser=0
+while [ $# -gt 0 ]; do
+    case "$1" in
+    --list) mode=list ;;
+    --changed) mode=changed ;;
+    --with-browser) withBrowser=1 ;;
+    --preset) shift; preset=$1 ;;
+    *) echo "affected-tests: unknown option $1" >&2; exit 2 ;;
+    esac
+    shift
+done
+
+changed() {
+    git diff --name-only HEAD --
+    git diff --name-only --cached --
+    git ls-files --others --exclude-standard
+    if upstream=$(git rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null); then
+        git diff --name-only "$upstream" HEAD --
+    fi
+}
+
+files=$(changed | sort -u)
+if [ "$mode" = changed ]; then
+    [ -n "$files" ] && printf '%s\n' "$files"
+    exit 0
+fi
+
+# The tests ctest knows, and the browser-labelled ones among them.
+names() { sed -n 's/^ *Test *#[0-9]*: *\([^ ]*\).*/\1/p'; }
+all=$(ctest --preset "$preset" -N 2>/dev/null | names)
+browser=$(ctest --preset "$preset" -N -L '^browser$' 2>/dev/null | names)
+if [ -z "$all" ]; then
+    echo "affected-tests: ctest --preset $preset lists no tests (build first)" >&2
+    exit 1
+fi
+
+# Per changed file: the tests of its longest matching map line.
+tests=""
+uncovered=""
+for file in $files; do
+    case "$file" in
+    tests/tst_*.cpp)
+        tests="$tests $(basename "$file" .cpp)"
+        continue ;;
+    esac
+    line=$(awk -v f="$file" '
+        /^[[:space:]]*(#|$)/ { next }
+        index(f, $1) == 1 && length($1) > best { best = length($1); hit = $0 }
+        END { if (best) print hit }' "$map")
+    if [ -z "$line" ]; then
+        uncovered="$uncovered $file"
+        continue
+    fi
+    for name in ${line#* }; do
+        if [ "$name" = ALL ]; then tests="$tests $all"; else tests="$tests $name"; fi
+    done
+done
+tests=$(printf '%s\n' $tests | sort -u)
+
+browserChanged=0
+printf '%s\n' "$files" | grep -q '^src/browser/' && browserChanged=1
+
+run=""
+skipped=""
+for name in $tests; do
+    if ! printf '%s\n' "$all" | grep -qx "$name"; then
+        skipped="$skipped $name(not-a-test)"
+    elif printf '%s\n' "$browser" | grep -qx "$name" && [ "$browserChanged" = 0 ] && [ "$withBrowser" = 0 ]; then
+        skipped="$skipped $name(browser,no-src/browser-change)"
+    else
+        run="$run $name"
+    fi
+done
+notAffected=""
+for name in $all; do
+    printf '%s\n' $tests | grep -qx "$name" || notAffected="$notAffected $name"
+done
+
+echo "affected-tests: run:${run:- none}"
+[ -n "$skipped" ] && echo "affected-tests: skipped:$skipped"
+[ -n "$notAffected" ] && echo "affected-tests: not affected:$notAffected"
+[ -n "$uncovered" ] && echo "affected-tests: changed, no test covers it:$uncovered"
+[ "$mode" = list ] && exit 0
+if [ -z "$run" ]; then
+    echo "affected-tests: nothing to run (CI runs the full suite)"
+    exit 0
+fi
+regex=$(printf '%s\n' $run | paste -sd'|' -)
+cores=$(sysctl -n hw.ncpu 2>/dev/null || nproc 2>/dev/null || echo 4)
+exec ctest --preset "$preset" --timeout 120 -j "$cores" -R "^($regex)\$"

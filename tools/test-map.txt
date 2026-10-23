@@ -1,0 +1,65 @@
+# Which tests cover which files, for tools/affected-tests.
+#
+# One line per path: <path or path prefix> <test names...>
+# The longest matching path wins. "ALL" stands for every test. A path that
+# no line matches is covered by no test (documentation, the app's main.cpp):
+# nothing runs for it locally; CI runs the full suite on every push.
+#
+# Built from the real includes and links (tests/CMakeLists.txt,
+# src/CMakeLists.txt): a test covers a file when the test includes it, or
+# links a library whose sources include it.
+#   appbrowser    tst_browserlogic tst_extractors
+#   applookup     tst_lookup tst_matching tst_lookupstore
+#   appui         tst_ui tst_sellerpaging (appui uses every other library)
+#   appplugins    tst_plugins
+#   appmodel      tst_model
+#   appsellerlist tst_sellerlist
+# Tests labelled "browser" (tests/CMakeLists.txt) run only when a file under
+# src/browser/ changed.
+
+# Build files: any test can break.
+CMakeLists.txt ALL
+CMakePresets.json ALL
+cmake/ ALL
+src/CMakeLists.txt ALL
+tests/CMakeLists.txt ALL
+tests/support/ ALL
+
+# core (in appcore, which every test links; per file, as everything uses it)
+src/core/PathChecks.h ALL
+src/core/SafeDelete. ALL
+src/core/Version.h.in ALL
+src/core/Backups. tst_backups tst_ui tst_sellerpaging
+src/core/BrowserProfiles. tst_browserprofiles tst_browserlogic tst_extractors tst_ui tst_sellerpaging
+src/core/ExportFiles. tst_plugins tst_ui tst_sellerpaging
+src/core/Logging. tst_logging tst_ui tst_sellerpaging
+src/core/PageBudget. tst_pagebudget tst_browserlogic tst_extractors tst_ui tst_sellerpaging
+src/core/Settings. tst_settings tst_lookup tst_matching tst_lookupstore tst_plugins tst_model tst_sellerlist tst_browserlogic tst_extractors tst_ui tst_sellerpaging
+src/core/SingleInstance. tst_singleinstance
+src/core/Uninstall. tst_uninstall
+src/core/WorkFolder. tst_workfolder tst_browserprofiles tst_uninstall tst_model tst_plugins tst_browserlogic tst_extractors tst_ui tst_sellerpaging
+
+# db and ebay (in appcore)
+src/db/ tst_sqlscript tst_migrations tst_database tst_lookupstore tst_model tst_ui tst_sellerpaging
+src/ebay/ tst_pagecheck tst_lookup tst_matching tst_lookupstore tst_model tst_plugins tst_sellerlist tst_browserlogic tst_extractors tst_ui tst_sellerpaging
+
+# The libraries
+src/browser/ tst_browserlogic tst_extractors tst_ui tst_sellerpaging
+src/lookup/ tst_lookup tst_matching tst_lookupstore tst_model tst_plugins tst_sellerlist tst_ui tst_sellerpaging
+src/lookup/data/ tst_lookup tst_matching tst_lookupstore tst_model tst_ui
+src/sellerlist/ tst_sellerlist tst_ui tst_sellerpaging
+src/plugins/ tst_plugins tst_ui tst_sellerpaging
+src/model/ tst_model tst_ui tst_sellerpaging
+src/ui/ tst_ui tst_sellerpaging
+src/ui/qml/ tst_ui
+tools/seller-list-server/ tst_sellerlist
+
+# The tests themselves, their helpers and fixtures
+# tests/tst_<name>.cpp is covered by tst_<name> itself (built into the script).
+tests/helpers/lockholder.cpp tst_singleinstance tst_browserprofiles tst_uninstall
+tests/helpers/dbcrash.cpp tst_database
+tests/helpers/pluginrunner.cpp tst_plugins
+tests/helpers/fakemodelrunner.cpp tst_model
+tests/helpers/modelrunner.cpp tst_model
+tests/fixtures/ tst_extractors
+tests/fixtures/tls/ tst_sellerlist

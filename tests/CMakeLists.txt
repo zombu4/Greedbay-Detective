@@ -9,7 +9,10 @@ function(app_add_unit_test name)
     add_test(NAME ${name} COMMAND ${name})
     # Every test has a time limit, so a hang fails within minutes and names
     # the test.
-    set_tests_properties(${name} PROPERTIES TIMEOUT 120)
+    # Labels: "unit" here; tests that start a real browser are relabelled
+    # "browser" below (tools/affected-tests runs those only for browser
+    # changes).
+    set_tests_properties(${name} PROPERTIES TIMEOUT 120 LABELS unit)
 endfunction()
 
 # Helper programs started by tests; built like tests but not run by ctest.
@@ -90,6 +93,9 @@ add_dependencies(tst_uninstall lockholder)
 
 app_add_unit_test(tst_browserlogic tst_browserlogic.cpp)
 target_link_libraries(tst_browserlogic PRIVATE appbrowser)
+# Browser control without starting a browser, but it looks for the installed
+# browsers: labelled "browser" with tst_extractors.
+set_tests_properties(tst_browserlogic PROPERTIES LABELS browser)
 
 # Synthetic HTML fixtures, built into the test as :/fixtures/<name>.
 set(app_test_fixtures
@@ -127,7 +133,7 @@ qt_add_resources(tst_extractors "extractor_fixtures" PREFIX "/fixtures" BASE fix
 # page cases wait for in-page updates (up to 10 s, twice when a page is read
 # again after Continue). CI's macOS runner needed more than 120 s for the
 # whole suite (run 39495969553); its own limit is 300 s.
-set_tests_properties(tst_extractors PROPERTIES TIMEOUT 300)
+set_tests_properties(tst_extractors PROPERTIES TIMEOUT 300 LABELS browser)
 
 # The shared seller list (DESIGN 3.7): cryptography, trust chain, the server
 # (tools/seller-list-server) and the app's client against it, over plain HTTP
