@@ -176,8 +176,13 @@ int main(int argc, char *argv[])
     }
     if (argc == 2 && std::strcmp(argv[1], "--model-runner") == 0)
         return app::model::runModelRunner();
-    if (argc == 2 && (std::strcmp(argv[1], "--uninstall-data=keep") == 0 || std::strcmp(argv[1], "--uninstall-data=delete") == 0))
+    if (argc == 2 && (std::strcmp(argv[1], "--uninstall-data=keep") == 0 || std::strcmp(argv[1], "--uninstall-data=delete") == 0)) {
+        // The copy before the uninstall opens the database through Qt SQL,
+        // which needs an application object ("QSqlDatabase requires a
+        // QCoreApplication"; without one it crashed, CI run 39883815732).
+        QCoreApplication uninstaller(argc, argv);
         return uninstallData(identifier, std::strcmp(argv[1], "--uninstall-data=keep") == 0);
+    }
     QString error;
     const std::optional<app::WorkFolder> folder =
         app::WorkFolder::open(app::WorkFolder::defaultPath(identifier), identifier, &error);
